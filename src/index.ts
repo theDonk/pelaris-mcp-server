@@ -30,6 +30,14 @@ import { registerSwapExercise } from "./tools/user/swap_exercise.js";
 import { registerUpdateUserProfile } from "./tools/user/update_user_profile.js";
 import { registerAddInjury } from "./tools/user/add_injury.js";
 import { registerLogCoachFeedback } from "./tools/user/log_coach_feedback.js";
+import { registerCreatePlannedSession } from "./tools/user/create_planned_session.js";
+
+// User tools — coach-parity (PEL-XX)
+import { registerRecordBenchmark } from "./tools/user/record_benchmark.js";
+import { registerCheckIn } from "./tools/user/check_in.js";
+import { registerManageGoals } from "./tools/user/manage_goals.js";
+import { registerManageProgram } from "./tools/user/manage_program.js";
+import { registerGetWeeklyDebrief } from "./tools/user/get_weekly_debrief.js";
 
 // Resources
 import { registerCoachPersonalityResource } from "./resources/coach_personality.js";
@@ -237,6 +245,14 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerUpdateUserProfile(server);
     registerAddInjury(server);
     registerLogCoachFeedback(server);
+    registerCreatePlannedSession(server);
+
+    // ─── Coach-parity tools ─────────────────────────────────
+    registerRecordBenchmark(server);
+    registerCheckIn(server);
+    registerManageGoals(server);
+    registerManageProgram(server);
+    registerGetWeeklyDebrief(server);
 
     // ─── Resources ──────────────────────────────────────────────
     registerCoachPersonalityResource(server);
