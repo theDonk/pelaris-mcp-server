@@ -87,8 +87,8 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
         if (params.intensityPreference) payload.intensityPreference = params.intensityPreference;
         if (params.notes) payload.notes = params.notes;
 
-        // Call Cloud Function with service-to-service auth
-        const targetUrl = `${CF_BASE_URL}/generateProgramStrategy`;
+        // Call HTTP-triggered Cloud Function (not onCall — accepts service account auth)
+        const targetUrl = `${CF_BASE_URL}/generateProgramHttp`;
         const auth = getAuth();
         const client = await auth.getIdTokenClient(targetUrl);
         const response = await client.request({
