@@ -4,7 +4,7 @@
  * Uses an in-memory Map with TTL — no external dependencies.
  * Limits:
  *   - 60 reads per hour per user (identified by pseudonym or IP)
- *   - 10 writes per hour per user (separate bucket)
+ *   - 20 writes per hour per user (separate bucket)
  */
 
 import type { Response, NextFunction } from "express";
@@ -17,7 +17,7 @@ interface RateLimitEntry {
 
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_READ_REQUESTS = 60;
-const MAX_WRITE_REQUESTS = 10;
+const MAX_WRITE_REQUESTS = 20;
 
 // In-memory stores keyed by user identifier
 const readLimiterStore = new Map<string, RateLimitEntry>();

@@ -138,13 +138,14 @@ function findAlternatives(
 export function registerSwapExercise(server: McpServer): void {
   server.tool(
     "swap_exercise",
-    "Find alternatives for an exercise in a training session. Returns 3 suggestions with rationale. Set autoApply to true to automatically swap in the first suggestion.",
+    "Find alternatives for an exercise. Returns 3 suggestions with rationale. If sessionId is provided, can verify the exercise exists and optionally auto-apply the swap.",
     {
       sessionId: z
         .string()
         .min(1)
         .max(200)
-        .describe("The diary session document ID"),
+        .optional()
+        .describe("The diary session document ID (optional — omit for general alternatives)"),
       exerciseName: z
         .string()
         .min(1)
@@ -183,6 +184,38 @@ export function registerSwapExercise(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
+
+        // Find alternatives (works with or without a session)
+        const alternatives = findAlternatives(params.exerciseName, params.reason);
+
+        // If no sessionId provided, return general alternatives without session context
+        if (!params.sessionId) {
+          const result = scrubDocument({
+            action: "suggestions",
+            original: params.exerciseName,
+            reason: params.reason || "preference",
+            alternatives: alternatives.map((alt, i) => ({
+              rank: i + 1,
+              name: alt.name,
+              rationale: alt.rationale,
+            })),
+            message: `Found ${alternatives.length} alternatives for "${params.exerciseName}". Provide a sessionId to apply a swap to a specific session.`,
+          });
+
+          logToolCall({
+            requestId,
+            tool: "swap_exercise",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: true,
+          });
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        // Session-specific flow
         const diaryRef = profileSubcollection(profileId, "diary").doc(params.sessionId);
         const sessionDoc = await diaryRef.get();
 
@@ -223,9 +256,6 @@ export function registerSwapExercise(server: McpServer): void {
             isError: true,
           };
         }
-
-        // Find alternatives
-        const alternatives = findAlternatives(params.exerciseName, params.reason);
 
         // Auto-apply if requested
         if (params.autoApply && alternatives.length > 0) {

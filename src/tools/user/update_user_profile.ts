@@ -104,8 +104,13 @@ export function registerUpdateUserProfile(server: McpServer): void {
 
         if (!hasUpdates) {
           return {
-            content: [{ type: "text" as const, text: "Error: At least one field must be provided to update" }],
-            isError: true,
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                status: "no_changes",
+                message: "No changes specified. Provide at least one field to update (equipment, availableDays, sessionsPerWeek, preferredSessionDuration, preferredUnits, experienceLevel, poolLength, environment).",
+              }, null, 2),
+            }],
           };
         }
 
