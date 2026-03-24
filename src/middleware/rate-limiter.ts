@@ -17,7 +17,7 @@ interface RateLimitEntry {
 
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_READ_REQUESTS = 60;
-const MAX_WRITE_REQUESTS = 20;
+const MAX_WRITE_REQUESTS = 80; // Temporarily high for testing — set to 40 for production
 
 // In-memory stores keyed by user identifier
 const readLimiterStore = new Map<string, RateLimitEntry>();
