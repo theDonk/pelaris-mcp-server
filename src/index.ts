@@ -50,6 +50,26 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.2.0" });
 });
 
+// OAuth 2.0 Authorization Server Metadata (RFC 8414)
+// Claude and ChatGPT look for this at the MCP server's own URL
+const OAUTH_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
+app.get("/.well-known/oauth-authorization-server", (_req, res) => {
+  res.json({
+    issuer: OAUTH_BASE,
+    authorization_endpoint: `${OAUTH_BASE}/oauth/authorize`,
+    token_endpoint: `${OAUTH_BASE}/oauth/token`,
+    revocation_endpoint: `${OAUTH_BASE}/oauth/revoke`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    code_challenge_methods_supported: ["S256"],
+    scopes_supported: [
+      "profile:read", "training:read", "training:write",
+      "health:read", "health:write", "coach:read",
+    ],
+    token_endpoint_auth_methods_supported: ["none"],
+  });
+});
+
 // MCP endpoint — stateless mode (fresh server per request)
 app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedRequest, res) => {
   const requestId = generateRequestId();
