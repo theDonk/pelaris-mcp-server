@@ -212,7 +212,18 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
   const requestId = generateRequestId();
   try {
     // Inject auth claims into per-request context for tool handlers
-    setRequestAuth(req.mcpAuth || null);
+    // For admin-authed requests (testing via Gemini CLI), use a synthetic auth context
+    // with the known test profile. For OAuth-authed requests, use the real claims.
+    const TEST_PROFILE_ID = "Pjf0Zo5Pmbm522g7Ry8X"; // Bradley Hunt
+    const authContext = req.mcpAuth || (req.isAdminAuth ? {
+      sub: "admin-test",
+      scope: "profile:read training:read training:write health:read health:write coach:read",
+      platform: "direct",
+      profile_id: TEST_PROFILE_ID,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: Math.floor(Date.now() / 1000),
+    } : null);
+    setRequestAuth(authContext);
 
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
