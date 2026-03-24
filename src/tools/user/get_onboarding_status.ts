@@ -46,13 +46,32 @@ export function registerGetOnboardingStatus(server: McpServer): void {
 
         const d = profileSnap.data()!;
 
+        // Infer sport from active program if profile sport is null
+        let sport: string | null = d.intakeSummary?.primaryGoal || null;
+        if (!sport && !queuesSnap.empty) {
+          const queueData = queuesSnap.docs[0].data();
+          sport = queueData.sport || queueData.methodology_id?.split("_")[0] || null;
+        }
+
+        // Check integrations subcollection for connected devices
+        let hasConnectedDevice = false;
+        try {
+          const integrationsSnap = await profileSubcollection(profileId, "integrations")
+            .where("status", "==", "connected")
+            .limit(1)
+            .get();
+          hasConnectedDevice = !integrationsSnap.empty;
+        } catch {
+          // Integrations subcollection may not exist yet — default to false
+        }
+
         const status = {
           name: d.name || null,
           hasCompletedOnboarding: !!d.currentIntakeRunId,
-          hasSport: !!d.intakeSummary?.primaryGoal,
+          hasSport: !!sport,
           hasProgram: !queuesSnap.empty,
-          hasConnectedDevice: false, // Placeholder — device connection not yet implemented
-          sport: d.intakeSummary?.primaryGoal || null,
+          hasConnectedDevice,
+          sport,
           experienceLevel: d.training_context?.experience_level || null,
           memberSince: d.created_at?.toDate?.()?.toISOString?.() || null,
           subscriptionTier: d.subscription_tier || "free",

@@ -20,7 +20,7 @@ const VALID_TOOL_NAMES = [
   "get_coach_insight", "get_onboarding_status",
   "generate_weekly_plan", "modify_training_session", "log_workout",
   "swap_exercise", "update_user_profile", "add_injury",
-  "general",
+  "log_coach_feedback", "general",
 ] as const;
 
 export function registerLogCoachFeedback(server: McpServer): void {
@@ -48,6 +48,7 @@ export function registerLogCoachFeedback(server: McpServer): void {
         .optional()
         .describe("Optional freeform feedback comment"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

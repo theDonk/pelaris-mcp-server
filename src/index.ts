@@ -47,7 +47,7 @@ app.use(express.json());
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.3.0" });
+  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "2.0.0" });
 });
 
 // Favicon — serve Pelaris logo
@@ -112,16 +112,6 @@ app.post("/token", express.urlencoded({ extended: true }), async (req, res) => {
     }
 
     const data = await upstream.json();
-    // DEBUG: log what the OAuth CF returned
-    console.log(`[token-proxy][DEBUG] CF response status: ${upstream.status}`);
-    console.log(`[token-proxy][DEBUG] CF response keys: ${Object.keys(data).join(", ")}`);
-    if (data.access_token) {
-      console.log(`[token-proxy][DEBUG] access_token length: ${data.access_token.length}, first30: ${data.access_token.substring(0, 30)}...`);
-      console.log(`[token-proxy][DEBUG] token_type: ${data.token_type}, expires_in: ${data.expires_in}`);
-    }
-    if (data.error) {
-      console.log(`[token-proxy][DEBUG] ERROR: ${data.error}: ${data.error_description}`);
-    }
     res.status(upstream.status).json(data);
   } catch (err) {
     console.error("[oauth-proxy] /token failed:", err);
@@ -212,29 +202,22 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
   const requestId = generateRequestId();
   try {
     // Inject auth claims into per-request context for tool handlers
-    // For admin-authed requests (testing via Gemini CLI), use a synthetic auth context
-    // with the known test profile. For OAuth-authed requests, use the real claims.
-    const TEST_PROFILE_ID = "Pjf0Zo5Pmbm522g7Ry8X"; // Bradley Hunt
-    const authContext = req.mcpAuth || (req.isAdminAuth ? {
-      sub: "admin-test",
-      scope: "profile:read training:read training:write health:read health:write coach:read",
-      platform: "direct",
-      profile_id: TEST_PROFILE_ID,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      iat: Math.floor(Date.now() / 1000),
-    } : null);
+    // Admin-authed requests don't need user profile context
+    const authContext = req.mcpAuth || null;
     setRequestAuth(authContext);
 
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
-      version: "1.2.0",
+      version: "2.0.0",
     });
 
-    // ─── Admin tools (existing) ─────────────────────────────────
-    registerResearchTools(server);
-    registerPipelineTools(server);
-    registerFeedbackTools(server);
-    registerProfileTools(server);
+    // ─── Admin tools (only for admin-authed requests) ───────────
+    if (req.isAdminAuth) {
+      registerResearchTools(server);
+      registerPipelineTools(server);
+      registerFeedbackTools(server);
+      registerProfileTools(server);
+    }
 
     // ─── User coaching tools (OAuth-scoped) ─────────────────────
     registerGetTrainingContext(server);

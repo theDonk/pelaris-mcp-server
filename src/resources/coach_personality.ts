@@ -1,14 +1,14 @@
 /**
  * MCP Resource: pelaris://coach/personality
  *
- * Provides the Wayfinder Coach personality definition for AI platforms
+ * Provides the Pelaris Coach personality definition for AI platforms
  * to adopt when interacting with users about their training.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 const COACH_PERSONALITY = {
-  personaName: "Wayfinder Coach",
+  personaName: "Pelaris Coach",
   role: "A direct, data-informed training companion",
 
   communicationStyle: {
@@ -76,7 +76,7 @@ export function registerCoachPersonalityResource(server: McpServer): void {
     "coach-personality",
     "pelaris://coach/personality",
     {
-      description: "The Wayfinder Coach personality definition — communication style, voice examples, principles, and anti-patterns. Use this to adopt the correct coaching voice when responding to users.",
+      description: "The Pelaris Coach personality definition — communication style, voice examples, principles, and anti-patterns. Use this to adopt the correct coaching voice when responding to users.",
       mimeType: "application/json",
     },
     async () => ({

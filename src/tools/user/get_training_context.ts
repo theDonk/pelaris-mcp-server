@@ -72,16 +72,6 @@ export function registerGetTrainingContext(server: McpServer): void {
 
         const profileData = profileSnap.data() || {};
 
-        // Extract profile context (minimal, no PII)
-        const profileContext = {
-          sport: profileData.intakeSummary?.primaryGoal || null,
-          experienceLevel: profileData.training_context?.experience_level || null,
-          equipment: profileData.training_context?.equipment || [],
-          sessionsPerWeek: profileData.preferences?.sessions_per_week || null,
-          preferredUnits: profileData.preferredUnits || "metric",
-          hasInjuries: !!profileData.training_context?.injury_history,
-        };
-
         // Active programs summary
         const programs = queuesSnap.docs.map((doc) => {
           const d = doc.data();
@@ -91,6 +81,7 @@ export function registerGetTrainingContext(server: McpServer): void {
             queueId: doc.id,
             title: d.title,
             methodologyId: d.methodology_id,
+            sport: d.sport || null,
             type: d.type,
             totalSessions: sessions.length,
             completedSessions: completed,
@@ -101,16 +92,44 @@ export function registerGetTrainingContext(server: McpServer): void {
           };
         });
 
+        // Extract profile context (minimal, no PII)
+        // If profile sport is null, infer from the first active program
+        let sport: string | null = profileData.intakeSummary?.primaryGoal || null;
+        if (!sport && programs.length > 0) {
+          sport = programs[0].sport || programs[0].methodologyId?.split("_")[0] || null;
+        }
+
+        const profileContext = {
+          sport,
+          experienceLevel: profileData.training_context?.experience_level || null,
+          equipment: profileData.training_context?.equipment || [],
+          sessionsPerWeek: profileData.preferences?.sessions_per_week || null,
+          preferredUnits: profileData.preferredUnits || "metric",
+          hasInjuries: !!profileData.training_context?.injury_history,
+        };
+
         // Recent diary entries
         const recentSessions = diarySnap.docs.map((doc) => {
           const d = doc.data();
+          // session_type may be absent on older diary docs — fall back to
+          // sessionType (camelCase variant) then infer from title keywords
+          let sessionType: string | null = d.session_type || d.sessionType || null;
+          if (!sessionType && d.title) {
+            const titleLower = (d.title as string).toLowerCase();
+            if (titleLower.includes("swim")) sessionType = "swim";
+            else if (titleLower.includes("run")) sessionType = "run";
+            else if (titleLower.includes("ride") || titleLower.includes("cycl")) sessionType = "ride";
+            else if (titleLower.includes("strength") || titleLower.includes("lift")) sessionType = "strength";
+            else if (titleLower.includes("mobility") || titleLower.includes("yoga")) sessionType = "mobility";
+            else if (titleLower.includes("hiit")) sessionType = "hiit";
+          }
           return {
             sessionId: doc.id,
             title: d.title,
             scheduledDate: d.scheduled_date,
             status: d.status || (d.is_completed ? "completed" : "planned"),
-            sessionType: d.session_type || null,
-            sessionFocus: d.session_focus || null,
+            sessionType,
+            sessionFocus: d.session_focus || d.sessionFocus || null,
             rpe: d.feedback?.rpe || null,
             feedbackTags: d.feedback?.tags || [],
             dataQuality: d.data_quality || null,
