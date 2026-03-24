@@ -47,17 +47,24 @@ app.use(express.json());
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.2.0" });
+  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.3.0" });
+});
+
+// Favicon (prevent 404 noise in logs)
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
 });
 
 // OAuth 2.0 Authorization Server Metadata (RFC 8414)
-// Claude and ChatGPT look for this at the MCP server's own URL
 const OAUTH_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
+const MCP_SERVER_URL = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app";
+
 app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   res.json({
     issuer: OAUTH_BASE,
     authorization_endpoint: `${OAUTH_BASE}/oauth/authorize`,
     token_endpoint: `${OAUTH_BASE}/oauth/token`,
+    registration_endpoint: `${OAUTH_BASE}/oauth/register`,
     revocation_endpoint: `${OAUTH_BASE}/oauth/revoke`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
@@ -67,6 +74,33 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
       "health:read", "health:write", "coach:read",
     ],
     token_endpoint_auth_methods_supported: ["none"],
+  });
+});
+
+// OAuth 2.0 Protected Resource Metadata (RFC 9728)
+// Claude looks for this to discover which auth server protects this MCP server
+app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+  res.json({
+    resource: MCP_SERVER_URL,
+    authorization_servers: [OAUTH_BASE],
+    scopes_supported: [
+      "profile:read", "training:read", "training:write",
+      "health:read", "health:write", "coach:read",
+    ],
+    bearer_methods_supported: ["header"],
+  });
+});
+
+// Also serve at the /mcp sub-path variant (Claude checks both)
+app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
+  res.json({
+    resource: `${MCP_SERVER_URL}/mcp`,
+    authorization_servers: [OAUTH_BASE],
+    scopes_supported: [
+      "profile:read", "training:read", "training:write",
+      "health:read", "health:write", "coach:read",
+    ],
+    bearer_methods_supported: ["header"],
   });
 });
 
