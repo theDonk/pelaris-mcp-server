@@ -36,7 +36,7 @@ async function getJwtSecret(): Promise<string | null> {
   if (_jwtSecret) return _jwtSecret;
 
   if (process.env.MCP_JWT_SECRET) {
-    _jwtSecret = process.env.MCP_JWT_SECRET;
+    _jwtSecret = process.env.MCP_JWT_SECRET.trim();
     console.log(`[auth][DEBUG] JWT secret loaded from env var (length: ${_jwtSecret.length}, first8: ${_jwtSecret.substring(0, 8)})`);
     return _jwtSecret;
   }
