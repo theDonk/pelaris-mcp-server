@@ -16,7 +16,7 @@ import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
-const VALID_SPORTS = ["strength", "running", "swimming", "cycling", "triathlon", "crossfit", "general", "yoga", "mobility"] as const;
+const VALID_SPORTS = ["strength", "running", "swimming", "cycling", "triathlon", "crossfit", "general", "yoga", "mobility", "other"] as const;
 const VALID_FEELINGS = ["strong", "tired", "energetic", "sluggish", "motivated", "stressed", "recovered", "sore"] as const;
 
 function generateIdempotencyKey(profileId: string, date: string, sport: string, duration: number): string {
