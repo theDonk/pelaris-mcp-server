@@ -36,10 +36,12 @@ export function registerLogCoachFeedback(server: McpServer): void {
         .describe("Overall rating (1 = poor, 5 = excellent)"),
       helpful: z
         .boolean()
-        .describe("Was the tool/interaction helpful?"),
+        .optional()
+        .describe("Was the tool/interaction helpful? Defaults to true if omitted."),
       toolName: z
         .enum(VALID_TOOL_NAMES)
-        .describe("Which tool or feature the feedback is about"),
+        .optional()
+        .describe("Which tool or feature the feedback is about. Defaults to 'general' if omitted."),
       comment: z
         .string()
         .max(1000)
@@ -70,14 +72,16 @@ export function registerLogCoachFeedback(server: McpServer): void {
         }
 
         const timestamp = new Date().toISOString();
+        const resolvedHelpful = params.helpful ?? true;
+        const resolvedToolName = params.toolName ?? "general";
 
         // Write to mcp_feedback collection — pseudonym only, no PII
         const feedbackDoc: Record<string, unknown> = {
           user_pseudonym: claims.sub,
           platform: claims.platform,
           rating: params.rating,
-          helpful: params.helpful,
-          tool_name: params.toolName,
+          helpful: resolvedHelpful,
+          tool_name: resolvedToolName,
           comment: params.comment || null,
           created_at: timestamp,
         };
@@ -99,7 +103,7 @@ export function registerLogCoachFeedback(server: McpServer): void {
               status: "recorded",
               message: "Thank you for your feedback! It helps us improve the coaching experience.",
               rating: params.rating,
-              toolName: params.toolName,
+              toolName: resolvedToolName,
             }, null, 2),
           }],
         };
