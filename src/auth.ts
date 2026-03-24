@@ -130,8 +130,11 @@ export async function verifyBearerToken(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  const resourceMetadataUrl = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/.well-known/oauth-protected-resource";
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
     res.status(401).json({ error: "missing_token", error_description: "Bearer token required" });
     return;
   }
@@ -146,12 +149,14 @@ export async function verifyBearerToken(
       // Check expiry
       const nowSeconds = Math.floor(Date.now() / 1000);
       if (claims.exp <= nowSeconds) {
+        res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has expired" });
         return;
       }
 
       // Check revocation
       if (await isTokenRevoked(token)) {
+        res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has been revoked" });
         return;
       }
@@ -172,6 +177,7 @@ export async function verifyBearerToken(
   }
 
   // Both strategies failed
+  res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
   res.status(401).json({ error: "invalid_token", error_description: "Token verification failed" });
 }
 
