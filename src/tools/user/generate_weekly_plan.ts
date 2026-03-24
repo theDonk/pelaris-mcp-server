@@ -51,6 +51,7 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
         .optional()
         .describe("Additional notes or constraints for plan generation"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

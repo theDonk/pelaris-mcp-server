@@ -50,6 +50,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
         .optional()
         .describe("New scheduled date in YYYY-MM-DD format"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

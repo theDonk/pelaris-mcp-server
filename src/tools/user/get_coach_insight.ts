@@ -148,6 +148,58 @@ export function registerGetCoachInsight(server: McpServer): void {
           }
         }
 
+        // 5. Volume trend (compare last 7 days vs previous 7 days)
+        const fourteenDaysAgo = new Date(now);
+        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+        const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().slice(0, 10);
+
+        const thisWeekCompleted = sessions.filter(
+          (s) => (s.status === "completed" || s.is_completed) && s.scheduled_date >= sevenDaysAgoStr,
+        ).length;
+        const lastWeekCompleted = sessions.filter(
+          (s) =>
+            (s.status === "completed" || s.is_completed) &&
+            s.scheduled_date >= fourteenDaysAgoStr &&
+            s.scheduled_date < sevenDaysAgoStr,
+        ).length;
+
+        if (thisWeekCompleted > 0 && lastWeekCompleted > 0) {
+          const volumeDiff = thisWeekCompleted - lastWeekCompleted;
+          if (volumeDiff >= 2) {
+            insights.push({
+              type: "volume_trend",
+              text: `Training volume is increasing — ${thisWeekCompleted} sessions this week vs ${lastWeekCompleted} last week. Monitor recovery to sustain the ramp.`,
+              confidence: "medium",
+              context: "volume_increasing",
+            });
+          } else if (volumeDiff <= -2) {
+            insights.push({
+              type: "volume_trend",
+              text: `Training volume dropped — ${thisWeekCompleted} sessions this week vs ${lastWeekCompleted} last week. If intentional (recovery), that's smart. If not, time to re-engage.`,
+              confidence: "medium",
+              context: "volume_decreasing",
+            });
+          } else {
+            insights.push({
+              type: "volume_trend",
+              text: `Training volume is stable — ${thisWeekCompleted} sessions this week, ${lastWeekCompleted} last week. Consistency is the foundation.`,
+              confidence: "medium",
+              context: "volume_stable",
+            });
+          }
+        }
+
+        // 6. Goal progress (for goals without a target date)
+        const goalsWithoutDate = goals.filter((g) => !g.target_date);
+        if (goalsWithoutDate.length > 0 && sessions.length > 7) {
+          insights.push({
+            type: "goal_progress",
+            text: `You have ${goalsWithoutDate.length} active goal${goalsWithoutDate.length > 1 ? "s" : ""} without a target date. Setting a deadline sharpens focus and drives action.`,
+            confidence: "medium",
+            context: "goal_no_deadline",
+          });
+        }
+
         // Fallback if no insights generated
         if (insights.length === 0) {
           insights.push({
@@ -159,7 +211,7 @@ export function registerGetCoachInsight(server: McpServer): void {
         }
 
         const result = scrubDocument({
-          insights: insights.slice(0, 3), // Cap at 3 most relevant
+          insights: insights.slice(0, 5), // Cap at 5 most relevant
           generatedAt: new Date().toISOString(),
         } as Record<string, unknown>);
 

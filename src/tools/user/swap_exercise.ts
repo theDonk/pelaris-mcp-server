@@ -160,6 +160,7 @@ export function registerSwapExercise(server: McpServer): void {
         .optional()
         .describe("If true, automatically apply the first alternative to the session"),
     },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();
