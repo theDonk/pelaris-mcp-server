@@ -112,6 +112,16 @@ app.post("/token", express.urlencoded({ extended: true }), async (req, res) => {
     }
 
     const data = await upstream.json();
+    // DEBUG: log what the OAuth CF returned
+    console.log(`[token-proxy][DEBUG] CF response status: ${upstream.status}`);
+    console.log(`[token-proxy][DEBUG] CF response keys: ${Object.keys(data).join(", ")}`);
+    if (data.access_token) {
+      console.log(`[token-proxy][DEBUG] access_token length: ${data.access_token.length}, first30: ${data.access_token.substring(0, 30)}...`);
+      console.log(`[token-proxy][DEBUG] token_type: ${data.token_type}, expires_in: ${data.expires_in}`);
+    }
+    if (data.error) {
+      console.log(`[token-proxy][DEBUG] ERROR: ${data.error}: ${data.error_description}`);
+    }
     res.status(upstream.status).json(data);
   } catch (err) {
     console.error("[oauth-proxy] /token failed:", err);

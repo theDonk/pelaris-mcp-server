@@ -1,14 +1,10 @@
 /**
  * Dual-strategy authentication middleware for Pelaris MCP server.
  *
- * Strategy 1 (primary): OAuth 2.0 JWT tokens issued by the PEL-67 OAuth server.
- *   - Verifies HMAC-SHA256 signature
- *   - Checks token expiry
- *   - Checks Firestore revocation status (mcp_tokens/{tokenHash})
- *   - Extracts user claims (profileId, scopes, platform, pseudonym)
+ * DEBUG LOGGING ENABLED — remove after MCP connection issues are resolved.
  *
+ * Strategy 1 (primary): OAuth 2.0 JWT tokens issued by the PEL-67 OAuth server.
  * Strategy 2 (fallback): Static bearer token for admin tools.
- *   - Original MCP_BEARER_TOKEN env var check
  */
 
 import crypto from "crypto";
@@ -18,19 +14,17 @@ import { db } from "./firestore-client.js";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface McpTokenClaims {
-  sub: string;          // Pseudonymous user ID
-  scope: string;        // Space-delimited scopes
-  platform: string;     // chatgpt | claude | gemini | direct
-  profile_id: string;   // Internal Firestore profile/uid for lookups
-  exp: number;          // Expiry (unix seconds)
-  iat: number;          // Issued at (unix seconds)
+  sub: string;
+  scope: string;
+  platform: string;
+  profile_id: string;
+  exp: number;
+  iat: number;
 }
 
 export interface McpAuthenticatedRequest extends Request {
   mcpAuth?: McpTokenClaims;
-  /** True when authenticated via static admin bearer token (not OAuth). */
   isAdminAuth?: boolean;
-  /** Unique request ID for structured logging. */
   requestId?: string;
 }
 
@@ -38,20 +32,15 @@ export interface McpAuthenticatedRequest extends Request {
 
 let _jwtSecret: string | null = null;
 
-/**
- * Load the JWT secret from GCP Secret Manager or environment variable.
- * Caches the result after first successful load.
- */
 async function getJwtSecret(): Promise<string | null> {
   if (_jwtSecret) return _jwtSecret;
 
-  // First try env var (set via Cloud Run secret mount or local dev)
   if (process.env.MCP_JWT_SECRET) {
     _jwtSecret = process.env.MCP_JWT_SECRET;
+    console.log(`[auth][DEBUG] JWT secret loaded from env var (length: ${_jwtSecret.length}, first8: ${_jwtSecret.substring(0, 8)})`);
     return _jwtSecret;
   }
 
-  // Try GCP Secret Manager
   try {
     const { SecretManagerServiceClient } = await import("@google-cloud/secret-manager");
     const client = new SecretManagerServiceClient();
@@ -62,13 +51,14 @@ async function getJwtSecret(): Promise<string | null> {
     const payload = version.payload?.data;
     if (payload) {
       _jwtSecret = typeof payload === "string" ? payload : Buffer.from(payload).toString("utf8");
+      console.log(`[auth][DEBUG] JWT secret loaded from Secret Manager (length: ${_jwtSecret.length}, first8: ${_jwtSecret.substring(0, 8)})`);
       return _jwtSecret;
     }
   } catch (err) {
-    // Secret Manager not available — fall through
     console.warn("[auth] Failed to load JWT secret from Secret Manager:", (err as Error).message);
   }
 
+  console.error("[auth][DEBUG] NO JWT SECRET AVAILABLE");
   return null;
 }
 
@@ -76,27 +66,60 @@ async function getJwtSecret(): Promise<string | null> {
 
 function verifyJwt(token: string, secret: string): McpTokenClaims | null {
   const parts = token.split(".");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) {
+    console.log(`[auth][DEBUG] JWT rejected: expected 3 parts, got ${parts.length}`);
+    return null;
+  }
 
   const [headerB64, payloadB64, signatureB64] = parts;
+
+  // DEBUG: decode and log the header
+  try {
+    const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8"));
+    console.log(`[auth][DEBUG] JWT header: ${JSON.stringify(header)}`);
+  } catch {
+    console.log(`[auth][DEBUG] JWT header decode failed`);
+  }
+
+  // DEBUG: decode and log the payload (redact sensitive fields)
+  try {
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    console.log(`[auth][DEBUG] JWT payload: sub=${payload.sub?.substring(0, 16)}..., platform=${payload.platform}, scope=${payload.scope}, exp=${payload.exp}, iat=${payload.iat}, profile_id=${payload.profile_id?.substring(0, 8)}...`);
+  } catch {
+    console.log(`[auth][DEBUG] JWT payload decode failed`);
+  }
+
   const expectedSig = crypto
     .createHmac("sha256", secret)
     .update(`${headerB64}.${payloadB64}`, "utf8")
     .digest("base64url");
 
-  // Constant-time comparison
-  if (expectedSig.length !== signatureB64.length) return null;
+  console.log(`[auth][DEBUG] Signature comparison: expected=${expectedSig.substring(0, 16)}... actual=${signatureB64.substring(0, 16)}... lengths: expected=${expectedSig.length} actual=${signatureB64.length}`);
+
+  if (expectedSig.length !== signatureB64.length) {
+    console.log(`[auth][DEBUG] JWT rejected: signature length mismatch`);
+    return null;
+  }
+
   const sigMatch = crypto.timingSafeEqual(
     Buffer.from(expectedSig, "utf8"),
     Buffer.from(signatureB64, "utf8"),
   );
-  if (!sigMatch) return null;
+  if (!sigMatch) {
+    console.log(`[auth][DEBUG] JWT rejected: signature mismatch (secrets don't match between OAuth CF and MCP server)`);
+    return null;
+  }
 
   try {
     const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
-    if (!payload.sub || !payload.exp || !payload.iat) return null;
+    if (!payload.sub || !payload.exp || !payload.iat) {
+      console.log(`[auth][DEBUG] JWT rejected: missing required claims (sub=${!!payload.sub}, exp=${!!payload.exp}, iat=${!!payload.iat})`);
+      return null;
+    }
+    console.log(`[auth][DEBUG] JWT VERIFIED SUCCESSFULLY for ${payload.sub?.substring(0, 16)}...`);
     return payload as McpTokenClaims;
   } catch {
+    console.log(`[auth][DEBUG] JWT rejected: payload parse error`);
     return null;
   }
 }
@@ -109,10 +132,12 @@ async function isTokenRevoked(token: string): Promise<boolean> {
     const tokenDoc = await db.collection("mcp_tokens").doc(tokenHash).get();
     if (tokenDoc.exists) {
       const data = tokenDoc.data();
+      console.log(`[auth][DEBUG] Token revocation check: hash=${tokenHash.substring(0, 16)}..., revoked=${data?.revoked}`);
       if (data?.revoked === true) return true;
+    } else {
+      console.log(`[auth][DEBUG] Token not in revocation store (hash=${tokenHash.substring(0, 16)}...) — treating as valid`);
     }
   } catch (err) {
-    // Fail open on Firestore errors to avoid blocking legitimate requests
     console.error("[auth] Firestore revocation check failed:", err);
   }
   return false;
@@ -120,11 +145,6 @@ async function isTokenRevoked(token: string): Promise<boolean> {
 
 // ─── Dual-strategy middleware ─────────────────────────────────────────────────
 
-/**
- * Dual-auth middleware: tries OAuth JWT first, falls back to static bearer token.
- *
- * On success, sets `req.mcpAuth` (for OAuth) or `req.isAdminAuth` (for static token).
- */
 export async function verifyBearerToken(
   req: McpAuthenticatedRequest,
   res: Response,
@@ -132,62 +152,77 @@ export async function verifyBearerToken(
 ): Promise<void> {
   const resourceMetadataUrl = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/.well-known/oauth-protected-resource";
 
+  // DEBUG: log ALL request details
+  console.log(`[auth][DEBUG] ══════════════════════════════════════════`);
+  console.log(`[auth][DEBUG] ${req.method} ${req.path}`);
+  console.log(`[auth][DEBUG] Headers: ${JSON.stringify({
+    authorization: req.headers.authorization ? `${req.headers.authorization.substring(0, 30)}...` : "MISSING",
+    "content-type": req.headers["content-type"],
+    accept: req.headers.accept,
+    origin: req.headers.origin,
+    "user-agent": req.headers["user-agent"]?.substring(0, 60),
+  })}`);
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log(`[auth][DEBUG] REJECTED: No Bearer token. Auth header: "${authHeader || "NONE"}"`);
     res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
     res.status(401).json({ error: "missing_token", error_description: "Bearer token required" });
     return;
   }
 
   const token = authHeader.slice(7);
+  console.log(`[auth][DEBUG] Token received (length: ${token.length}, first20: ${token.substring(0, 20)}..., last10: ...${token.substring(token.length - 10)})`);
 
   // Strategy 1: Try OAuth JWT
   const jwtSecret = await getJwtSecret();
   if (jwtSecret) {
+    console.log(`[auth][DEBUG] Attempting JWT verification with secret (first8: ${jwtSecret.substring(0, 8)})`);
     const claims = verifyJwt(token, jwtSecret);
     if (claims) {
-      // Check expiry
       const nowSeconds = Math.floor(Date.now() / 1000);
       if (claims.exp <= nowSeconds) {
+        console.log(`[auth][DEBUG] REJECTED: Token expired. exp=${claims.exp}, now=${nowSeconds}, diff=${nowSeconds - claims.exp}s ago`);
         res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has expired" });
         return;
       }
 
-      // Check revocation
       if (await isTokenRevoked(token)) {
+        console.log(`[auth][DEBUG] REJECTED: Token revoked`);
         res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has been revoked" });
         return;
       }
 
+      console.log(`[auth][DEBUG] ✅ AUTH SUCCESS (OAuth JWT) — platform=${claims.platform}, sub=${claims.sub?.substring(0, 16)}`);
       req.mcpAuth = claims;
       req.isAdminAuth = false;
       next();
       return;
     }
+    console.log(`[auth][DEBUG] JWT verification failed — trying admin token fallback`);
+  } else {
+    console.log(`[auth][DEBUG] No JWT secret available — skipping JWT verification`);
   }
 
-  // Strategy 2: Fall back to static bearer token (admin tools)
+  // Strategy 2: Fall back to static bearer token
   const expectedToken = process.env.MCP_BEARER_TOKEN;
   if (expectedToken && token === expectedToken) {
+    console.log(`[auth][DEBUG] ✅ AUTH SUCCESS (admin bearer token)`);
     req.isAdminAuth = true;
     next();
     return;
   }
 
-  // Both strategies failed
+  console.log(`[auth][DEBUG] ❌ ALL AUTH STRATEGIES FAILED`);
+  console.log(`[auth][DEBUG] Token is not a valid JWT and does not match admin bearer token`);
   res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
   res.status(401).json({ error: "invalid_token", error_description: "Token verification failed" });
 }
 
 // ─── Scope enforcement ────────────────────────────────────────────────────────
 
-/**
- * Higher-order middleware that requires a specific OAuth scope.
- * Must be used AFTER verifyBearerToken. Admin-authed requests are rejected
- * since admin tokens don't carry scopes — use separate admin routes.
- */
 export function requireScope(scope: string) {
   return (req: McpAuthenticatedRequest, res: Response, next: NextFunction): void => {
     if (!req.mcpAuth) {
@@ -211,10 +246,6 @@ export function requireScope(scope: string) {
   };
 }
 
-/**
- * Check if a scope string contains the required scope.
- * Used by MCP tool handlers to validate scope before processing.
- */
 export function hasScope(scopeString: string, requiredScope: string): boolean {
   return scopeString.split(/\s+/).includes(requiredScope);
 }
