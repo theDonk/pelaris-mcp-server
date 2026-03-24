@@ -22,6 +22,15 @@ import { registerSearchEngineResources } from "./tools/user/search_engine_resour
 import { registerGetCoachInsight } from "./tools/user/get_coach_insight.js";
 import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.js";
 
+// User write tools (OAuth-scoped — PEL-69)
+import { registerGenerateWeeklyPlan } from "./tools/user/generate_weekly_plan.js";
+import { registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
+import { registerLogWorkout } from "./tools/user/log_workout.js";
+import { registerSwapExercise } from "./tools/user/swap_exercise.js";
+import { registerUpdateUserProfile } from "./tools/user/update_user_profile.js";
+import { registerAddInjury } from "./tools/user/add_injury.js";
+import { registerLogCoachFeedback } from "./tools/user/log_coach_feedback.js";
+
 // Resources
 import { registerCoachPersonalityResource } from "./resources/coach_personality.js";
 import { registerMethodologiesResource } from "./resources/methodologies.js";
@@ -38,7 +47,7 @@ app.use(express.json());
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.1.0" });
+  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.2.0" });
 });
 
 // MCP endpoint — stateless mode (fresh server per request)
@@ -50,7 +59,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
 
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
-      version: "1.1.0",
+      version: "1.2.0",
     });
 
     // ─── Admin tools (existing) ─────────────────────────────────
@@ -68,6 +77,15 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerSearchEngineResources(server);
     registerGetCoachInsight(server);
     registerGetOnboardingStatus(server);
+
+    // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
+    registerGenerateWeeklyPlan(server);
+    registerModifyTrainingSession(server);
+    registerLogWorkout(server);
+    registerSwapExercise(server);
+    registerUpdateUserProfile(server);
+    registerAddInjury(server);
+    registerLogCoachFeedback(server);
 
     // ─── Resources ──────────────────────────────────────────────
     registerCoachPersonalityResource(server);

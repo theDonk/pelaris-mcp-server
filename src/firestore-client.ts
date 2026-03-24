@@ -25,6 +25,7 @@ const ALLOWED_COLLECTIONS = new Set([
   "engine_resources",
   "methodologies",
   "mcp_tokens",
+  "mcp_feedback",
 ]);
 
 export function assertAllowedCollection(collection: string): void {

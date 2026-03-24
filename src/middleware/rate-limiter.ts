@@ -2,7 +2,9 @@
  * Per-user rate limiting middleware.
  *
  * Uses an in-memory Map with TTL — no external dependencies.
- * Limits: 60 reads per hour per user (identified by pseudonym or IP).
+ * Limits:
+ *   - 60 reads per hour per user (identified by pseudonym or IP)
+ *   - 10 writes per hour per user (separate bucket)
  */
 
 import type { Response, NextFunction } from "express";
@@ -14,17 +16,21 @@ interface RateLimitEntry {
 }
 
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MAX_REQUESTS = 60;
+const MAX_READ_REQUESTS = 60;
+const MAX_WRITE_REQUESTS = 10;
 
-// In-memory store keyed by user identifier
-const limiterStore = new Map<string, RateLimitEntry>();
+// In-memory stores keyed by user identifier
+const readLimiterStore = new Map<string, RateLimitEntry>();
+const writeLimiterStore = new Map<string, RateLimitEntry>();
 
 // Periodic cleanup of expired entries (every 5 minutes)
 setInterval(() => {
   const now = Date.now();
-  for (const [key, entry] of limiterStore) {
-    if (now - entry.windowStart > WINDOW_MS) {
-      limiterStore.delete(key);
+  for (const store of [readLimiterStore, writeLimiterStore]) {
+    for (const [key, entry] of store) {
+      if (now - entry.windowStart > WINDOW_MS) {
+        store.delete(key);
+      }
     }
   }
 }, 5 * 60 * 1000).unref();
@@ -41,7 +47,34 @@ function getUserKey(req: McpAuthenticatedRequest): string {
 }
 
 /**
- * Rate limiting middleware.
+ * Check and increment a rate limit bucket.
+ * Returns null if within limit, or an error object if exceeded.
+ */
+function checkLimit(
+  store: Map<string, RateLimitEntry>,
+  key: string,
+  maxRequests: number,
+  now: number,
+): { retryAfterSeconds: number; maxRequests: number } | null {
+  const entry = store.get(key);
+
+  if (!entry || now - entry.windowStart > WINDOW_MS) {
+    // New window
+    store.set(key, { count: 1, windowStart: now });
+    return null;
+  }
+
+  if (entry.count >= maxRequests) {
+    const retryAfterSeconds = Math.ceil((entry.windowStart + WINDOW_MS - now) / 1000);
+    return { retryAfterSeconds, maxRequests };
+  }
+
+  entry.count++;
+  return null;
+}
+
+/**
+ * Rate limiting middleware for read operations (default).
  * Returns 429 with Retry-After header when limit exceeded.
  */
 export function rateLimiter(
@@ -57,25 +90,30 @@ export function rateLimiter(
 
   const key = getUserKey(req);
   const now = Date.now();
-  const entry = limiterStore.get(key);
+  const exceeded = checkLimit(readLimiterStore, key, MAX_READ_REQUESTS, now);
 
-  if (!entry || now - entry.windowStart > WINDOW_MS) {
-    // New window
-    limiterStore.set(key, { count: 1, windowStart: now });
-    next();
-    return;
-  }
-
-  if (entry.count >= MAX_REQUESTS) {
-    const retryAfterSeconds = Math.ceil((entry.windowStart + WINDOW_MS - now) / 1000);
-    res.set("Retry-After", String(retryAfterSeconds));
+  if (exceeded) {
+    res.set("Retry-After", String(exceeded.retryAfterSeconds));
     res.status(429).json({
       error: "rate_limit_exceeded",
-      error_description: `Rate limit of ${MAX_REQUESTS} requests per hour exceeded. Retry after ${retryAfterSeconds} seconds.`,
+      error_description: `Rate limit of ${exceeded.maxRequests} requests per hour exceeded. Retry after ${exceeded.retryAfterSeconds} seconds.`,
     });
     return;
   }
 
-  entry.count++;
   next();
+}
+
+/**
+ * Check and increment the write rate limit for a user.
+ * Called by write tool handlers (not middleware — tools self-enforce).
+ * Returns null if within limit, or an error message string if exceeded.
+ */
+export function checkWriteRateLimit(userKey: string): string | null {
+  const now = Date.now();
+  const exceeded = checkLimit(writeLimiterStore, `write:${userKey}`, MAX_WRITE_REQUESTS, now);
+  if (exceeded) {
+    return `Write rate limit of ${MAX_WRITE_REQUESTS} writes per hour exceeded. Retry after ${exceeded.retryAfterSeconds} seconds.`;
+  }
+  return null;
 }
