@@ -55,7 +55,7 @@ app.use(express.json());
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "2.0.0" });
+  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "2.1.0" });
 });
 
 // Favicon — serve Pelaris logo
@@ -216,7 +216,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
 
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
-      version: "2.0.0",
+      version: "2.1.0",
     });
 
     // ─── Admin tools (only for admin-authed requests) ───────────
