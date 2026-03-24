@@ -50,9 +50,12 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "1.3.0" });
 });
 
-// Favicon (prevent 404 noise in logs)
+// Favicon — serve Pelaris logo
+import path from "path";
 app.get("/favicon.ico", (_req, res) => {
-  res.status(204).end();
+  res.sendFile(path.join(process.cwd(), "public", "favicon.png"), {
+    headers: { "Content-Type": "image/png" },
+  });
 });
 
 // ── OAuth proxy endpoints ────────────────────────────────────────────────────
