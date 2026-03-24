@@ -55,6 +55,96 @@ app.get("/favicon.ico", (_req, res) => {
   res.status(204).end();
 });
 
+// ── OAuth proxy endpoints ────────────────────────────────────────────────────
+// Per MCP spec (2025-03-26), clients derive the authorization base URL by
+// stripping the path from the MCP server URL and use default paths (/register,
+// /authorize, /token) when metadata discovery fails or is ignored.
+// Claude uses these defaults, so we proxy them to the actual OAuth CF.
+const OAUTH_CF_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
+
+// POST /register → proxy to OAuth CF dynamic client registration
+app.post("/register", async (req, res) => {
+  try {
+    const upstream = await fetch(`${OAUTH_CF_BASE}/oauth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    console.error("[oauth-proxy] /register failed:", err);
+    res.status(502).json({ error: "proxy_error", error_description: "Failed to reach authorization server" });
+  }
+});
+
+// GET /authorize → redirect to OAuth CF authorization endpoint
+app.get("/authorize", (req, res) => {
+  const qs = new URLSearchParams(req.query as Record<string, string>).toString();
+  res.redirect(302, `${OAUTH_CF_BASE}/oauth/authorize?${qs}`);
+});
+
+// POST /token → proxy to OAuth CF token endpoint
+// OAuth spec requires application/x-www-form-urlencoded for token requests
+app.post("/token", express.urlencoded({ extended: true }), async (req, res) => {
+  try {
+    const contentType = req.headers["content-type"] || "";
+    let upstream: Response;
+
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      // Forward as form-encoded (per OAuth spec)
+      const formBody = new URLSearchParams(req.body as Record<string, string>).toString();
+      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formBody,
+      });
+    } else {
+      // Forward as JSON (fallback)
+      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+    }
+
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    console.error("[oauth-proxy] /token failed:", err);
+    res.status(502).json({ error: "proxy_error", error_description: "Failed to reach authorization server" });
+  }
+});
+
+// POST /revoke → proxy to OAuth CF revocation endpoint
+app.post("/revoke", express.urlencoded({ extended: true }), async (req, res) => {
+  try {
+    const contentType = req.headers["content-type"] || "";
+    let upstream: Response;
+
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      const formBody = new URLSearchParams(req.body as Record<string, string>).toString();
+      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formBody,
+      });
+    } else {
+      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+    }
+
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    console.error("[oauth-proxy] /revoke failed:", err);
+    res.status(502).json({ error: "proxy_error", error_description: "Failed to reach authorization server" });
+  }
+});
+
 // OAuth 2.0 Authorization Server Metadata (RFC 8414)
 const OAUTH_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
 const MCP_SERVER_URL = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app";
