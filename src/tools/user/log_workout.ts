@@ -34,6 +34,14 @@ export function registerLogWorkout(server: McpServer): void {
         .max(200)
         .optional()
         .describe("Existing diary session ID to update (if logging against a planned session)"),
+      plannedSessionId: z
+        .string()
+        .optional()
+        .describe("ID of a planned session to mark as completed. Found in training context."),
+      completedAsPrescribed: z
+        .boolean()
+        .optional()
+        .describe("If true, copies target values (sets/reps/weight) to actuals."),
       sport: z
         .enum(VALID_SPORTS)
         .describe("Sport/activity type"),
@@ -172,7 +180,106 @@ export function registerLogWorkout(server: McpServer): void {
           });
         }
 
-        // Build diary entry
+        // Resolve which session ID to use (plannedSessionId takes priority over sessionId)
+        const resolvedPlannedId = params.plannedSessionId || params.sessionId;
+
+        // --- Planned session completion path ---
+        if (resolvedPlannedId) {
+          const plannedRef = diaryCol.doc(resolvedPlannedId);
+          const plannedSnap = await plannedRef.get();
+          if (!plannedSnap.exists) {
+            return {
+              content: [{ type: "text" as const, text: `Error: Planned session "${resolvedPlannedId}" not found in diary.` }],
+              isError: true,
+            };
+          }
+
+          const timestamp = new Date().toISOString();
+          const updateData: Record<string, unknown> = {
+            status: "completed",
+            is_completed: true,
+            completed_at: timestamp,
+            source: "mcp",
+            updated_at: timestamp,
+          };
+
+          if (params.rpe != null) {
+            updateData["feedback.rpe"] = params.rpe;
+          }
+          if (params.feelings && params.feelings.length > 0) {
+            updateData["feedback.tags"] = params.feelings;
+          }
+          if (params.notes != null) {
+            updateData["feedback.note"] = params.notes;
+          }
+          if (params.duration != null) {
+            updateData.duration_minutes = params.duration;
+          }
+
+          // If completedAsPrescribed, copy target values to actuals in blocks
+          let updatedBlocks: unknown[] | undefined;
+          if (params.completedAsPrescribed) {
+            const existingData = plannedSnap.data();
+            const existingBlocks = existingData?.blocks as Array<Record<string, unknown>> | undefined;
+            if (existingBlocks && existingBlocks.length > 0) {
+              updatedBlocks = existingBlocks.map((block) => {
+                const exercises = block.exercises as Array<Record<string, unknown>> | undefined;
+                if (!exercises) return block;
+                return {
+                  ...block,
+                  exercises: exercises.map((exercise) => {
+                    const sets = exercise.sets as Array<Record<string, unknown>> | undefined;
+                    if (!sets) return exercise;
+                    return {
+                      ...exercise,
+                      sets: sets.map((set) => ({
+                        ...set,
+                        isCompleted: true,
+                        ...(set.target_weight_kg != null && { actual_weight_kg: set.target_weight_kg }),
+                        ...(set.target_reps != null && { actual_reps: set.target_reps }),
+                        ...(set.target_distance_meters != null && { actual_distance_meters: set.target_distance_meters }),
+                        ...(set.target_duration_sec != null && { actual_duration_sec: set.target_duration_sec }),
+                      })),
+                    };
+                  }),
+                };
+              });
+              updateData.blocks = updatedBlocks;
+            }
+          }
+
+          // If MCP-provided exercises, build blocks and overwrite
+          if (!params.completedAsPrescribed && blocks.length > 0) {
+            updateData.blocks = blocks;
+          }
+
+          await plannedRef.update(updateData);
+
+          const result = scrubDocument({
+            sessionId: resolvedPlannedId,
+            status: "completed_planned",
+            date: workoutDate,
+            sport: params.sport,
+            duration: params.duration,
+            rpe: params.rpe,
+            completedAsPrescribed: params.completedAsPrescribed || false,
+            message: `Planned session "${resolvedPlannedId}" marked as completed on ${workoutDate}.`,
+          });
+
+          logToolCall({
+            requestId,
+            tool: "log_workout",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: true,
+          });
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        // --- New diary entry path (no planned session) ---
         const timestamp = new Date().toISOString();
         const diaryEntry: Record<string, unknown> = {
           title: `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`,
@@ -195,25 +302,8 @@ export function registerLogWorkout(server: McpServer): void {
           mcp_logged_at: timestamp,
         };
 
-        let sessionId: string;
-
-        if (params.sessionId) {
-          // Update existing planned session
-          const existingRef = diaryCol.doc(params.sessionId);
-          const existingDoc = await existingRef.get();
-          if (!existingDoc.exists) {
-            return {
-              content: [{ type: "text" as const, text: `Session "${params.sessionId}" not found` }],
-              isError: true,
-            };
-          }
-          await existingRef.update(diaryEntry);
-          sessionId = params.sessionId;
-        } else {
-          // Create new diary entry
-          const docRef = await diaryCol.add(diaryEntry);
-          sessionId = docRef.id;
-        }
+        const docRef = await diaryCol.add(diaryEntry);
+        const sessionId = docRef.id;
 
         const result = scrubDocument({
           sessionId,
@@ -224,7 +314,7 @@ export function registerLogWorkout(server: McpServer): void {
           rpe: params.rpe,
           exerciseCount: params.exercises?.length || 0,
           dataQuality: diaryEntry.data_quality,
-          message: `Workout logged successfully: ${params.sport} session on ${workoutDate}`,
+          message: `New workout logged: ${params.sport} session on ${workoutDate}.`,
         });
 
         logToolCall({
