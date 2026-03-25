@@ -74,15 +74,68 @@ app.get("/favicon.ico", (_req, res) => {
 // Claude uses these defaults, so we proxy them to the actual OAuth CF.
 const OAUTH_CF_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
 
-// POST /register — DISABLED per Gemini recommendation.
-// Claude ignores the pre-registered client ID and dynamically registers,
-// then gets stuck in a loop. Returning 405 forces Claude to use the
-// pelaris-claude client ID specified in advanced settings.
-app.post("/register", (_req, res) => {
-  res.status(405).json({
-    error: "registration_not_supported",
-    error_description: "This server uses pre-registered clients. Configure the OAuth Client ID in your connector settings.",
-  });
+// POST /register — Dynamic Client Registration (DCR) for third-party apps.
+// Pre-registered clients (pelaris-claude, pelaris-chatgpt) bypass this.
+// DCR is idempotent: same redirect_uris returns the same client_id.
+app.post("/register", async (req, res) => {
+  try {
+    const { redirect_uris, client_name } = req.body || {};
+
+    if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+      res.status(400).json({ error: "invalid_request", error_description: "redirect_uris required" });
+      return;
+    }
+
+    // Idempotency: hash redirect_uris to create a deterministic client_id
+    const crypto = await import("crypto");
+    const uriHash = crypto.createHash("sha256")
+      .update(redirect_uris.sort().join("|"))
+      .digest("hex")
+      .slice(0, 32);
+    const clientId = `dyn-${uriHash}`;
+
+    // Check if this client already exists in Firestore
+    const admin = await import("firebase-admin");
+    const dbRef = admin.firestore().collection("mcp_clients").doc(clientId);
+    const existing = await dbRef.get();
+
+    if (existing.exists) {
+      // Return existing client — idempotent
+      const data = existing.data()!;
+      res.status(200).json({
+        client_id: clientId,
+        client_name: data.client_name || client_name || "MCP Client",
+        redirect_uris: data.redirect_uris,
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      });
+      return;
+    }
+
+    // Create new dynamic client
+    await dbRef.set({
+      client_name: client_name || "MCP Client",
+      redirect_uris,
+      platform: "direct",
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+      created_at: new Date().toISOString(),
+    });
+
+    res.status(201).json({
+      client_id: clientId,
+      client_name: client_name || "MCP Client",
+      redirect_uris,
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+    });
+  } catch (err) {
+    console.error("[register] DCR failed:", err);
+    res.status(500).json({ error: "server_error", error_description: "Registration failed" });
+  }
 });
 
 // GET /authorize → redirect to OAuth CF authorization endpoint
@@ -166,6 +219,7 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     issuer: MCP_SERVER_URL,
     authorization_endpoint: `${MCP_SERVER_URL}/authorize`,
     token_endpoint: `${MCP_SERVER_URL}/token`,
+    registration_endpoint: `${MCP_SERVER_URL}/register`,
     revocation_endpoint: `${MCP_SERVER_URL}/revoke`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
