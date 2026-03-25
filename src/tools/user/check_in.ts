@@ -22,7 +22,7 @@ const VALID_MOODS = [
 
 export function registerCheckIn(server: McpServer): void {
   server.tool(
-    "Daily Check-In",
+    "daily_check_in",
     "Log how you're feeling today — readiness, soreness, sleep, and mood. Your coach uses this to adapt upcoming sessions.",
     {
       readiness: z

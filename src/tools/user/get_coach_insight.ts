@@ -15,7 +15,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetCoachInsight(server: McpServer): void {
   server.tool(
-    "Get Coach Insight",
+    "get_coach_insight",
     "Get personalised coaching observations based on your recent training — consistency, fatigue, goal progress, and areas to focus on.",
     {},
     { readOnlyHint: true },

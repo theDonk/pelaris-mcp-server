@@ -16,7 +16,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetTrainingContext(server: McpServer): void {
   server.tool(
-    "Get Training Overview",
+    "get_training_overview",
     "View your complete training snapshot — active programs, recent sessions, check-in data, goals, and progress at a glance.",
     {},
     { readOnlyHint: true },

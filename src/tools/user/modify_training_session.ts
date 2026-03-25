@@ -17,7 +17,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerModifyTrainingSession(server: McpServer): void {
   server.tool(
-    "Modify Training Session",
+    "modify_training_session",
     "Adjust a planned session — reduce volume, change intensity, swap exercises, or reschedule to a different date.",
     {
       sessionId: z

@@ -14,7 +14,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetBodyAnalysis(server: McpServer): void {
   server.tool(
-    "Get Body Analysis",
+    "get_body_analysis",
     "View your latest body composition data — measurements, ratios, archetype, and changes since your last analysis.",
     {},
     { readOnlyHint: true },

@@ -14,7 +14,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetActiveProgram(server: McpServer): void {
   server.tool(
-    "Get Active Program",
+    "get_active_program",
     "View your current training programs with progress, phase, weekly structure, and session details.",
     {},
     { readOnlyHint: true },

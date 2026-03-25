@@ -14,7 +14,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetOnboardingStatus(server: McpServer): void {
   server.tool(
-    "Get Onboarding Status",
+    "get_onboarding_status",
     "Check your account setup progress — intake completion, sport selection, program creation, and device connections.",
     {},
     { readOnlyHint: true },

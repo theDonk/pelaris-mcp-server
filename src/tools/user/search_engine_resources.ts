@@ -16,7 +16,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerSearchEngineResources(server: McpServer): void {
   server.tool(
-    "Search Training Resources",
+    "search_training_resources",
     "Search the curated library of coaching articles, videos, and guides. Find resources by topic, sport, or training goal.",
     {
       query: z.string().describe("Search query — topic, sport, goal, or keyword (e.g., 'swimming technique', 'recovery', 'strength periodization')"),
