@@ -35,7 +35,7 @@ export function registerManageGoals(server: McpServer): void {
         .optional()
         .describe("Goal description (required for create)"),
       targetValue: z
-        .union([z.number(), z.string()])
+        .string()
         .optional()
         .describe("Numeric target value (e.g., 100 for 100kg squat goal)"),
       targetDate: z
