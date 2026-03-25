@@ -304,6 +304,8 @@ export function registerLogWorkout(server: McpServer): void {
 
         const docRef = await diaryCol.add(diaryEntry);
         const sessionId = docRef.id;
+        // Write the document ID as a field so the Flutter app can reference it
+        await docRef.update({ id: sessionId });
 
         const result = scrubDocument({
           sessionId,
