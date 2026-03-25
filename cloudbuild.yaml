@@ -1,0 +1,5 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '--no-cache', '-t', 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/pelaris-mcp-server:v210', '.']
+images:
+  - 'australia-southeast1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/pelaris-mcp-server:v210'
