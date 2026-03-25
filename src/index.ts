@@ -74,20 +74,15 @@ app.get("/favicon.ico", (_req, res) => {
 // Claude uses these defaults, so we proxy them to the actual OAuth CF.
 const OAUTH_CF_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
 
-// POST /register → proxy to OAuth CF dynamic client registration
-app.post("/register", async (req, res) => {
-  try {
-    const upstream = await fetch(`${OAUTH_CF_BASE}/oauth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body),
-    });
-    const data = await upstream.json();
-    res.status(upstream.status).json(data);
-  } catch (err) {
-    console.error("[oauth-proxy] /register failed:", err);
-    res.status(502).json({ error: "proxy_error", error_description: "Failed to reach authorization server" });
-  }
+// POST /register — DISABLED per Gemini recommendation.
+// Claude ignores the pre-registered client ID and dynamically registers,
+// then gets stuck in a loop. Returning 405 forces Claude to use the
+// pelaris-claude client ID specified in advanced settings.
+app.post("/register", (_req, res) => {
+  res.status(405).json({
+    error: "registration_not_supported",
+    error_description: "This server uses pre-registered clients. Configure the OAuth Client ID in your connector settings.",
+  });
 });
 
 // GET /authorize → redirect to OAuth CF authorization endpoint
@@ -166,7 +161,6 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     issuer: OAUTH_BASE,
     authorization_endpoint: `${OAUTH_BASE}/oauth/authorize`,
     token_endpoint: `${OAUTH_BASE}/oauth/token`,
-    registration_endpoint: `${OAUTH_BASE}/oauth/register`,
     revocation_endpoint: `${OAUTH_BASE}/oauth/revoke`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
