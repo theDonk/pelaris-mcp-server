@@ -21,8 +21,8 @@ const VALID_DIRECTIONS = ["decrease", "increase", "maintain"] as const;
 
 export function registerManageGoals(server: McpServer): void {
   server.tool(
-    "manage_goals",
-    "Create, update, complete, or list user goals. Supports race/event goals with event details. Use action 'create' to add a new goal, 'update' to modify, 'complete' to mark done, or 'list' to see all goals.",
+    "Manage Goals",
+    "Create, update, complete, or list your training goals. Supports race events, body composition targets, and performance milestones.",
     {
       action: z
         .enum(VALID_ACTIONS)

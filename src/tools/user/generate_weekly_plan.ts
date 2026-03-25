@@ -26,8 +26,8 @@ function getAuth(): GoogleAuth {
 
 export function registerGenerateWeeklyPlan(server: McpServer): void {
   server.tool(
-    "generate_weekly_plan",
-    "Generate a new weekly training plan for the authenticated user. Calls the 3-stage generation pipeline (strategy → overviews → sessions). Returns generated session summaries with IDs.",
+    "Generate Weekly Plan",
+    "Generate a new weekly training plan tailored to your program, goals, and readiness. Sessions appear in your calendar once ready.",
     {
       focus: z
         .string()

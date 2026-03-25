@@ -22,8 +22,8 @@ const VALID_MOODS = [
 
 export function registerCheckIn(server: McpServer): void {
   server.tool(
-    "check_in",
-    "Record a daily readiness check-in. Captures readiness level (1-10), optional soreness, sleep quality, mood, and notes. Returns a summary and coaching note if readiness is low.",
+    "Daily Check-In",
+    "Log how you're feeling today — readiness, soreness, sleep, and mood. Your coach uses this to adapt upcoming sessions.",
     {
       readiness: z
         .number()

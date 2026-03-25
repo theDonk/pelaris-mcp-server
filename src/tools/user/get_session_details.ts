@@ -15,11 +15,12 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetSessionDetails(server: McpServer): void {
   server.tool(
-    "get_session_details",
-    "Get detailed workout session data by session ID. Returns exercises with sets/reps/weight, completion status, RPE, and feedback.",
+    "Get Session Details",
+    "View the full details of a workout session — exercises, sets, reps, weights, completion status, and feedback.",
     {
       sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
     },
+    { readOnlyHint: true },
     async ({ sessionId }) => {
       const requestId = generateRequestId();
       const start = Date.now();

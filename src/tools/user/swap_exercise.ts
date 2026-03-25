@@ -137,8 +137,8 @@ function findAlternatives(
 
 export function registerSwapExercise(server: McpServer): void {
   server.tool(
-    "swap_exercise",
-    "Find alternatives for an exercise. Returns 3 suggestions with rationale. If sessionId is provided, can verify the exercise exists and optionally auto-apply the swap.",
+    "Swap Exercise",
+    "Find alternative exercises with rationale, or swap an exercise in a planned session. Returns 3 suggestions based on movement pattern.",
     {
       sessionId: z
         .string()

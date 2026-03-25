@@ -14,9 +14,10 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetOnboardingStatus(server: McpServer): void {
   server.tool(
-    "get_onboarding_status",
-    "Get the user's onboarding status. Returns whether key setup steps are completed: intake, sport selection, program creation, device connection.",
+    "Get Onboarding Status",
+    "Check your account setup progress — intake completion, sport selection, program creation, and device connections.",
     {},
+    { readOnlyHint: true },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

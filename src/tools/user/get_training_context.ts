@@ -16,9 +16,10 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetTrainingContext(server: McpServer): void {
   server.tool(
-    "get_training_context",
-    "Get a comprehensive training context snapshot for the authenticated user. Includes profile info, active program, recent sessions with RPE/completion, and latest check-in data.",
+    "Get Training Overview",
+    "View your complete training snapshot — active programs, recent sessions, check-in data, goals, and progress at a glance.",
     {},
+    { readOnlyHint: true },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();
