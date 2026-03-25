@@ -120,9 +120,11 @@ export async function verifyBearerToken(
 ): Promise<void> {
   const resourceMetadataUrl = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/.well-known/oauth-protected-resource";
 
+  const mcpRealm = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/mcp";
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
+    res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", resource_metadata="${resourceMetadataUrl}"`);
     res.status(401).json({ error: "missing_token", error_description: "Bearer token required" });
     return;
   }
@@ -136,13 +138,13 @@ export async function verifyBearerToken(
     if (claims) {
       const nowSeconds = Math.floor(Date.now() / 1000);
       if (claims.exp <= nowSeconds) {
-        res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
+        res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="The access token has expired", resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has expired" });
         return;
       }
 
       if (await isTokenRevoked(token)) {
-        res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
+        res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="The access token has been revoked", resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has been revoked" });
         return;
       }
@@ -162,7 +164,7 @@ export async function verifyBearerToken(
     return;
   }
 
-  res.setHeader("WWW-Authenticate", `Bearer resource_metadata="${resourceMetadataUrl}"`);
+  res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="Token verification failed", resource_metadata="${resourceMetadataUrl}"`);
   res.status(401).json({ error: "invalid_token", error_description: "Token verification failed" });
 }
 
