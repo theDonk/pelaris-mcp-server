@@ -49,6 +49,7 @@ import { registerSessionDebriefPrompt } from "./prompts/session_debrief.js";
 import { registerBenchmarkCheckInPrompt } from "./prompts/benchmark_check_in.js";
 
 const PORT = parseInt(process.env.PORT || "8080", 10);
+// v2.1.0 — 21 tools with coach parity
 
 const app = express();
 app.use(express.json());
