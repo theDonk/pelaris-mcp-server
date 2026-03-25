@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
+ARG CACHEBUST=1
 COPY src ./src
 RUN npm run build
 
