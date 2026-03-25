@@ -207,7 +207,7 @@ app.post("/revoke", express.urlencoded({ extended: true }), async (req, res) => 
 
 // OAuth 2.0 Authorization Server Metadata (RFC 8414)
 const OAUTH_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
-const MCP_SERVER_URL = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app";
+const MCP_SERVER_URL = "https://api.pelaris.io";
 
 // RFC 8414 — Authorization Server Metadata
 // CRITICAL: issuer and all endpoints must be on the MCP server domain.

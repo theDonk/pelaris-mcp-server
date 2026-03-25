@@ -1,5 +1,5 @@
 #!/bin/bash
-MCP_URL="https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/mcp"
+MCP_URL="https://api.pelaris.io/mcp"
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItcHNldWRvIiwic2NvcGUiOiJwcm9maWxlOnJlYWQgdHJhaW5pbmc6cmVhZCB0cmFpbmluZzp3cml0ZSBoZWFsdGg6cmVhZCBoZWFsdGg6d3JpdGUgY29hY2g6cmVhZCIsInBsYXRmb3JtIjoiZGlyZWN0IiwicHJvZmlsZV9pZCI6IlBqZjBabzVQbWJtNTIyZzdSeThYIiwiaWF0IjoxNzc0Mzg0OTAwLCJleHAiOjE3NzQ0NzEzMDB9.Uw7IPvD7LhuMuiDqiDHzXaup7YayCUviVJh7abAA0sA"
 RESULTS="/c/tmp/mcp_round2.txt"
 > "$RESULTS"
