@@ -28,8 +28,8 @@ function getMonday(date: Date): Date {
 
 export function registerGetWeeklyDebrief(server: McpServer): void {
   server.tool(
-    "get_weekly_debrief",
-    "Get the weekly training debrief/summary. Returns session completion rate, highlights, areas for improvement, and coach's next-week focus. Defaults to the current week.",
+    "Get Weekly Debrief",
+    "View your weekly training summary — session completion, highlights, areas for improvement, and next week's focus.",
     {
       weekDate: z
         .string()

@@ -28,8 +28,8 @@ const VALID_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "sat
 
 export function registerUpdateUserProfile(server: McpServer): void {
   server.tool(
-    "update_user_profile",
-    "Update the authenticated user's profile settings. Supports equipment list, availability, preferred session duration, and training preferences.",
+    "Update Profile",
+    "Update your training preferences — equipment, available days, session duration, experience level, and more.",
     {
       equipment: z
         .array(z.enum(VALID_EQUIPMENT))

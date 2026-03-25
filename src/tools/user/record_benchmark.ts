@@ -30,8 +30,8 @@ function normalizeBenchmarkId(name: string): string {
 
 export function registerRecordBenchmark(server: McpServer): void {
   server.tool(
-    "record_benchmark",
-    "Record or update a performance benchmark. If the benchmark exists, the previous value is saved to history and the current value is updated. Examples: bench press 1RM 100kg, 5km run 22:30, squat 120kg.",
+    "Record Benchmark",
+    "Record a new personal best or benchmark result. Previous values are saved to history so you can track progress over time.",
     {
       benchmarkName: z
         .string()

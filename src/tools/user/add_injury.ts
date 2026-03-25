@@ -94,8 +94,8 @@ function generateCoachingNote(bodyPart: string, severity: string, side?: string 
 
 export function registerAddInjury(server: McpServer): void {
   server.tool(
-    "add_injury",
-    "Record an injury or pain point. Training will automatically adapt based on severity. Returns a coaching note about how your plan will adjust.",
+    "Record Injury",
+    "Log an injury or pain point so your training plan adapts automatically. Returns a coaching note about how sessions will adjust.",
     {
       bodyPart: z
         .string()

@@ -26,8 +26,8 @@ function generateIdempotencyKey(profileId: string, date: string, sport: string, 
 
 export function registerLogWorkout(server: McpServer): void {
   server.tool(
-    "log_workout",
-    "Log a completed workout session. Creates a diary entry with exercise details, RPE, and feelings. Includes idempotency to prevent duplicate entries.",
+    "Log Workout",
+    "Record a completed workout with exercises, RPE, and how you felt. Duplicate entries are automatically prevented.",
     {
       sessionId: z
         .string()

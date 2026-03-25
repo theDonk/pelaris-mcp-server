@@ -16,13 +16,14 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerSearchEngineResources(server: McpServer): void {
   server.tool(
-    "search_engine_resources",
-    "Search the curated coaching resource library. Returns matching articles, videos, guides, and tools with title, summary, URL, and category. Query by topic, sport, or goal.",
+    "Search Training Resources",
+    "Search the curated library of coaching articles, videos, and guides. Find resources by topic, sport, or training goal.",
     {
       query: z.string().describe("Search query — topic, sport, goal, or keyword (e.g., 'swimming technique', 'recovery', 'strength periodization')"),
       category: z.string().optional().describe("Filter by category: fuel, recover, learn, prepare"),
       sport: z.string().optional().describe("Filter by sport: strength, running, swimming, cycling, triathlon"),
     },
+    { readOnlyHint: true },
     async ({ query, category, sport }) => {
       const requestId = generateRequestId();
       const start = Date.now();

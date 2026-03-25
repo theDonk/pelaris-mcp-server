@@ -14,9 +14,10 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetBenchmarks(server: McpServer): void {
   server.tool(
-    "get_benchmarks",
-    "Get the user's performance benchmarks. Returns benchmark name, current value, previous value, trend direction, and improvement status.",
+    "Get Benchmarks",
+    "View your performance benchmarks — current values, trends, and progress over time.",
     {},
+    { readOnlyHint: true },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

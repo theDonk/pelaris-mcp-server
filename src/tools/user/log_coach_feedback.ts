@@ -25,8 +25,8 @@ const VALID_TOOL_NAMES = [
 
 export function registerLogCoachFeedback(server: McpServer): void {
   server.tool(
-    "log_coach_feedback",
-    "Submit feedback about the AI coaching experience. Helps improve tool quality and coaching accuracy.",
+    "Send Feedback",
+    "Share feedback about the coaching experience to help improve tool quality and accuracy.",
     {
       rating: z
         .number()

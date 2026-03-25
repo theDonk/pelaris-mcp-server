@@ -40,8 +40,8 @@ function shortId(): string {
 
 export function registerCreatePlannedSession(server: McpServer): void {
   server.tool(
-    "create_planned_session",
-    "Create a planned workout session on a specific date. Writes a diary entry with target exercises so it appears in the Pelaris Train tab for the user to track.",
+    "Create Planned Session",
+    "Schedule a future workout session with target exercises. The session will appear in your training calendar ready to track.",
     {
       date: z
         .string()
