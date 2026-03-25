@@ -118,7 +118,7 @@ export async function verifyBearerToken(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const resourceMetadataUrl = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/.well-known/oauth-protected-resource";
+  const resourceMetadataUrl = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/.well-known/oauth-protected-resource/mcp";
 
   const mcpRealm = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/mcp";
 
