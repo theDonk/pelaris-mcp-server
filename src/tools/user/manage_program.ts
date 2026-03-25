@@ -43,7 +43,7 @@ function summarizeProgram(doc: QueryDocumentSnapshot): Record<string, unknown> {
 
 export function registerManageProgram(server: McpServer): void {
   server.tool(
-    "Manage Program",
+    "manage_program",
     "View, archive, or review your training programs. See active programs, program history, or archive a completed program.",
     {
       action: z

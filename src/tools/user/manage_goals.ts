@@ -21,7 +21,7 @@ const VALID_DIRECTIONS = ["decrease", "increase", "maintain"] as const;
 
 export function registerManageGoals(server: McpServer): void {
   server.tool(
-    "Manage Goals",
+    "manage_goals",
     "Create, update, complete, or list your training goals. Supports race events, body composition targets, and performance milestones.",
     {
       action: z

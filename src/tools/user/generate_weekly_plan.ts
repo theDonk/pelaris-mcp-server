@@ -26,7 +26,7 @@ function getAuth(): GoogleAuth {
 
 export function registerGenerateWeeklyPlan(server: McpServer): void {
   server.tool(
-    "Generate Weekly Plan",
+    "generate_weekly_plan",
     "Generate a new weekly training plan tailored to your program, goals, and readiness. Sessions appear in your calendar once ready.",
     {
       focus: z

@@ -28,7 +28,7 @@ function getMonday(date: Date): Date {
 
 export function registerGetWeeklyDebrief(server: McpServer): void {
   server.tool(
-    "Get Weekly Debrief",
+    "get_weekly_debrief",
     "View your weekly training summary — session completion, highlights, areas for improvement, and next week's focus.",
     {
       weekDate: z

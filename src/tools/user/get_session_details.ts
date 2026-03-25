@@ -15,7 +15,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetSessionDetails(server: McpServer): void {
   server.tool(
-    "Get Session Details",
+    "get_session_details",
     "View the full details of a workout session — exercises, sets, reps, weights, completion status, and feedback.",
     {
       sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),

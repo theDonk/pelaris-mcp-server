@@ -40,7 +40,7 @@ function shortId(): string {
 
 export function registerCreatePlannedSession(server: McpServer): void {
   server.tool(
-    "Create Planned Session",
+    "create_planned_session",
     "Schedule a future workout session with target exercises. The session will appear in your training calendar ready to track.",
     {
       date: z

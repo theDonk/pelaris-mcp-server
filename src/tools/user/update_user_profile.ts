@@ -28,7 +28,7 @@ const VALID_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "sat
 
 export function registerUpdateUserProfile(server: McpServer): void {
   server.tool(
-    "Update Profile",
+    "update_profile",
     "Update your training preferences — equipment, available days, session duration, experience level, and more.",
     {
       equipment: z

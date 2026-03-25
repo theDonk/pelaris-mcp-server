@@ -30,7 +30,7 @@ function normalizeBenchmarkId(name: string): string {
 
 export function registerRecordBenchmark(server: McpServer): void {
   server.tool(
-    "Record Benchmark",
+    "record_benchmark",
     "Record a new personal best or benchmark result. Previous values are saved to history so you can track progress over time.",
     {
       benchmarkName: z
