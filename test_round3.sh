@@ -2,7 +2,7 @@
 # Wave 8 Round 3 — Post-all-fixes comprehensive test
 # Uses properly signed JWT token with correct profileId
 
-MCP_URL="https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/mcp"
+MCP_URL="https://api.pelaris.io/mcp"
 
 # Generate fresh JWT token (24hr expiry)
 JWT_SECRET="23d9e5b339c600f98c6ef50e599e6ccc764bb8f5ccda2cf7bdcf92f22ebfc13c"
@@ -202,7 +202,7 @@ echo "$TOOLS" | grep -q "list_pipeline" && echo "WARNING: admin tool list_pipeli
 # ══════════════════════════════════════════════════════════════
 echo ""
 echo "--- VERSION ---"
-curl -s "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/health"
+curl -s "https://api.pelaris.io/health"
 
 # ══════════════════════════════════════════════════════════════
 # SUMMARY

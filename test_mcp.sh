@@ -3,7 +3,7 @@
 # Runs all MCP tool tests and outputs results as JSON
 # Usage: bash test_mcp.sh > test_results.json
 
-MCP_URL="https://pelaris-mcp-server-653063894036.australia-southeast1.run.app/mcp"
+MCP_URL="https://api.pelaris.io/mcp"
 TOKEN="018ec07a17e934e6c173fa8286185c4a"
 RESULTS_FILE="/c/tmp/mcp_test_results.txt"
 
