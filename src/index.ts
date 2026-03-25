@@ -156,12 +156,17 @@ app.post("/revoke", express.urlencoded({ extended: true }), async (req, res) => 
 const OAUTH_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
 const MCP_SERVER_URL = "https://pelaris-mcp-server-653063894036.australia-southeast1.run.app";
 
+// RFC 8414 — Authorization Server Metadata
+// CRITICAL: issuer and all endpoints must be on the MCP server domain.
+// Claude derives the AS metadata URL from the issuer by stripping the path
+// and fetching /.well-known/oauth-authorization-server on that domain.
+// If issuer points to a different domain (like our CF), Claude can't discover it.
 app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   res.json({
-    issuer: OAUTH_BASE,
-    authorization_endpoint: `${OAUTH_BASE}/oauth/authorize`,
-    token_endpoint: `${OAUTH_BASE}/oauth/token`,
-    revocation_endpoint: `${OAUTH_BASE}/oauth/revoke`,
+    issuer: MCP_SERVER_URL,
+    authorization_endpoint: `${MCP_SERVER_URL}/authorize`,
+    token_endpoint: `${MCP_SERVER_URL}/token`,
+    revocation_endpoint: `${MCP_SERVER_URL}/revoke`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
@@ -173,12 +178,12 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   });
 });
 
-// OAuth 2.0 Protected Resource Metadata (RFC 9728)
-// Claude looks for this to discover which auth server protects this MCP server
+// RFC 9728 — Protected Resource Metadata
+// authorization_servers must point to the MCP server (same domain as issuer above)
 app.get("/.well-known/oauth-protected-resource", (_req, res) => {
   res.json({
     resource: MCP_SERVER_URL,
-    authorization_servers: [OAUTH_BASE],
+    authorization_servers: [MCP_SERVER_URL],
     scopes_supported: [
       "profile:read", "training:read", "training:write",
       "health:read", "health:write", "coach:read",
@@ -187,11 +192,11 @@ app.get("/.well-known/oauth-protected-resource", (_req, res) => {
   });
 });
 
-// Also serve at the /mcp sub-path variant (Claude checks both)
+// Path-aware variant (Claude checks both per RFC 9728)
 app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
   res.json({
     resource: `${MCP_SERVER_URL}/mcp`,
-    authorization_servers: [OAUTH_BASE],
+    authorization_servers: [MCP_SERVER_URL],
     scopes_supported: [
       "profile:read", "training:read", "training:write",
       "health:read", "health:write", "coach:read",
