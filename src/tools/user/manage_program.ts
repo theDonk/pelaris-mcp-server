@@ -55,7 +55,7 @@ export function registerManageProgram(server: McpServer): void {
         .optional()
         .describe("Program/queue ID to archive (defaults to the most recent active program)"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

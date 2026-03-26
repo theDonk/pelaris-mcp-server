@@ -20,7 +20,7 @@ export function registerGetSessionDetails(server: McpServer): void {
     {
       sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async ({ sessionId }) => {
       const requestId = generateRequestId();
       const start = Date.now();

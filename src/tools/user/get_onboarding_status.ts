@@ -17,7 +17,7 @@ export function registerGetOnboardingStatus(server: McpServer): void {
     "get_onboarding_status",
     "Check your account setup progress — intake completion, sport selection, program creation, and device connections.",
     {},
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

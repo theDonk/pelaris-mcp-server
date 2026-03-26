@@ -18,7 +18,7 @@ export function registerGetCoachInsight(server: McpServer): void {
     "get_coach_insight",
     "Get personalised coaching observations based on your recent training — consistency, fatigue, goal progress, and areas to focus on.",
     {},
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

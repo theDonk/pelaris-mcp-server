@@ -17,7 +17,7 @@ export function registerGetActiveProgram(server: McpServer): void {
     "get_active_program",
     "View your current training programs with progress, phase, weekly structure, and session details.",
     {},
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

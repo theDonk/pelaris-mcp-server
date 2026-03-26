@@ -89,7 +89,7 @@ export function registerCreatePlannedSession(server: McpServer): void {
         .optional()
         .describe("Array of planned exercises (max 30)"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -19,7 +19,7 @@ export function registerGetTrainingContext(server: McpServer): void {
     "get_training_overview",
     "View your complete training snapshot — active programs, recent sessions, check-in data, goals, and progress at a glance.",
     {},
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

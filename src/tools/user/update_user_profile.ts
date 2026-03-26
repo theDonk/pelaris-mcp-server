@@ -74,7 +74,7 @@ export function registerUpdateUserProfile(server: McpServer): void {
         .optional()
         .describe("Primary training environment"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();
