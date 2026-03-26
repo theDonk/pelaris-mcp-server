@@ -95,8 +95,8 @@ app.post("/register", async (req, res) => {
     const clientId = `dyn-${uriHash}`;
 
     // Check if this client already exists in Firestore
-    const admin = await import("firebase-admin");
-    const dbRef = admin.firestore().collection("mcp_clients").doc(clientId);
+    const { db: firestoreDb } = await import("./firestore-client.js");
+    const dbRef = firestoreDb.collection("mcp_clients").doc(clientId);
     const existing = await dbRef.get();
 
     if (existing.exists) {
