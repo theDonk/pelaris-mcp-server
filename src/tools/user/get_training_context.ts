@@ -94,18 +94,22 @@ export function registerGetTrainingContext(server: McpServer): void {
         });
 
         // Extract profile context (minimal, no PII)
-        // If profile sport is null, infer from the first active program
-        let sport: string | null = profileData.intakeSummary?.primaryGoal || null;
+        // Try multiple field paths for sport (different profile formats exist)
+        let sport: string | null =
+          profileData.sport ||
+          profileData.intakeSummary?.primarySport ||
+          profileData.intakeSummary?.primaryGoal ||
+          null;
         if (!sport && programs.length > 0) {
           sport = programs[0].sport || programs[0].methodologyId?.split("_")[0] || null;
         }
 
         const profileContext = {
           sport,
-          experienceLevel: profileData.training_context?.experience_level || null,
-          equipment: profileData.training_context?.equipment || [],
-          sessionsPerWeek: profileData.preferences?.sessions_per_week || null,
-          preferredUnits: profileData.preferredUnits || "metric",
+          experienceLevel: profileData.training_context?.experience_level || profileData.experience || null,
+          equipment: profileData.training_context?.equipment || profileData.equipment || [],
+          sessionsPerWeek: profileData.preferences?.sessions_per_week || profileData.availability?.days_per_week || null,
+          preferredUnits: profileData.preferredUnits || profileData.preferred_units || "metric",
           hasInjuries: !!profileData.training_context?.injury_history,
         };
 
