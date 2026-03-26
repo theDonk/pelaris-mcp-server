@@ -59,6 +59,11 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "2.1.0" });
 });
 
+// OpenAI domain verification
+app.get("/.well-known/openai-apps-challenge", (_req, res) => {
+  res.type("text/plain").send("zbLSUJf6Kge9PIshQ5An4F-NPfXEad4cmKH7XMdZSAk");
+});
+
 // Favicon — serve Pelaris logo
 import path from "path";
 app.get("/favicon.ico", (_req, res) => {
