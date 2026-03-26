@@ -23,7 +23,7 @@ export function registerSearchEngineResources(server: McpServer): void {
       category: z.string().optional().describe("Filter by category: fuel, recover, learn, prepare"),
       sport: z.string().optional().describe("Filter by sport: strength, running, swimming, cycling, triathlon"),
     },
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async ({ query, category, sport }) => {
       const requestId = generateRequestId();
       const start = Date.now();

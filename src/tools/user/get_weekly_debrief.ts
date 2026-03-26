@@ -37,7 +37,7 @@ export function registerGetWeeklyDebrief(server: McpServer): void {
         .optional()
         .describe("A date within the target week (YYYY-MM-DD). Defaults to the current week."),
     },
-    { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -52,7 +52,7 @@ export function registerRecordBenchmark(server: McpServer): void {
         .optional()
         .describe("Optional notes about this benchmark recording"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

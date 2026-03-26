@@ -98,7 +98,7 @@ export function registerManageGoals(server: McpServer): void {
         .optional()
         .describe("Reflection notes when completing a goal"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

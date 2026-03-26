@@ -17,7 +17,7 @@ export function registerGetBenchmarks(server: McpServer): void {
     "get_benchmarks",
     "View your performance benchmarks — current values, trends, and progress over time.",
     {},
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -17,7 +17,7 @@ export function registerGetBodyAnalysis(server: McpServer): void {
     "get_body_analysis",
     "View your latest body composition data — measurements, ratios, archetype, and changes since your last analysis.",
     {},
-    { readOnlyHint: true },
+    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

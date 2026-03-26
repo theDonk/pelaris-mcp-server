@@ -86,7 +86,7 @@ export function registerLogWorkout(server: McpServer): void {
         .optional()
         .describe("Freeform notes about the session"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

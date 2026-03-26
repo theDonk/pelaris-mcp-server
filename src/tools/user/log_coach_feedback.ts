@@ -48,7 +48,7 @@ export function registerLogCoachFeedback(server: McpServer): void {
         .optional()
         .describe("Optional freeform feedback comment"),
     },
-    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();
