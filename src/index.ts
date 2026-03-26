@@ -77,7 +77,7 @@ app.get("/favicon.ico", (_req, res) => {
 // stripping the path from the MCP server URL and use default paths (/register,
 // /authorize, /token) when metadata discovery fails or is ignored.
 // Claude uses these defaults, so we proxy them to the actual OAuth CF.
-const OAUTH_CF_BASE = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
+const OAUTH_CF_BASE = process.env.OAUTH_CF_BASE || "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
 
 // POST /register — Dynamic Client Registration (DCR) for third-party apps.
 // Pre-registered clients (pelaris-claude, pelaris-chatgpt) bypass this.

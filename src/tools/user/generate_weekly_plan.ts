@@ -15,7 +15,7 @@ import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
-const CF_BASE_URL = "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net";
+const CF_BASE_URL = process.env.CF_BASE_URL || "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net";
 
 // Reuse GoogleAuth instance across calls
 let _auth: GoogleAuth | null = null;
