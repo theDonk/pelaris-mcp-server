@@ -33,8 +33,7 @@ export function registerGetActiveProgram(server: McpServer): void {
 
         const profileId = claims.profile_id;
         const queuesSnap = await profileSubcollection(profileId, "queues")
-          .orderBy("date_created", "desc")
-          .limit(5)
+          .limit(10)
           .get();
 
         if (queuesSnap.empty) {
