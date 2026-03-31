@@ -16,6 +16,7 @@ export interface McpTokenClaims {
   scope: string;
   platform: string;
   profile_id: string;
+  client_id?: string; // PEL-102: added for connected_apps tracking (optional for backward compat)
   exp: number;
   iat: number;
 }
@@ -151,6 +152,11 @@ export async function verifyBearerToken(
 
       req.mcpAuth = claims;
       req.isAdminAuth = false;
+
+      // PEL-102: Fire-and-forget last_used_at update for connected_apps tracking.
+      // Non-blocking to avoid adding latency to MCP tool calls.
+      updateLastUsedAt(token, claims).catch(() => {});
+
       next();
       return;
     }
@@ -195,4 +201,36 @@ export function requireScope(scope: string) {
 
 export function hasScope(scopeString: string, requiredScope: string): boolean {
   return scopeString.split(/\s+/).includes(requiredScope);
+}
+
+// ─── last_used_at tracking (PEL-102) ─────────────────────────────────────────
+
+// Debounce interval: only update last_used_at once per 5 minutes per client.
+const LAST_USED_DEBOUNCE_MS = 5 * 60 * 1000;
+const _lastUsedTimestamps = new Map<string, number>();
+
+/**
+ * Fire-and-forget update of last_used_at on connected_apps.
+ * Debounced to avoid a Firestore write on every single MCP request.
+ */
+async function updateLastUsedAt(token: string, claims: McpTokenClaims): Promise<void> {
+  const clientId = claims.client_id;
+  const profileId = claims.profile_id;
+  if (!clientId || !profileId) return;
+
+  const debounceKey = `${profileId}:${clientId}`;
+  const now = Date.now();
+  const lastUpdated = _lastUsedTimestamps.get(debounceKey) ?? 0;
+  if (now - lastUpdated < LAST_USED_DEBOUNCE_MS) return;
+
+  _lastUsedTimestamps.set(debounceKey, now);
+
+  try {
+    const { FieldValue } = await import("firebase-admin/firestore");
+    const connectedAppRef = db.collection("profiles").doc(profileId)
+      .collection("connected_apps").doc(clientId);
+    await connectedAppRef.update({ last_used_at: FieldValue.serverTimestamp() });
+  } catch {
+    // Silently ignore - non-critical tracking update
+  }
 }
