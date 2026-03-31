@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { verifyBearerToken, type McpAuthenticatedRequest } from "./auth.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
 import { logServer, generateRequestId } from "./logger.js";
-import { setRequestAuth, clearRequestAuth } from "./request-context.js";
+import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
 
 // Admin tools (existing — static bearer token auth)
 import { registerResearchTools } from "./tools/research.js";
@@ -267,12 +267,11 @@ app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
 // MCP endpoint — stateless mode (fresh server per request)
 app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedRequest, res) => {
   const requestId = generateRequestId();
-  try {
-    // Inject auth claims into per-request context for tool handlers
-    // Admin-authed requests don't need user profile context
-    const authContext = req.mcpAuth || null;
-    setRequestAuth(authContext);
+  const authContext = req.mcpAuth || null;
 
+  // PEL-122: Use AsyncLocalStorage for concurrency-safe per-request auth context
+  await runWithAuth(authContext, async () => {
+  try {
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
       version: "2.1.0",
@@ -333,9 +332,8 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     if (!res.headersSent) {
       res.status(500).json({ error: "Internal server error" });
     }
-  } finally {
-    clearRequestAuth();
   }
+  }); // end runWithAuth
 });
 
 // Handle GET and DELETE on /mcp (required by Streamable HTTP spec)
