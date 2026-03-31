@@ -47,7 +47,7 @@ async function getJwtSecret(): Promise<string | null> {
     });
     const payload = version.payload?.data;
     if (payload) {
-      _jwtSecret = typeof payload === "string" ? payload : Buffer.from(payload).toString("utf8");
+      _jwtSecret = (typeof payload === "string" ? payload : Buffer.from(payload).toString("utf8")).trim();
       return _jwtSecret;
     }
   } catch (err) {
