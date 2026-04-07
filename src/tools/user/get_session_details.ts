@@ -16,7 +16,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 export function registerGetSessionDetails(server: McpServer): void {
   server.tool(
     "get_session_details",
-    "View the full details of a workout session — exercises, sets, reps, weights, completion status, and feedback.",
+    "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and imported device metrics (distance, pace, heart rate, cadence, power, elevation, energy) from Strava/Garmin/Wahoo/Polar when available.",
     {
       sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
     },
@@ -93,7 +93,11 @@ export function registerGetSessionDetails(server: McpServer): void {
           };
         });
 
-        const session = {
+        // Build imported metrics from Strava/Garmin/etc. when available
+        const rawActuals = d.imported_actuals as Record<string, unknown> | undefined;
+        const importedMetrics = rawActuals ? buildImportedMetrics(rawActuals) : undefined;
+
+        const session: Record<string, unknown> = {
           sessionId: sessionDoc.id,
           title: d.title,
           scheduledDate: d.scheduled_date,
@@ -113,6 +117,16 @@ export function registerGetSessionDetails(server: McpServer): void {
           } : null,
           blocks: exerciseSummaries,
         };
+
+        // Include completion metadata when present
+        if (d.completed_via) session.completedVia = d.completed_via;
+        if (d.external_url) session.externalUrl = d.external_url;
+        if (d.completed_at) session.completedAt = d.completed_at.toDate?.() ?? d.completed_at;
+        if (d.pool_length) session.poolLength = d.pool_length;
+        if (d.environment) session.environment = d.environment;
+
+        // Attach imported device/platform metrics (Strava, Garmin, Wahoo, Polar, etc.)
+        if (importedMetrics) session.importedMetrics = importedMetrics;
 
         const result = scrubDocument(session as Record<string, unknown>);
 
@@ -142,4 +156,78 @@ export function registerGetSessionDetails(server: McpServer): void {
       }
     },
   );
+}
+
+/**
+ * Transforms raw imported_actuals from Firestore into a clean, AI-readable
+ * metrics object. Null/missing values are omitted entirely.
+ *
+ * Covers data from Strava, Garmin, Wahoo, Polar, and other integrations
+ * that write to the imported_actuals map on diary documents.
+ */
+function buildImportedMetrics(raw: Record<string, unknown>): Record<string, unknown> | null {
+  const metrics: Record<string, unknown> = {};
+
+  // Duration
+  if (raw.elapsedSeconds != null) metrics.elapsedTimeSec = raw.elapsedSeconds;
+  if (raw.movingSeconds != null) metrics.movingTimeSec = raw.movingSeconds;
+
+  // Distance
+  if (raw.distanceMeters != null) {
+    metrics.distanceMeters = raw.distanceMeters;
+    const distKm = Number(raw.distanceMeters) / 1000;
+    if (!isNaN(distKm) && distKm > 0) {
+      metrics.distanceKm = Math.round(distKm * 100) / 100;
+    }
+  }
+
+  // Heart rate
+  if (raw.averageHeartrate != null) metrics.avgHeartrateBpm = raw.averageHeartrate;
+  if (raw.maxHeartrate != null) metrics.maxHeartrateBpm = raw.maxHeartrate;
+
+  // Speed (stored as m/s, also provide km/h and pace)
+  if (raw.averageSpeedMps != null) {
+    metrics.avgSpeedMps = raw.averageSpeedMps;
+    const avgKmh = Number(raw.averageSpeedMps) * 3.6;
+    if (!isNaN(avgKmh) && avgKmh > 0) {
+      metrics.avgSpeedKmh = Math.round(avgKmh * 100) / 100;
+      // Pace in min/km (useful for running/swimming)
+      const paceMinPerKm = 60 / avgKmh;
+      const paceMin = Math.floor(paceMinPerKm);
+      const paceSec = Math.round((paceMinPerKm - paceMin) * 60);
+      metrics.avgPaceMinPerKm = `${paceMin}:${paceSec.toString().padStart(2, "0")}`;
+    }
+  }
+  if (raw.maxSpeedMps != null) {
+    metrics.maxSpeedMps = raw.maxSpeedMps;
+    const maxKmh = Number(raw.maxSpeedMps) * 3.6;
+    if (!isNaN(maxKmh) && maxKmh > 0) {
+      metrics.maxSpeedKmh = Math.round(maxKmh * 100) / 100;
+    }
+  }
+
+  // Cadence
+  if (raw.averageCadence != null) metrics.avgCadence = raw.averageCadence;
+
+  // Power
+  if (raw.averageWatts != null) metrics.avgPowerWatts = raw.averageWatts;
+  if (raw.weightedAverageWatts != null) metrics.normalizedPowerWatts = raw.weightedAverageWatts;
+
+  // Elevation
+  if (raw.elevationGainMeters != null) metrics.elevationGainMeters = raw.elevationGainMeters;
+
+  // Energy
+  if (raw.kilojoules != null) {
+    metrics.energyKj = raw.kilojoules;
+    const kcal = Number(raw.kilojoules) / 4.184;
+    if (!isNaN(kcal) && kcal > 0) {
+      metrics.estimatedCalories = Math.round(kcal);
+    }
+  }
+
+  // Strava-specific
+  if (raw.sufferScore != null) metrics.sufferScore = raw.sufferScore;
+
+  // Only return if we have at least one metric
+  return Object.keys(metrics).length > 0 ? metrics : null;
 }

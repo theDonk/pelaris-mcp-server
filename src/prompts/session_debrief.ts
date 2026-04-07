@@ -37,8 +37,9 @@ Use the get_session_details tool to retrieve the session data, then analyze:
 1. **Completion Rate** — What percentage of prescribed sets/reps were completed?
 2. **Target vs Actual** — Where did I hit, exceed, or fall short of targets? Be specific with numbers.
 3. **RPE Assessment** — How did the perceived effort align with the program's intent for this session?
-4. **Key Observations** — Any standout performances, struggles, or patterns worth noting?
-5. **Next Session Prep** — Based on this session, what should I focus on or adjust for the next one?
+4. **Device Metrics** — If imported metrics are available (distance, pace, heart rate, cadence, power, elevation), analyze the effort profile. Were the intensities appropriate?
+5. **Key Observations** — Any standout performances, struggles, or patterns worth noting?
+6. **Next Session Prep** — Based on this session, what should I focus on or adjust for the next one?
 
 Be direct. Use specific data from the session. Coach me like you mean it.`;
 }
