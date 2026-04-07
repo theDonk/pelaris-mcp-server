@@ -16,7 +16,7 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 export function registerGetSessionDetails(server: McpServer): void {
   server.tool(
     "get_session_details",
-    "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and imported device metrics (distance, pace, heart rate, cadence, power, elevation, energy) from Strava/Garmin/Wahoo/Polar when available.",
+    "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, imported device metrics (distance, pace, heart rate, cadence, power, elevation, energy), and per-lap/split data from Strava/Garmin/Wahoo/Polar when available.",
     {
       sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
     },
@@ -227,6 +227,38 @@ function buildImportedMetrics(raw: Record<string, unknown>): Record<string, unkn
 
   // Strava-specific
   if (raw.sufferScore != null) metrics.sufferScore = raw.sufferScore;
+
+  // PEL-233: Per-lap/split data from connected devices
+  const splits = raw.splits as Array<Record<string, unknown>> | undefined;
+  if (splits && Array.isArray(splits) && splits.length > 0) {
+    metrics.splits = splits.map((lap) => {
+      const split: Record<string, unknown> = {
+        lapIndex: lap.lapIndex,
+        distanceMeters: lap.distanceMeters,
+        elapsedSeconds: lap.elapsedSeconds,
+      };
+      if (lap.name != null) split.name = lap.name;
+      if (lap.movingSeconds != null) split.movingSeconds = lap.movingSeconds;
+      if (lap.averageSpeedMps != null) {
+        split.avgSpeedMps = lap.averageSpeedMps;
+        const avgKmh = Number(lap.averageSpeedMps) * 3.6;
+        if (!isNaN(avgKmh) && avgKmh > 0) {
+          split.avgSpeedKmh = Math.round(avgKmh * 100) / 100;
+          const paceMinPerKm = 60 / avgKmh;
+          const paceMin = Math.floor(paceMinPerKm);
+          const paceSec = Math.round((paceMinPerKm - paceMin) * 60);
+          split.paceMinPerKm = `${paceMin}:${paceSec.toString().padStart(2, "0")}`;
+        }
+      }
+      if (lap.averageHeartrate != null) split.avgHeartrateBpm = lap.averageHeartrate;
+      if (lap.maxHeartrate != null) split.maxHeartrateBpm = lap.maxHeartrate;
+      if (lap.averageCadence != null) split.avgCadence = lap.averageCadence;
+      if (lap.totalElevationGain != null) split.elevationGainMeters = lap.totalElevationGain;
+      if (lap.paceZone != null) split.paceZone = lap.paceZone;
+      return split;
+    });
+    metrics.splitCount = splits.length;
+  }
 
   // Only return if we have at least one metric
   return Object.keys(metrics).length > 0 ? metrics : null;
