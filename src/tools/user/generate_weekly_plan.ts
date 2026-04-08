@@ -2,8 +2,11 @@
  * MCP Tool: generate_weekly_plan
  * Scope: training:write
  *
- * Orchestrates the 3-stage program generation pipeline via HTTP call
- * to the Cloud Function endpoint. Returns generated session summaries.
+ * Orchestrates the full 3-stage program generation pipeline via HTTP call
+ * to the Cloud Function endpoint. Sessions are written directly to the diary.
+ *
+ * PEL-229/230/231: Now runs all 3 stages (strategy → overviews → sessions)
+ * and writes diary entries. Returns a real jobId for status polling.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -17,7 +20,6 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 
 const CF_BASE_URL = process.env.CF_BASE_URL || "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net";
 
-// Reuse GoogleAuth instance across calls
 let _auth: GoogleAuth | null = null;
 function getAuth(): GoogleAuth {
   if (!_auth) _auth = new GoogleAuth();
@@ -27,11 +29,11 @@ function getAuth(): GoogleAuth {
 export function registerGenerateWeeklyPlan(server: McpServer): void {
   server.tool(
     "generate_weekly_plan",
-    "Generate a new weekly training plan tailored to your program, goals, and readiness. Sessions appear in your calendar once ready.",
+    "Generate a new weekly training plan tailored to your program, goals, and readiness. Sessions are written directly to your calendar.",
     {
       focus: z
         .string()
-        .max(200)
+        .max(500)
         .optional()
         .describe("Training focus for the week (e.g., 'upper body strength', 'endurance base building')"),
       daysAvailable: z
@@ -47,17 +49,28 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
         .describe("Preferred intensity level for the generated plan"),
       notes: z
         .string()
-        .max(500)
+        .max(2000)
         .optional()
-        .describe("Additional notes or constraints for plan generation"),
+        .describe("Additional notes, goals, constraints, or athlete context for plan generation"),
+      durationWeeks: z
+        .number()
+        .int()
+        .min(1)
+        .max(8)
+        .optional()
+        .describe("Number of weeks to generate (1-8, default 4)"),
+      startDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+        .optional()
+        .describe("Start date for the plan (defaults to next Monday)"),
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();
 
       try {
-        // Auth & scope check
         const claims = getRequestAuth();
         if (!claims || !hasScope(claims.scope, "training:write")) {
           return {
@@ -66,7 +79,6 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
           };
         }
 
-        // Write rate limit
         const rateLimitError = checkWriteRateLimit(claims.sub);
         if (rateLimitError) {
           return {
@@ -86,8 +98,10 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
         if (params.daysAvailable) payload.daysAvailable = params.daysAvailable;
         if (params.intensityPreference) payload.intensityPreference = params.intensityPreference;
         if (params.notes) payload.notes = params.notes;
+        if (params.durationWeeks) payload.durationWeeks = params.durationWeeks;
+        if (params.startDate) payload.startDate = params.startDate;
 
-        // Call HTTP-triggered Cloud Function (not onCall — accepts service account auth)
+        // Call full-pipeline HTTP Cloud Function
         const targetUrl = `${CF_BASE_URL}/generateProgramHttp`;
         const auth = getAuth();
         const client = await auth.getIdTokenClient(targetUrl);
@@ -95,22 +109,40 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
           url: targetUrl,
           method: "POST",
           data: payload,
-          timeout: 120_000, // 2 minute timeout for generation
+          timeout: 570_000, // 9.5 min — slightly more than CF's 540s to avoid client-side timeout race
         });
 
         const responseData = response.data as Record<string, unknown>;
 
-        // Extract summary for the user
+        // Build user-facing result
+        const pipelineStatus = responseData.status as string;
+        const isComplete = pipelineStatus === "complete";
+        const isPartial = pipelineStatus === "partial";
+        const sessionsWritten = (responseData.sessionsWritten as number) || 0;
+        const jobId = responseData.jobId || null;
+
+        let statusMessage: string;
+        if (isComplete) {
+          statusMessage = `Training plan generated successfully! ${sessionsWritten} sessions have been added to your diary.`;
+        } else if (isPartial) {
+          statusMessage = `Training plan partially generated. ${sessionsWritten} sessions were added to your diary, but some weeks encountered errors. Use get_generation_status(jobId) for details.`;
+        } else {
+          statusMessage = "Weekly plan generation has been initiated. Use get_generation_status to check progress.";
+        }
+
         const result = scrubDocument({
-          status: "generation_initiated",
-          jobId: responseData.jobId || responseData.job_id || null,
-          message: "Weekly plan generation has been initiated. The 3-stage pipeline (strategy → overviews → sessions) is running. Sessions will appear in your diary once generation completes.",
-          constraints: {
+          status: isComplete ? "complete" : isPartial ? "partial" : "generation_initiated",
+          jobId,
+          programName: responseData.programName || null,
+          sessionsWritten,
+          message: statusMessage,
+          plan: {
+            totalWeeks: responseData.totalWeeks || null,
+            macroStructure: responseData.macroStructure || null,
             focus: params.focus || "auto-detected from profile",
             daysAvailable: params.daysAvailable || "auto-detected from preferences",
             intensityPreference: params.intensityPreference || "moderate",
           },
-          pipelineResponse: responseData,
         });
 
         logToolCall({

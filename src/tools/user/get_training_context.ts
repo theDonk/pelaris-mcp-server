@@ -73,8 +73,12 @@ export function registerGetTrainingContext(server: McpServer): void {
 
         const profileData = profileSnap.data() || {};
 
-        // Active programs summary
-        const programs = queuesSnap.docs.map((doc) => {
+        // Active programs summary (filter archived — PEL-220 fix parity)
+        const activeDocs = queuesSnap.docs.filter((doc) => {
+          const d = doc.data();
+          return d.status !== "archived";
+        });
+        const programs = activeDocs.map((doc) => {
           const d = doc.data();
           const sessions = d.sessions || [];
           const completed = sessions.filter((s: Record<string, unknown>) => s.is_completed).length;
