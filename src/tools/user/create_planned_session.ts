@@ -198,7 +198,8 @@ export function registerCreatePlannedSession(server: McpServer): void {
         }
         if (params.coachNote) {
           diaryEntry.coach_note = {
-            text: params.coachNote,
+            title: "Coach Note",
+            message: params.coachNote,
             source: "mcp",
             created_at: timestamp,
           };

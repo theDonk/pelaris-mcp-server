@@ -42,7 +42,19 @@ export function registerGetActiveProgram(server: McpServer): void {
           };
         }
 
-        const programs = queuesSnap.docs.map((doc) => {
+        // Filter to non-archived programs (matches manage_program.ts pattern)
+        const activeDocs = queuesSnap.docs.filter((doc) => {
+          const d = doc.data();
+          return d.status !== "archived";
+        });
+
+        if (activeDocs.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ programs: [], message: "No active programs found" }) }],
+          };
+        }
+
+        const programs = activeDocs.map((doc) => {
           const d = doc.data();
           const sessions = (d.sessions || []) as Array<Record<string, unknown>>;
           const completed = sessions.filter((s) => s.is_completed).length;

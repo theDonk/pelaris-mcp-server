@@ -47,10 +47,13 @@ export function registerGetOnboardingStatus(server: McpServer): void {
 
         const d = profileSnap.data()!;
 
+        // Filter to non-archived queues (PEL-220 fix parity)
+        const activeQueueDocs = queuesSnap.docs.filter((doc) => doc.data().status !== "archived");
+
         // Infer sport from active program if profile sport is null
         let sport: string | null = d.intakeSummary?.primaryGoal || null;
-        if (!sport && !queuesSnap.empty) {
-          const queueData = queuesSnap.docs[0].data();
+        if (!sport && activeQueueDocs.length > 0) {
+          const queueData = activeQueueDocs[0].data();
           sport = queueData.sport || queueData.methodology_id?.split("_")[0] || null;
         }
 
@@ -70,7 +73,7 @@ export function registerGetOnboardingStatus(server: McpServer): void {
           name: d.name || null,
           hasCompletedOnboarding: !!d.currentIntakeRunId,
           hasSport: !!sport,
-          hasProgram: !queuesSnap.empty,
+          hasProgram: activeQueueDocs.length > 0,
           hasConnectedDevice,
           sport,
           experienceLevel: d.training_context?.experience_level || null,
