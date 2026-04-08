@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.pelaris/fitness-coach",
   "description": "AI fitness coaching — plan training programs, log workouts, track benchmarks, manage goals, and get coaching insights through any AI assistant",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "repository": {
     "url": "https://github.com/theDonk/pelaris-mcp-server"
   },
