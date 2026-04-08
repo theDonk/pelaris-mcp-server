@@ -21,6 +21,7 @@ import { registerGetBodyAnalysis } from "./tools/user/get_body_analysis.js";
 import { registerSearchEngineResources } from "./tools/user/search_engine_resources.js";
 import { registerGetCoachInsight } from "./tools/user/get_coach_insight.js";
 import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.js";
+import { registerGetGenerationStatus } from "./tools/user/get_generation_status.js";
 
 // User write tools (OAuth-scoped — PEL-69)
 import { registerGenerateWeeklyPlan } from "./tools/user/generate_weekly_plan.js";
@@ -31,6 +32,9 @@ import { registerUpdateUserProfile } from "./tools/user/update_user_profile.js";
 import { registerAddInjury } from "./tools/user/add_injury.js";
 import { registerLogCoachFeedback } from "./tools/user/log_coach_feedback.js";
 import { registerCreatePlannedSession } from "./tools/user/create_planned_session.js";
+import { registerDeleteSession } from "./tools/user/delete_session.js";
+import { registerLogCompletedSession } from "./tools/user/log_completed_session.js";
+import { registerUpdateSession } from "./tools/user/update_session.js";
 
 // User tools — coach-parity (PEL-XX)
 import { registerRecordBenchmark } from "./tools/user/record_benchmark.js";
@@ -294,6 +298,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerSearchEngineResources(server);
     registerGetCoachInsight(server);
     registerGetOnboardingStatus(server);
+    registerGetGenerationStatus(server);
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
     registerGenerateWeeklyPlan(server);
@@ -304,6 +309,9 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerAddInjury(server);
     registerLogCoachFeedback(server);
     registerCreatePlannedSession(server);
+    registerDeleteSession(server);
+    registerLogCompletedSession(server);
+    registerUpdateSession(server);
 
     // ─── Coach-parity tools ─────────────────────────────────
     registerRecordBenchmark(server);
