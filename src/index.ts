@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -5,6 +6,10 @@ import { verifyBearerToken, type McpAuthenticatedRequest } from "./auth.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
 import { logServer, generateRequestId } from "./logger.js";
 import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
+
+// Single source of truth for version — reads from package.json
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
+const VERSION: string = pkg.version;
 
 // Admin tools (existing — static bearer token auth)
 import { registerResearchTools } from "./tools/research.js";
@@ -53,14 +58,12 @@ import { registerSessionDebriefPrompt } from "./prompts/session_debrief.js";
 import { registerBenchmarkCheckInPrompt } from "./prompts/benchmark_check_in.js";
 
 const PORT = parseInt(process.env.PORT || "8080", 10);
-// v2.1.0 — 21 tools with coach parity
-
 const app = express();
 app.use(express.json());
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: "2.1.0" });
+  res.json({ status: "ok", service: "pelaris-firebase-mcp", version: VERSION });
 });
 
 // OpenAI domain verification
@@ -278,7 +281,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
   try {
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
-      version: "2.1.0",
+      version: VERSION,
     });
 
     // ─── Admin tools (only for admin-authed requests) ───────────
