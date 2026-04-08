@@ -1,9 +1,12 @@
 /**
- * MCP Tool: log_workout
+ * MCP Tool: log_completed_session
  * Scope: training:write
  *
- * Creates or updates a diary entry for a completed workout.
- * Includes idempotency via date+sport+duration hash to prevent duplicate logs.
+ * Logs a session as completed retroactively — with full exercise detail,
+ * RPE, feedback tags, coach note, and date. Designed for AI coaching agents
+ * to record sessions that have already happened.
+ *
+ * PEL-226
  */
 
 import crypto from "crypto";
@@ -16,51 +19,88 @@ import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
-const VALID_SPORTS = ["strength", "running", "swimming", "cycling", "triathlon", "crossfit", "general", "yoga", "mobility", "other"] as const;
-const VALID_FEELINGS = ["strong", "tired", "energetic", "sluggish", "motivated", "stressed", "recovered", "sore"] as const;
+const VALID_SPORTS = [
+  "strength", "running", "swimming", "cycling", "triathlon",
+  "crossfit", "general", "yoga", "mobility", "other",
+] as const;
+
+const VALID_FEEDBACK_TAGS = [
+  "felt_strong", "felt_tired", "felt_energetic", "felt_sluggish",
+  "good_form", "poor_form", "pain", "injury_flare",
+] as const;
+
+/** Map MCP sport names to the session_type values the Pelaris app expects. */
+function mapSportToSessionType(sport: string): string {
+  switch (sport) {
+    case "running": return "run";
+    case "swimming": return "swim";
+    case "cycling": return "ride";
+    case "crossfit": return "hiit";
+    default: return sport;
+  }
+}
+
+/** Generate a short random ID for blocks/exercises/sets. */
+function shortId(): string {
+  return crypto.randomBytes(8).toString("hex");
+}
 
 function generateIdempotencyKey(profileId: string, date: string, sport: string, duration: number): string {
   const raw = `${profileId}:${date}:${sport}:${duration}`;
   return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
-export function registerLogWorkout(server: McpServer): void {
+export function registerLogCompletedSession(server: McpServer): void {
   server.tool(
-    "log_workout",
-    "Record a completed workout with exercises, RPE, and how you felt. Duplicate entries are automatically prevented.",
+    "log_completed_session",
+    "Log a completed workout retroactively with exercises, RPE, feedback, and coach notes. Prevents duplicate entries automatically.",
     {
-      sessionId: z
+      plannedSessionId: z
         .string()
         .max(200)
         .optional()
-        .describe("Existing diary session ID to update (if logging against a planned session)"),
-      plannedSessionId: z
+        .describe("If completing an existing planned session, provide its diary ID. Updates in-place instead of creating a duplicate."),
+      date: z
         .string()
-        .optional()
-        .describe("ID of a planned session to mark as completed. Found in training context."),
-      completedAsPrescribed: z
-        .boolean()
-        .optional()
-        .describe("If true, copies target values (sets/reps/weight) to actuals."),
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+        .describe("Date the workout was completed (YYYY-MM-DD, can be in the past)"),
       sport: z
         .enum(VALID_SPORTS)
         .describe("Sport/activity type"),
-      duration: z
+      title: z
+        .string()
+        .max(200)
+        .optional()
+        .describe("Session title (e.g., 'Upper Body Strength', 'Easy Recovery Run')"),
+      sessionFocus: z
+        .string()
+        .max(200)
+        .optional()
+        .describe("Session focus area (e.g., 'chest and shoulders', 'tempo intervals')"),
+      durationMinutes: z
         .number()
         .int()
         .min(1)
         .max(480)
+        .optional()
         .describe("Workout duration in minutes (1-480)"),
       rpe: z
         .number()
+        .int()
         .min(1)
         .max(10)
-        .describe("Rate of perceived exertion (1-10)"),
-      date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
         .optional()
-        .describe("Workout date in YYYY-MM-DD format (defaults to today)"),
+        .describe("Rate of perceived exertion (1-10)"),
+      feedbackTags: z
+        .array(z.enum(VALID_FEEDBACK_TAGS))
+        .max(5)
+        .optional()
+        .describe("Feedback tags describing how the session went"),
+      feedbackNote: z
+        .string()
+        .max(1000)
+        .optional()
+        .describe("Freeform notes about the session"),
       exercises: z
         .array(
           z.object({
@@ -75,16 +115,11 @@ export function registerLogWorkout(server: McpServer): void {
         .max(30)
         .optional()
         .describe("Array of exercises performed (max 30)"),
-      feelings: z
-        .array(z.enum(VALID_FEELINGS))
-        .max(5)
-        .optional()
-        .describe("How you felt during the workout"),
-      notes: z
+      coachNote: z
         .string()
-        .max(1000)
+        .max(2000)
         .optional()
-        .describe("Freeform notes about the session"),
+        .describe("AI coach observation or note about this session"),
     },
     { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
@@ -92,7 +127,6 @@ export function registerLogWorkout(server: McpServer): void {
       const start = Date.now();
 
       try {
-        // Auth & scope check
         const claims = getRequestAuth();
         if (!claims || !hasScope(claims.scope, "training:write")) {
           return {
@@ -101,7 +135,6 @@ export function registerLogWorkout(server: McpServer): void {
           };
         }
 
-        // Write rate limit
         const rateLimitError = checkWriteRateLimit(claims.sub);
         if (rateLimitError) {
           return {
@@ -111,11 +144,11 @@ export function registerLogWorkout(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const workoutDate = params.date || new Date().toISOString().split("T")[0];
         const diaryCol = profileSubcollection(profileId, "diary");
+        const duration = params.durationMinutes || 0;
 
-        // Idempotency check
-        const idempotencyKey = generateIdempotencyKey(profileId, workoutDate, params.sport, params.duration);
+        // Idempotency: date + sport + duration hash
+        const idempotencyKey = generateIdempotencyKey(profileId, params.date, params.sport, duration);
         const existingByKey = await diaryCol
           .where("idempotency_key", "==", idempotencyKey)
           .limit(1)
@@ -126,11 +159,11 @@ export function registerLogWorkout(server: McpServer): void {
           const result = scrubDocument({
             sessionId: existingDoc.id,
             status: "already_logged",
-            message: "This workout has already been logged (matching date, sport, and duration). No duplicate created.",
+            message: "This session has already been logged (matching date, sport, and duration). No duplicate created.",
           });
           logToolCall({
             requestId,
-            tool: "log_workout",
+            tool: "log_completed_session",
             userPseudonym: claims.sub,
             latencyMs: Date.now() - start,
             success: true,
@@ -140,25 +173,21 @@ export function registerLogWorkout(server: McpServer): void {
           };
         }
 
-        // Build exercise blocks if provided
+        // Build exercise blocks
         const blocks: Array<Record<string, unknown>> = [];
         if (params.exercises && params.exercises.length > 0) {
           blocks.push({
-            id: crypto.randomBytes(8).toString("hex"),
+            id: shortId(),
             type: "single",
             rounds: 1,
             semantic_type: "working",
             exercises: params.exercises.map((ex) => {
-              const exercise: Record<string, unknown> = {
-                exercise_id: crypto.randomBytes(8).toString("hex"),
-                exercise_name: ex.name,
-              };
               const sets: Array<Record<string, unknown>> = [];
               const setCount = ex.sets || 1;
               for (let i = 0; i < setCount; i++) {
                 if (ex.weightKg != null || ex.reps != null) {
                   sets.push({
-                    id: crypto.randomBytes(8).toString("hex"),
+                    id: shortId(),
                     type: "strength",
                     actual_weight_kg: ex.weightKg ?? null,
                     actual_reps: ex.reps ?? null,
@@ -166,7 +195,7 @@ export function registerLogWorkout(server: McpServer): void {
                   });
                 } else if (ex.distanceMeters != null || ex.durationSec != null) {
                   sets.push({
-                    id: crypto.randomBytes(8).toString("hex"),
+                    id: shortId(),
                     type: "cardio",
                     actual_distance_meters: ex.distanceMeters ?? null,
                     actual_duration_sec: ex.durationSec ?? null,
@@ -174,33 +203,41 @@ export function registerLogWorkout(server: McpServer): void {
                   });
                 } else {
                   sets.push({
-                    id: crypto.randomBytes(8).toString("hex"),
+                    id: shortId(),
                     type: "general",
                     isCompleted: true,
                   });
                 }
               }
-              exercise.sets = sets;
-              return exercise;
+              return {
+                exercise_id: shortId(),
+                exercise_name: ex.name,
+                sets,
+              };
             }),
           });
         }
 
-        // Resolve which session ID to use (plannedSessionId takes priority over sessionId)
-        const resolvedPlannedId = params.plannedSessionId || params.sessionId;
+        const timestamp = new Date().toISOString();
 
         // --- Planned session completion path ---
-        if (resolvedPlannedId) {
-          const plannedRef = diaryCol.doc(resolvedPlannedId);
+        if (params.plannedSessionId) {
+          const plannedRef = diaryCol.doc(params.plannedSessionId);
           const plannedSnap = await plannedRef.get();
           if (!plannedSnap.exists) {
             return {
-              content: [{ type: "text" as const, text: `Error: Planned session "${resolvedPlannedId}" not found in diary.` }],
+              content: [{ type: "text" as const, text: `Error: Planned session "${params.plannedSessionId}" not found in diary.` }],
               isError: true,
             };
           }
 
-          const timestamp = new Date().toISOString();
+          const plannedData = plannedSnap.data()!;
+          if (plannedData.status === "completed" || plannedData.is_completed === true) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ sessionId: params.plannedSessionId, status: "already_completed", message: "This session is already completed." }) }],
+            };
+          }
+
           const updateData: Record<string, unknown> = {
             status: "completed",
             is_completed: true,
@@ -209,72 +246,34 @@ export function registerLogWorkout(server: McpServer): void {
             updated_at: timestamp,
           };
 
-          if (params.rpe != null) {
-            updateData["feedback.rpe"] = params.rpe;
-          }
-          if (params.feelings && params.feelings.length > 0) {
-            updateData["feedback.tags"] = params.feelings;
-          }
-          if (params.notes != null) {
-            updateData["feedback.note"] = params.notes;
-          }
-          if (params.duration != null) {
-            updateData.duration_minutes = params.duration;
-          }
-
-          // If completedAsPrescribed, copy target values to actuals in blocks
-          let updatedBlocks: unknown[] | undefined;
-          if (params.completedAsPrescribed) {
-            const existingData = plannedSnap.data();
-            const existingBlocks = existingData?.blocks as Array<Record<string, unknown>> | undefined;
-            if (existingBlocks && existingBlocks.length > 0) {
-              updatedBlocks = existingBlocks.map((block) => {
-                const exercises = block.exercises as Array<Record<string, unknown>> | undefined;
-                if (!exercises) return block;
-                return {
-                  ...block,
-                  exercises: exercises.map((exercise) => {
-                    const sets = exercise.sets as Array<Record<string, unknown>> | undefined;
-                    if (!sets) return exercise;
-                    return {
-                      ...exercise,
-                      sets: sets.map((set) => ({
-                        ...set,
-                        isCompleted: true,
-                        ...(set.target_weight_kg != null && { actual_weight_kg: set.target_weight_kg }),
-                        ...(set.target_reps != null && { actual_reps: set.target_reps }),
-                        ...(set.target_distance_meters != null && { actual_distance_meters: set.target_distance_meters }),
-                        ...(set.target_duration_sec != null && { actual_duration_sec: set.target_duration_sec }),
-                      })),
-                    };
-                  }),
-                };
-              });
-              updateData.blocks = updatedBlocks;
-            }
-          }
-
-          // If MCP-provided exercises, build blocks and overwrite
-          if (!params.completedAsPrescribed && blocks.length > 0) {
-            updateData.blocks = blocks;
-          }
+          if (params.title) updateData.title = params.title;
+          if (params.sessionFocus) updateData.session_focus = params.sessionFocus;
+          if (params.durationMinutes) updateData.duration_minutes = params.durationMinutes;
+          if (params.rpe != null) updateData["feedback.rpe"] = params.rpe;
+          if (params.feedbackTags && params.feedbackTags.length > 0) updateData["feedback.tags"] = params.feedbackTags;
+          if (params.feedbackNote != null) updateData["feedback.note"] = params.feedbackNote;
+          if (params.coachNote != null) updateData.coach_note = {
+            title: "Coach Note",
+            message: params.coachNote,
+            source: "mcp",
+            created_at: timestamp,
+          };
+          if (blocks.length > 0) updateData.blocks = blocks;
 
           await plannedRef.update(updateData);
 
           const result = scrubDocument({
-            sessionId: resolvedPlannedId,
+            sessionId: params.plannedSessionId,
             status: "completed_planned",
-            date: workoutDate,
+            date: params.date,
             sport: params.sport,
-            duration: params.duration,
-            rpe: params.rpe,
-            completedAsPrescribed: params.completedAsPrescribed || false,
-            message: `Planned session "${resolvedPlannedId}" marked as completed on ${workoutDate}.`,
+            title: params.title || plannedData.title,
+            message: `Planned session "${plannedData.title || params.plannedSessionId}" marked as completed.`,
           });
 
           logToolCall({
             requestId,
-            tool: "log_workout",
+            tool: "log_completed_session",
             userPseudonym: claims.sub,
             latencyMs: Date.now() - start,
             success: true,
@@ -286,21 +285,30 @@ export function registerLogWorkout(server: McpServer): void {
         }
 
         // --- New diary entry path (no planned session) ---
-        const timestamp = new Date().toISOString();
+        const defaultTitle = `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`;
+
         const diaryEntry: Record<string, unknown> = {
-          title: `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`,
-          scheduled_date: workoutDate,
-          session_type: params.sport,
+          title: params.title || defaultTitle,
+          scheduled_date: params.date,
+          session_type: mapSportToSessionType(params.sport),
+          session_focus: params.sessionFocus || null,
           status: "completed",
           is_completed: true,
           completed_at: timestamp,
-          duration_minutes: params.duration,
+          updated_at: timestamp,
+          duration_minutes: duration || null,
           blocks,
           feedback: {
-            rpe: params.rpe,
-            tags: params.feelings || [],
-            note: params.notes || null,
+            rpe: params.rpe ?? null,
+            tags: params.feedbackTags || [],
+            note: params.feedbackNote || null,
           },
+          coach_note: params.coachNote ? {
+            title: "Coach Note",
+            message: params.coachNote,
+            source: "mcp",
+            created_at: timestamp,
+          } : null,
           data_quality: params.exercises && params.exercises.length > 0 ? "detailed" : "quick",
           source: "mcp",
           idempotency_key: idempotencyKey,
@@ -310,24 +318,24 @@ export function registerLogWorkout(server: McpServer): void {
 
         const docRef = await diaryCol.add(diaryEntry);
         const sessionId = docRef.id;
-        // Write the document ID as a field so the Flutter app can reference it
         await docRef.update({ id: sessionId });
 
         const result = scrubDocument({
           sessionId,
           status: "logged",
-          date: workoutDate,
+          date: params.date,
           sport: params.sport,
-          duration: params.duration,
-          rpe: params.rpe,
+          title: diaryEntry.title,
+          duration: duration || null,
+          rpe: params.rpe ?? null,
           exerciseCount: params.exercises?.length || 0,
           dataQuality: diaryEntry.data_quality,
-          message: `New workout logged: ${params.sport} session on ${workoutDate}.`,
+          message: `Completed session logged: "${diaryEntry.title}" on ${params.date}.`,
         });
 
         logToolCall({
           requestId,
-          tool: "log_workout",
+          tool: "log_completed_session",
           userPseudonym: claims.sub,
           latencyMs: Date.now() - start,
           success: true,
@@ -339,7 +347,7 @@ export function registerLogWorkout(server: McpServer): void {
       } catch (error) {
         logToolCall({
           requestId,
-          tool: "log_workout",
+          tool: "log_completed_session",
           latencyMs: Date.now() - start,
           success: false,
           error: (error as Error).message,
