@@ -73,11 +73,13 @@ export function registerGetTrainingContext(server: McpServer): void {
 
         const profileData = profileSnap.data() || {};
 
-        // Active programs summary (filter archived — PEL-220 fix parity)
-        const activeDocs = queuesSnap.docs.filter((doc) => {
-          const d = doc.data();
-          return d.status !== "archived";
-        });
+        // PEL-220: Use profile.active_queues to determine truly active programs
+        const activeQueueIds = new Set(
+          ((profileData.active_queues || []) as Array<Record<string, unknown>>)
+            .filter((q) => q.is_active === true)
+            .map((q) => q.queue_id as string),
+        );
+        const activeDocs = queuesSnap.docs.filter((doc) => activeQueueIds.has(doc.id));
         const programs = activeDocs.map((doc) => {
           const d = doc.data();
           const sessions = d.sessions || [];

@@ -46,6 +46,7 @@ import { registerRecordBenchmark } from "./tools/user/record_benchmark.js";
 import { registerCheckIn } from "./tools/user/check_in.js";
 import { registerManageGoals } from "./tools/user/manage_goals.js";
 import { registerManageProgram } from "./tools/user/manage_program.js";
+import { registerGetProgramStatus } from "./tools/user/get_program_status.js";
 import { registerGetWeeklyDebrief } from "./tools/user/get_weekly_debrief.js";
 
 // Resources
@@ -321,6 +322,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerCheckIn(server);
     registerManageGoals(server);
     registerManageProgram(server);
+    registerGetProgramStatus(server);
     registerGetWeeklyDebrief(server);
 
     // ─── Resources ──────────────────────────────────────────────

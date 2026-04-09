@@ -40,3 +40,33 @@ export function assertAllowedCollection(collection: string): void {
 export function profileSubcollection(profileId: string, subcollection: string) {
   return db.collection("profiles").doc(profileId).collection(subcollection);
 }
+
+/**
+ * Read active queue documents using profile.active_queues as source of truth.
+ * Matches Flutter's training_tab_service.dart approach:
+ *   profile.active_queues[].is_active === true -> load those queue docs only.
+ *
+ * PEL-220 fix: MCP tools were querying the raw queues subcollection and filtering
+ * by status !== "archived", which returned stale/paused programs.
+ */
+export async function getActiveQueueDocuments(profileId: string): Promise<{
+  profileData: Record<string, unknown>;
+  queueDocs: FirebaseFirestore.DocumentSnapshot[];
+}> {
+  const profileSnap = await db.collection("profiles").doc(profileId).get();
+  if (!profileSnap.exists) return { profileData: {}, queueDocs: [] };
+
+  const profileData = profileSnap.data() as Record<string, unknown>;
+  const activeQueues = (profileData.active_queues || []) as Array<Record<string, unknown>>;
+  const activeRefs = activeQueues.filter((q) => q.is_active === true);
+
+  if (activeRefs.length === 0) return { profileData, queueDocs: [] };
+
+  const docs = await Promise.all(
+    activeRefs.map((ref) =>
+      profileSubcollection(profileId, "queues").doc(ref.queue_id as string).get(),
+    ),
+  );
+
+  return { profileData, queueDocs: docs.filter((d) => d.exists) };
+}
