@@ -6,7 +6,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { profileSubcollection } from "../../firestore-client.js";
+import { getActiveQueueDocuments } from "../../firestore-client.js";
 import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
@@ -32,30 +32,20 @@ export function registerGetActiveProgram(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const queuesSnap = await profileSubcollection(profileId, "queues")
-          .limit(10)
-          .get();
 
-        if (queuesSnap.empty) {
+        // PEL-220: Use profile.active_queues as source of truth (matches Flutter app)
+        const { queueDocs } = await getActiveQueueDocuments(profileId);
+
+        if (queueDocs.length === 0) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ programs: [], message: "No active programs found" }) }],
           };
         }
 
-        // Filter to non-archived programs (matches manage_program.ts pattern)
-        const activeDocs = queuesSnap.docs.filter((doc) => {
-          const d = doc.data();
-          return d.status !== "archived";
-        });
-
-        if (activeDocs.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ programs: [], message: "No active programs found" }) }],
-          };
-        }
+        const activeDocs = queueDocs;
 
         const programs = activeDocs.map((doc) => {
-          const d = doc.data();
+          const d = doc.data()!;
           const sessions = (d.sessions || []) as Array<Record<string, unknown>>;
           const completed = sessions.filter((s) => s.is_completed).length;
           const weeks = [...new Set(sessions.map((s) => s.week_number as number))].sort((a, b) => a - b);
