@@ -15,7 +15,7 @@ jobs:
     env:
       PROJECT_ID: wayfinder-ai-fitness
       REGION: australia-southeast1
-      SERVICE_NAME: pelaris-firebase-mcp
+      SERVICE_NAME: pelaris-mcp-server
 
     steps:
       - uses: actions/checkout@v4
@@ -60,9 +60,14 @@ jobs:
             --format 'value(status.url)')
           echo "Service URL: $URL"
           HTTP_STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" "$URL/health")
-          echo "Health check: $HTTP_STATUS"
+          echo "Health check (direct): $HTTP_STATUS"
           cat /tmp/health.json
           if [ "$HTTP_STATUS" != "200" ]; then
             echo "::error::Health check failed with status $HTTP_STATUS"
             exit 1
           fi
+          # Verify custom domain also serves new version
+          echo ""
+          DOMAIN_STATUS=$(curl -s -o /tmp/domain_health.json -w "%{http_code}" "https://api.pelaris.io/health")
+          echo "Health check (api.pelaris.io): $DOMAIN_STATUS"
+          cat /tmp/domain_health.json
