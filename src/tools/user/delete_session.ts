@@ -10,11 +10,15 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { profileSubcollection } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import {
+  verifySessionOwnership,
+  OwnershipError,
+  ownershipErrorResponse,
+} from "../shared/ownership.js";
 
 /** Guard: only planned sessions can be deleted. */
 function canDelete(data: Record<string, unknown>): { allowed: boolean; reason?: string } {
@@ -58,17 +62,32 @@ export function registerDeleteSession(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const docRef = profileSubcollection(profileId, "diary").doc(params.sessionId);
-        const snap = await docRef.get();
 
-        if (!snap.exists) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Session not found" }) }],
-            isError: true,
-          };
+        // H-03: defence-in-depth — verify the session belongs to one of the user's
+        // currently active queues before any mutation.
+        let docRef;
+        let data: Record<string, unknown>;
+        let legacyOrigin = false;
+        try {
+          const result = await verifySessionOwnership(profileId, params.sessionId);
+          docRef = result.doc.ref;
+          data = result.data;
+          legacyOrigin = result.legacyOrigin;
+        } catch (err) {
+          if (err instanceof OwnershipError) {
+            logToolCall({
+              requestId,
+              tool: "delete_session",
+              userPseudonym: claims.sub,
+              latencyMs: Date.now() - start,
+              success: false,
+              error: `ownership.${err.code}`,
+            });
+            return ownershipErrorResponse(err);
+          }
+          throw err;
         }
 
-        const data = snap.data() as Record<string, unknown>;
         const guard = canDelete(data);
         if (!guard.allowed) {
           return {
@@ -85,6 +104,7 @@ export function registerDeleteSession(server: McpServer): void {
           userPseudonym: claims.sub,
           latencyMs: Date.now() - start,
           success: true,
+          extras: legacyOrigin ? { legacy_origin: true } : undefined,
         });
 
         return {
@@ -147,26 +167,26 @@ export function registerDeleteSession(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const diaryCol = profileSubcollection(profileId, "diary");
 
-        // Process each deletion independently for per-session error reporting
+        // Process each deletion independently for per-session error reporting.
+        // H-03: ownership verification runs per-id; OwnershipError is caught and
+        // surfaced as a per-id failure so one bad ID doesn't fail the batch.
         const results = await Promise.allSettled(
           params.sessionIds.map(async (sessionId) => {
-            const docRef = diaryCol.doc(sessionId);
-            const snap = await docRef.get();
-
-            if (!snap.exists) {
-              return { sessionId, success: false, error: "Session not found" };
+            try {
+              const { doc, data } = await verifySessionOwnership(profileId, sessionId);
+              const guard = canDelete(data);
+              if (!guard.allowed) {
+                return { sessionId, success: false, error: guard.reason };
+              }
+              await doc.ref.delete();
+              return { sessionId, success: true, title: data.title || sessionId };
+            } catch (err) {
+              if (err instanceof OwnershipError) {
+                return { sessionId, success: false, error: err.message, ownershipCode: err.code };
+              }
+              throw err;
             }
-
-            const data = snap.data() as Record<string, unknown>;
-            const guard = canDelete(data);
-            if (!guard.allowed) {
-              return { sessionId, success: false, error: guard.reason };
-            }
-
-            await docRef.delete();
-            return { sessionId, success: true, title: data.title || sessionId };
           }),
         );
 

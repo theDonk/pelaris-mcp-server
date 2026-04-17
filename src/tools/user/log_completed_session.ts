@@ -18,6 +18,11 @@ import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import {
+  verifySessionOwnership,
+  OwnershipError,
+  ownershipErrorResponse,
+} from "../shared/ownership.js";
 
 const VALID_SPORTS = [
   "strength", "running", "swimming", "cycling", "triathlon",
@@ -222,16 +227,37 @@ export function registerLogCompletedSession(server: McpServer): void {
 
         // --- Planned session completion path ---
         if (params.plannedSessionId) {
-          const plannedRef = diaryCol.doc(params.plannedSessionId);
-          const plannedSnap = await plannedRef.get();
-          if (!plannedSnap.exists) {
+          // H-03: ownership check before mutating the planned session.
+          let plannedRef;
+          let plannedData: Record<string, unknown>;
+          let plannedLegacyOrigin = false;
+          try {
+            const result = await verifySessionOwnership(profileId, params.plannedSessionId);
+            plannedRef = result.doc.ref;
+            plannedData = result.data;
+            plannedLegacyOrigin = result.legacyOrigin;
+          } catch (err) {
+            if (err instanceof OwnershipError) {
+              logToolCall({
+                requestId,
+                tool: "log_completed_session",
+                userPseudonym: claims.sub,
+                latencyMs: Date.now() - start,
+                success: false,
+                error: `ownership.${err.code}`,
+              });
+              return ownershipErrorResponse(err);
+            }
+            throw err;
+          }
+          // Bonus: also block log-against a Strava-imported session (parity with update_session.ts).
+          if (plannedData.strava_activity_id) {
             return {
-              content: [{ type: "text" as const, text: `Error: Planned session "${params.plannedSessionId}" not found in diary.` }],
+              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Cannot log against a Strava-imported session" }) }],
               isError: true,
             };
           }
 
-          const plannedData = plannedSnap.data()!;
           if (plannedData.status === "completed" || plannedData.is_completed === true) {
             return {
               content: [{ type: "text" as const, text: JSON.stringify({ sessionId: params.plannedSessionId, status: "already_completed", message: "This session is already completed." }) }],
@@ -277,6 +303,7 @@ export function registerLogCompletedSession(server: McpServer): void {
             userPseudonym: claims.sub,
             latencyMs: Date.now() - start,
             success: true,
+            extras: plannedLegacyOrigin ? { legacy_origin: true } : undefined,
           });
 
           return {
