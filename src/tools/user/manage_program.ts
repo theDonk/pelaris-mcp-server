@@ -8,12 +8,17 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getActiveQueueDocuments, profileSubcollection } from "../../firestore-client.js";
+import { getActiveQueueDocuments } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import {
+  verifyQueueOwnership,
+  OwnershipError,
+  ownershipErrorResponse,
+} from "../shared/ownership.js";
 
 export function registerManageProgram(server: McpServer): void {
   server.tool(
@@ -44,7 +49,6 @@ export function registerManageProgram(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const queuesCol = profileSubcollection(profileId, "queues");
 
         // Write rate limit
         const rateLimitError = checkWriteRateLimit(claims.sub);
@@ -69,16 +73,28 @@ export function registerManageProgram(server: McpServer): void {
           targetDocId = queueDocs[0].id;
         }
 
-        const docRef = queuesCol.doc(targetDocId);
-        const existingDoc = await docRef.get();
-
-        if (!existingDoc.exists) {
-          return {
-            content: [{ type: "text" as const, text: `Error: Program "${targetDocId}" not found` }],
-            isError: true,
-          };
+        // H-03: defence-in-depth — verify the targeted programId is in the user's
+        // active_queues. Pre-empts the existing per-tool guards with a clearer error
+        // ("Program X is not in your active programs") for AI-agent callers.
+        let existingDoc;
+        try {
+          existingDoc = await verifyQueueOwnership(profileId, targetDocId);
+        } catch (err) {
+          if (err instanceof OwnershipError) {
+            logToolCall({
+              requestId,
+              tool: "manage_program",
+              userPseudonym: claims.sub,
+              latencyMs: Date.now() - start,
+              success: false,
+              error: `ownership.${err.code}`,
+            });
+            return ownershipErrorResponse(err);
+          }
+          throw err;
         }
 
+        const docRef = existingDoc.ref;
         const existingData = existingDoc.data()!;
         if (existingData.status === "archived") {
           return {

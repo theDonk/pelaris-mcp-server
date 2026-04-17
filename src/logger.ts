@@ -43,6 +43,9 @@ export function log(entry: LogEntry): void {
 
 /**
  * Log a tool invocation with timing.
+ *
+ * `extras` is spread into the log entry — used for structured observability
+ * fields like `legacy_origin: true` from ownership verification (H-03).
  */
 export function logToolCall(params: {
   requestId: string;
@@ -51,6 +54,7 @@ export function logToolCall(params: {
   latencyMs: number;
   success: boolean;
   error?: string;
+  extras?: Record<string, unknown>;
 }): void {
   log({
     severity: params.success ? "INFO" : "ERROR",
@@ -61,6 +65,7 @@ export function logToolCall(params: {
     latencyMs: params.latencyMs,
     success: params.success,
     error: params.error,
+    ...(params.extras ?? {}),
   });
 }
 

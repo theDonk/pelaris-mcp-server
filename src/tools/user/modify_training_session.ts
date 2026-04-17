@@ -8,12 +8,16 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { profileSubcollection } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import {
+  verifySessionOwnership,
+  OwnershipError,
+  ownershipErrorResponse,
+} from "../shared/ownership.js";
 
 export function registerModifyTrainingSession(server: McpServer): void {
   server.tool(
@@ -83,17 +87,30 @@ export function registerModifyTrainingSession(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const diaryRef = profileSubcollection(profileId, "diary").doc(params.sessionId);
-        const sessionDoc = await diaryRef.get();
 
-        if (!sessionDoc.exists) {
-          return {
-            content: [{ type: "text" as const, text: `Session "${params.sessionId}" not found` }],
-            isError: true,
-          };
+        // H-03: defence-in-depth ownership check before per-tool guards.
+        let diaryRef;
+        let sessionData: Record<string, unknown>;
+        let legacyOrigin = false;
+        try {
+          const result = await verifySessionOwnership(profileId, params.sessionId);
+          diaryRef = result.doc.ref;
+          sessionData = result.data;
+          legacyOrigin = result.legacyOrigin;
+        } catch (err) {
+          if (err instanceof OwnershipError) {
+            logToolCall({
+              requestId,
+              tool: "modify_training_session",
+              userPseudonym: claims.sub,
+              latencyMs: Date.now() - start,
+              success: false,
+              error: `ownership.${err.code}`,
+            });
+            return ownershipErrorResponse(err);
+          }
+          throw err;
         }
-
-        const sessionData = sessionDoc.data()!;
 
         // Don't modify completed sessions
         if (sessionData.is_completed || sessionData.status === "completed") {
@@ -226,6 +243,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
           userPseudonym: claims.sub,
           latencyMs: Date.now() - start,
           success: true,
+          extras: legacyOrigin ? { legacy_origin: true } : undefined,
         });
 
         return {

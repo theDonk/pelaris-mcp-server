@@ -12,12 +12,16 @@
 import crypto from "crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { profileSubcollection } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import {
+  verifySessionOwnership,
+  OwnershipError,
+  ownershipErrorResponse,
+} from "../shared/ownership.js";
 
 /** Generate a short random ID for blocks/exercises/sets. */
 function shortId(): string {
@@ -126,17 +130,30 @@ export function registerUpdateSession(server: McpServer): void {
         }
 
         const profileId = claims.profile_id;
-        const diaryRef = profileSubcollection(profileId, "diary").doc(params.sessionId);
-        const sessionDoc = await diaryRef.get();
 
-        if (!sessionDoc.exists) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Session not found" }) }],
-            isError: true,
-          };
+        // H-03: defence-in-depth ownership check before per-tool guards.
+        let diaryRef;
+        let sessionData: Record<string, unknown>;
+        let legacyOrigin = false;
+        try {
+          const result = await verifySessionOwnership(profileId, params.sessionId);
+          diaryRef = result.doc.ref;
+          sessionData = result.data;
+          legacyOrigin = result.legacyOrigin;
+        } catch (err) {
+          if (err instanceof OwnershipError) {
+            logToolCall({
+              requestId,
+              tool: "update_session",
+              userPseudonym: claims.sub,
+              latencyMs: Date.now() - start,
+              success: false,
+              error: `ownership.${err.code}`,
+            });
+            return ownershipErrorResponse(err);
+          }
+          throw err;
         }
-
-        const sessionData = sessionDoc.data()!;
 
         // Guard: Strava-imported sessions are read-only
         if (sessionData.strava_activity_id) {
@@ -325,6 +342,7 @@ export function registerUpdateSession(server: McpServer): void {
           userPseudonym: claims.sub,
           latencyMs: Date.now() - start,
           success: true,
+          extras: legacyOrigin ? { legacy_origin: true } : undefined,
         });
 
         return {

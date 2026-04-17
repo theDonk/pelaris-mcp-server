@@ -15,6 +15,11 @@ import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import {
+  verifySessionOwnership,
+  OwnershipError,
+  ownershipErrorResponse,
+} from "../shared/ownership.js";
 
 const VALID_SPORTS = ["strength", "running", "swimming", "cycling", "triathlon", "crossfit", "general", "yoga", "mobility", "other"] as const;
 const VALID_FEELINGS = ["strong", "tired", "energetic", "sluggish", "motivated", "stressed", "recovered", "sore"] as const;
@@ -190,16 +195,37 @@ export function registerLogWorkout(server: McpServer): void {
         const resolvedPlannedId = params.plannedSessionId || params.sessionId;
 
         // --- Planned session completion path ---
+        let plannedLegacyOrigin = false;
         if (resolvedPlannedId) {
-          const plannedRef = diaryCol.doc(resolvedPlannedId);
-          const plannedSnap = await plannedRef.get();
-          if (!plannedSnap.exists) {
+          // H-03: defence-in-depth ownership check before mutating the planned session.
+          let plannedRef;
+          let plannedData: Record<string, unknown>;
+          try {
+            const result = await verifySessionOwnership(profileId, resolvedPlannedId);
+            plannedRef = result.doc.ref;
+            plannedData = result.data;
+            plannedLegacyOrigin = result.legacyOrigin;
+          } catch (err) {
+            if (err instanceof OwnershipError) {
+              logToolCall({
+                requestId,
+                tool: "log_workout",
+                userPseudonym: claims.sub,
+                latencyMs: Date.now() - start,
+                success: false,
+                error: `ownership.${err.code}`,
+              });
+              return ownershipErrorResponse(err);
+            }
+            throw err;
+          }
+          // Bonus: also block log-against a Strava-imported session (parity with update_session.ts).
+          if (plannedData.strava_activity_id) {
             return {
-              content: [{ type: "text" as const, text: `Error: Planned session "${resolvedPlannedId}" not found in diary.` }],
+              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Cannot log against a Strava-imported session" }) }],
               isError: true,
             };
           }
-
           const timestamp = new Date().toISOString();
           const updateData: Record<string, unknown> = {
             status: "completed",
@@ -225,8 +251,7 @@ export function registerLogWorkout(server: McpServer): void {
           // If completedAsPrescribed, copy target values to actuals in blocks
           let updatedBlocks: unknown[] | undefined;
           if (params.completedAsPrescribed) {
-            const existingData = plannedSnap.data();
-            const existingBlocks = existingData?.blocks as Array<Record<string, unknown>> | undefined;
+            const existingBlocks = plannedData.blocks as Array<Record<string, unknown>> | undefined;
             if (existingBlocks && existingBlocks.length > 0) {
               updatedBlocks = existingBlocks.map((block) => {
                 const exercises = block.exercises as Array<Record<string, unknown>> | undefined;
@@ -278,6 +303,7 @@ export function registerLogWorkout(server: McpServer): void {
             userPseudonym: claims.sub,
             latencyMs: Date.now() - start,
             success: true,
+            extras: plannedLegacyOrigin ? { legacy_origin: true } : undefined,
           });
 
           return {
