@@ -24,6 +24,7 @@ import { registerGetSessionDetails } from "./tools/user/get_session_details.js";
 import { registerGetBenchmarks } from "./tools/user/get_benchmarks.js";
 import { registerGetBodyAnalysis } from "./tools/user/get_body_analysis.js";
 import { registerSearchEngineResources } from "./tools/user/search_engine_resources.js";
+import { registerRateProgram } from "./tools/user/rate_program.js";
 import { registerGetCoachInsight } from "./tools/user/get_coach_insight.js";
 import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.js";
 import { registerGetGenerationStatus } from "./tools/user/get_generation_status.js";
@@ -300,6 +301,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerGetBenchmarks(server);
     registerGetBodyAnalysis(server);
     registerSearchEngineResources(server);
+    registerRateProgram(server);
     registerGetCoachInsight(server);
     registerGetOnboardingStatus(server);
     registerGetGenerationStatus(server);
