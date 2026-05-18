@@ -3,6 +3,7 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { verifyBearerToken, type McpAuthenticatedRequest } from "./auth.js";
+import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
 import { logServer, generateRequestId } from "./logger.js";
 import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
@@ -60,6 +61,8 @@ import { registerBenchmarkCheckInPrompt } from "./prompts/benchmark_check_in.js"
 
 const PORT = parseInt(process.env.PORT || "8080", 10);
 const app = express();
+// CORS before body parsing so OPTIONS preflights short-circuit cleanly.
+app.use(corsMiddleware);
 app.use(express.json());
 
 // Health check (no auth)
