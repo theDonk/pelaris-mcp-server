@@ -17,7 +17,7 @@ Settings → Connectors → Add Custom → enter the MCP Server URL above → Ad
 ### Any MCP Client
 Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dynamic Client Registration.
 
-## Tools (21)
+## Tools (22)
 
 ### Read Tools (9)
 | Tool | Description |
@@ -32,10 +32,11 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `get_onboarding_status` | Check profile setup completion status |
 | `get_weekly_debrief` | View weekly training summary and coaching focus |
 
-### Write Tools (12)
+### Write Tools (13)
 | Tool | Description |
 |------|-------------|
 | `create_planned_session` | Create a planned workout with exercises and targets |
+| `update_session` | Update an existing planned or diary session with metadata, feedback, or exercise patches |
 | `log_workout` | Log a completed workout or mark a planned session as done |
 | `swap_exercise` | Get alternative exercise suggestions |
 | `modify_training_session` | Adjust session volume, intensity, or schedule |
