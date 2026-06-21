@@ -18,15 +18,19 @@ interface RateLimitEntry {
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_READ_REQUESTS = 60;
 const MAX_WRITE_REQUESTS = 50;
+// Program generation runs live Moonshot inference: a denial-of-wallet surface,
+// so it is limited far tighter than ordinary writes (Unified Uplift G3 C-3).
+const MAX_GENERATION_REQUESTS = 10;
 
 // In-memory stores keyed by user identifier
 const readLimiterStore = new Map<string, RateLimitEntry>();
 const writeLimiterStore = new Map<string, RateLimitEntry>();
+const generationLimiterStore = new Map<string, RateLimitEntry>();
 
 // Periodic cleanup of expired entries (every 5 minutes)
 setInterval(() => {
   const now = Date.now();
-  for (const store of [readLimiterStore, writeLimiterStore]) {
+  for (const store of [readLimiterStore, writeLimiterStore, generationLimiterStore]) {
     for (const [key, entry] of store) {
       if (now - entry.windowStart > WINDOW_MS) {
         store.delete(key);
@@ -114,6 +118,21 @@ export function checkWriteRateLimit(userKey: string): string | null {
   const exceeded = checkLimit(writeLimiterStore, `write:${userKey}`, MAX_WRITE_REQUESTS, now);
   if (exceeded) {
     return `Write rate limit of ${MAX_WRITE_REQUESTS} writes per hour exceeded. Retry after ${exceeded.retryAfterSeconds} seconds.`;
+  }
+  return null;
+}
+
+/**
+ * Check and increment the PROGRAM-GENERATION rate limit (separate, much tighter
+ * bucket). Program generation triggers live Moonshot inference, so it is a
+ * denial-of-wallet surface and is limited well below ordinary writes
+ * (Unified Uplift G3 C-3). Returns null if within limit, else an error message.
+ */
+export function checkGenerationRateLimit(userKey: string): string | null {
+  const now = Date.now();
+  const exceeded = checkLimit(generationLimiterStore, `gen:${userKey}`, MAX_GENERATION_REQUESTS, now);
+  if (exceeded) {
+    return `Program-generation rate limit of ${MAX_GENERATION_REQUESTS} per hour exceeded. Retry after ${exceeded.retryAfterSeconds} seconds.`;
   }
   return null;
 }

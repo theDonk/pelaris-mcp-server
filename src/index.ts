@@ -31,6 +31,7 @@ import { registerGetGenerationStatus } from "./tools/user/get_generation_status.
 
 // User write tools (OAuth-scoped — PEL-69)
 import { registerGenerateWeeklyPlan } from "./tools/user/generate_weekly_plan.js";
+import { registerGenerateProgram } from "./tools/user/generate_program.js";
 import { registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
 import { registerLogWorkout } from "./tools/user/log_workout.js";
 import { registerSwapExercise } from "./tools/user/swap_exercise.js";
@@ -308,6 +309,11 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerGetGenerationStatus(server);
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
+    // generate_program (Unified Uplift G3 / C-3): the curated generate-and-enrol
+    // path (Moonshot + server enrol -> scored queue). generate_weekly_plan is
+    // deprecated (old pipeline -> orphan diary entries, never scored) and kept
+    // only for the migration window.
+    registerGenerateProgram(server);
     registerGenerateWeeklyPlan(server);
     registerModifyTrainingSession(server);
     registerLogWorkout(server);

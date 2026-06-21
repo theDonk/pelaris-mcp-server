@@ -29,7 +29,7 @@ function getAuth(): GoogleAuth {
 export function registerGenerateWeeklyPlan(server: McpServer): void {
   server.tool(
     "generate_weekly_plan",
-    "Generate a new weekly training plan tailored to your program, goals, and readiness. Sessions are written directly to your calendar.",
+    "Deprecated: prefer generate_program, which enrols a scored, trainable program. Generate a weekly training plan tailored to your program, goals, and readiness. Sessions are written directly to your calendar.",
     {
       focus: z
         .string()
