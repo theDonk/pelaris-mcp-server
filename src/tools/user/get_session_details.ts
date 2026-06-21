@@ -12,6 +12,7 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { callCoreBridge } from "../shared/bridge_client.js";
 
 export function registerGetSessionDetails(server: McpServer): void {
   server.tool(
@@ -38,6 +39,36 @@ export function registerGetSessionDetails(server: McpServer): void {
         const sessionDoc = await profileSubcollection(profileId, "diary").doc(sessionId).get();
 
         if (!sessionDoc.exists) {
+          // F1 fix (ST-6 / Unified Uplift G2): the session may be queue-resident
+          // (a generated-program session not yet materialised into the diary).
+          // The read tools (get_active_program / get_training_overview) advertise
+          // these ids, but this tool used to 404 on them because it resolved the
+          // diary only. Resolve via the core bridge, which runs core's
+          // session_target_resolver (diary -> backref -> queue scan) within this
+          // SAME profile, so it is profile-scoped and never crosses users.
+          // Strictly additive: materialised (diary-resident) sessions still take
+          // the unchanged shape above. Degrade to the original not-found on any
+          // bridge error so behaviour is never worse than today.
+          try {
+            const bridged = await callCoreBridge("get_session_details", profileId, { sessionId });
+            if (bridged.ok && bridged.result != null) {
+              const resolved = scrubDocument(bridged.result as Record<string, unknown>);
+              logToolCall({
+                requestId,
+                tool: "get_session_details",
+                userPseudonym: claims.sub,
+                latencyMs: Date.now() - start,
+                success: true,
+              });
+              return {
+                content: [{ type: "text" as const, text: JSON.stringify(resolved, null, 2) }],
+              };
+            }
+          } catch (bridgeErr) {
+            console.warn(
+              `[get_session_details] core bridge resolution failed: ${(bridgeErr as Error).message}`,
+            );
+          }
           return {
             content: [{ type: "text" as const, text: `Session "${sessionId}" not found` }],
             isError: true,
