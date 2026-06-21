@@ -48,6 +48,20 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `manage_goals` | Create, update, complete, or list training goals |
 | `manage_program` | View, archive, or manage training programs |
 
+## Example prompts
+
+Once connected, talk to your AI assistant naturally. It maps your intent to the tools above:
+
+- "What does my training look like today?" → `get_training_overview` / `get_active_program`
+- "Log my 5k run, felt easy, RPE 4." → `log_workout`
+- "Create an upper body session for tomorrow." → `create_planned_session`
+- "How are my benchmarks trending?" → `get_benchmarks`
+- "Swap the barbell bench for a dumbbell variation." → `swap_exercise`
+- "My right shoulder's been sore." → `record_injury`
+- "Build me a 4-week running plan." → `generate_weekly_plan`
+
+(Illustrative prompts only; no personal data is shown. Responses are grounded in your own training data and PII-scrubbed.)
+
 ## Authentication
 
 OAuth 2.0 with PKCE. The server supports:
