@@ -17,9 +17,9 @@ Settings → Connectors → Add Custom → enter the MCP Server URL above → Ad
 ### Any MCP Client
 Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dynamic Client Registration.
 
-## Tools (21)
+## Tools (24)
 
-### Read Tools (9)
+### Read Tools (10)
 | Tool | Description |
 |------|-------------|
 | `get_training_overview` | View your training context, active programs, and recent sessions |
@@ -31,10 +31,13 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `get_coach_insight` | Get data-driven coaching insights based on your training |
 | `get_onboarding_status` | Check profile setup completion status |
 | `get_weekly_debrief` | View weekly training summary and coaching focus |
+| `get_generation_status` | Check the status of an in-progress program-generation job |
 
-### Write Tools (12)
+### Write Tools (14)
 | Tool | Description |
 |------|-------------|
+| `complete_intake` | Complete onboarding intake and persist your training profile |
+| `generate_program` | Generate and enrol a full training program from your profile |
 | `create_planned_session` | Create a planned workout with exercises and targets |
 | `log_workout` | Log a completed workout or mark a planned session as done |
 | `swap_exercise` | Get alternative exercise suggestions |
@@ -42,11 +45,11 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `record_injury` | Record an injury with body part, severity, and notes |
 | `update_profile` | Update equipment, availability, and preferences |
 | `send_feedback` | Submit coaching quality feedback |
-| `generate_weekly_plan` | Generate a new training plan |
 | `record_benchmark` | Record a benchmark value with history tracking |
 | `daily_check_in` | Log daily readiness, soreness, and sleep quality |
 | `manage_goals` | Create, update, complete, or list training goals |
 | `manage_program` | View, archive, or manage training programs |
+| `generate_weekly_plan` | Legacy short-plan generator (superseded by `generate_program`) |
 
 ## Example prompts
 
