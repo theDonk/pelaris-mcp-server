@@ -44,5 +44,5 @@ Use the get_benchmarks tool to retrieve my data, then provide:
 4. **Goal Connection** — How do these benchmarks connect to my stated goals?
 5. **Action Items** — Specific, actionable recommendations to drive the most important benchmarks forward.
 
-Reference actual values and percentages. No generic advice — coach me based on MY numbers.`;
+Reference actual values and percentages.`;
 }

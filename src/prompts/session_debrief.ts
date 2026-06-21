@@ -40,5 +40,5 @@ Use the get_session_details tool to retrieve the session data, then analyze:
 4. **Key Observations** — Any standout performances, struggles, or patterns worth noting?
 5. **Next Session Prep** — Based on this session, what should I focus on or adjust for the next one?
 
-Be direct. Use specific data from the session. Coach me like you mean it.`;
+Be direct and use specific data from the session.`;
 }
