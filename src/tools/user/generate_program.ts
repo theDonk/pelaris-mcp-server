@@ -3,12 +3,12 @@
  * Scope: training:write
  *
  * Generate a complete training program and enrol it as the active program, via
- * the curated wayfinder `generateProgramServer` CF (Moonshot + the C-2 server
+ * the curated wayfinder `generateProgramServer` CF (server-side generation + the C-2 server
  * enrol). Produces a real `ai_generated` queue that the quality judge scores,
  * replacing the deprecated generate_weekly_plan (old pipeline -> orphan diary
  * entries, never scored). Covers short plans (durationWeeks 1-52).
  *
- * Generation triggers live Moonshot inference (Critical System #4) on a PUBLIC
+ * Generation triggers live server-side AI inference (Critical System #4) on a PUBLIC
  * surface, so this tool carries a STRICT generation rate-limit
  * (checkGenerationRateLimit) on top of the write limit (denial-of-wallet).
  *

@@ -311,7 +311,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
     // generate_program (Unified Uplift G3 / C-3): the curated generate-and-enrol
-    // path (Moonshot + server enrol -> scored queue). generate_weekly_plan is
+    // path (server-side generation + enrol -> scored queue). generate_weekly_plan is
     // deprecated (old pipeline -> orphan diary entries, never scored) and kept
     // only for the migration window.
     registerCompleteIntake(server);

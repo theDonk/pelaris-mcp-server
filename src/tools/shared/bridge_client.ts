@@ -4,7 +4,7 @@
  *
  * This MCP server cannot import wayfinder's `tools/core`: incompatible module
  * systems (this repo is ESM/NodeNext, functions is CJS) and `tools/core`
- * transitively pulls Moonshot + firebase-functions, which would bloat AND leak
+ * transitively pulls the generation pipeline + firebase-functions, which would bloat AND leak
  * internal logic into this PUBLIC bundle. Instead the server reaches core's ONE
  * implementation over this thin authenticated internal HTTP door, so it stops
  * reimplementing session logic (the reimplementation is exactly how F1 happened:

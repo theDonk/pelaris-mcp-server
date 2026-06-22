@@ -18,7 +18,7 @@ interface RateLimitEntry {
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_READ_REQUESTS = 60;
 const MAX_WRITE_REQUESTS = 50;
-// Program generation runs live Moonshot inference: a denial-of-wallet surface,
+// Program generation runs live server-side AI inference: a denial-of-wallet surface,
 // so it is limited far tighter than ordinary writes (Unified Uplift G3 C-3).
 const MAX_GENERATION_REQUESTS = 10;
 
@@ -124,7 +124,7 @@ export function checkWriteRateLimit(userKey: string): string | null {
 
 /**
  * Check and increment the PROGRAM-GENERATION rate limit (separate, much tighter
- * bucket). Program generation triggers live Moonshot inference, so it is a
+ * bucket). Program generation triggers live server-side AI inference, so it is a
  * denial-of-wallet surface and is limited well below ordinary writes
  * (Unified Uplift G3 C-3). Returns null if within limit, else an error message.
  */
