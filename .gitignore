@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env
 *.js.map
+# Audit/test harness (local emulator only — never commit/ship)
+_audit_*.mjs

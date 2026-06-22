@@ -3,3 +3,5 @@ dist/
 .env
 *.js.map
 .git/
+# Audit/test harness (local emulator only — never ship)
+_audit_*.mjs

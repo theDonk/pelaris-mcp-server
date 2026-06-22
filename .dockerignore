@@ -2,3 +2,5 @@ node_modules
 dist
 .env
 *.md
+# Audit/test harness (local emulator only — never ship)
+_audit_*.mjs

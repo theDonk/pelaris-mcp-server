@@ -2,11 +2,9 @@
  * MCP Tool: generate_weekly_plan
  * Scope: training:write
  *
- * Orchestrates the full 3-stage program generation pipeline via HTTP call
- * to the Cloud Function endpoint. Sessions are written directly to the diary.
- *
- * PEL-229/230/231: Now runs all 3 stages (strategy → overviews → sessions)
- * and writes diary entries. Returns a real jobId for status polling.
+ * Legacy short-plan generator (superseded by generate_program). Calls the
+ * server-side program-generation Cloud Function over HTTP and returns a jobId
+ * for status polling; generated sessions are persisted server-side.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
