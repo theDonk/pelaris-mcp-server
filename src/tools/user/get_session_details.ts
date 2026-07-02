@@ -94,6 +94,8 @@ export function registerGetSessionDetails(server: McpServer): void {
               return {
                 exerciseName: ex.exercise_name,
                 exerciseId: ex.exercise_id,
+                // PEL-425: AI-authored per-exercise adaptation delta.
+                deltaNote: ex.delta_note ?? null,
                 sets: sets.map((s) => {
                   if (s.type === "strength") {
                     return {
@@ -140,6 +142,8 @@ export function registerGetSessionDetails(server: McpServer): void {
           isHybrid: d.is_hybrid || false,
           phaseFocus: d.phase_focus || null,
           adaptationApplied: d.adaptation_applied || false,
+          // PEL-425: AI-authored session-level adaptation summary.
+          adaptationNote: d.adaptation_note || null,
           coachNote: d.coach_note || null,
           startedAt: d.started_at?.toDate?.()?.toISOString?.() || d.started_at || null,
           completedAt: d.completed_at?.toDate?.()?.toISOString?.() || d.completed_at || null,
