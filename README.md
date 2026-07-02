@@ -17,14 +17,15 @@ Settings → Connectors → Add Custom → enter the MCP Server URL above → Ad
 ### Any MCP Client
 Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dynamic Client Registration.
 
-## Tools (24)
+## Tools (25)
 
-### Read Tools (10)
+### Read Tools (11)
 | Tool | Description |
 |------|-------------|
 | `get_training_overview` | View your training context, active programs, and recent sessions |
 | `get_active_program` | View current program with phase, weekly structure, and session details |
 | `get_session_details` | View a specific session's exercises, sets, targets, and feedback |
+| `resolve_exercise_ids` | Resolve exercise names to canonical exercise IDs before planning or logging |
 | `get_benchmarks` | View benchmark values, progress history, and trends |
 | `get_body_analysis` | View body composition data and measurement trends |
 | `search_training_resources` | Search curated training articles and resources |

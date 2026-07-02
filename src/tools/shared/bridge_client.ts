@@ -36,12 +36,15 @@ function isEmulator(): boolean {
   return !!process.env.FIRESTORE_EMULATOR_HOST;
 }
 
-/** The { ok, tool, result?, error? } envelope coreToolsBridge returns. */
+/** The { ok, tool, result?, error?, errorDetail? } envelope coreToolsBridge returns. */
 export interface BridgeResult {
   ok: boolean;
   tool: string;
   result?: unknown;
   error?: string;
+  /** Structured detail on failures (e.g. preflight candidate ids) so the
+   *  calling agent can self-correct. Only present on newer bridge envelopes. */
+  errorDetail?: unknown;
 }
 
 /**

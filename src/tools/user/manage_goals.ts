@@ -153,6 +153,11 @@ export function registerManageGoals(server: McpServer): void {
               eventDate: d.event_date || null,
               eventDistance: d.event_distance || null,
               eventLocation: d.event_location || null,
+              // Benchmark ids this goal is tracked against (linked at write
+              // time by intake, the dashboard AI suggestion, or the coach).
+              linkedBenchmarkIds: Array.isArray(d.linked_benchmark_ids)
+                ? d.linked_benchmark_ids
+                : [],
             };
           });
 
@@ -189,7 +194,12 @@ export function registerManageGoals(server: McpServer): void {
             is_completed: false,
             date_created: now,
             target_date: params.targetDate || null,
-            linked_benchmark_ids: null,
+            // Empty array, not null — matches the core update_athlete goal
+            // shape and the Dart model default. Write-time linking over MCP
+            // is deferred: id validation needs the server-side catalogue
+            // resolver, and the public repo must not read the benchmarks
+            // collection directly (security gate).
+            linked_benchmark_ids: [],
             source: params.source || "manual",
           };
 

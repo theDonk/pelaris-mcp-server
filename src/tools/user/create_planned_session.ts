@@ -2,27 +2,44 @@
  * MCP Tool: create_planned_session
  * Scope: training:write
  *
- * Creates a planned diary entry for a future workout session.
+ * Creates a planned diary entry for a future workout session via the wayfinder
+ * core `create_planned_session` over the coreToolsBridge (WS1, 02/07/2026).
+ * The core write path owns persistence: exercise identity resolution
+ * (canonical exercise_id), same-day preflight, and native block structure.
+ * This wrapper keeps auth, scope, rate limiting, logging, and scrubbing, and
+ * adapts the legacy flat schema onto the core contract (core_adapter.ts).
  * The session appears in the Pelaris app's Train tab on the scheduled date,
  * with target exercises that the user can then track actuals against.
  */
 
-import crypto from "crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { profileSubcollection } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { callCoreBridge } from "../shared/bridge_client.js";
+import {
+  EXERCISE_NAME_DESCRIPTION,
+  bridgeFailureResponse,
+  coreWriteBlocksField,
+  exerciseIdField,
+  mapLegacyPlannedExercise,
+  resolveBlocksInput,
+  unwrapBridgeResult,
+  type CoreWriteBlockSpec,
+  type LegacyPlannedExerciseFields,
+} from "../shared/core_adapter.js";
 
 const VALID_SPORTS = [
   "strength", "running", "swimming", "cycling",
   "triathlon", "crossfit", "other",
 ] as const;
 
-/** Map MCP sport names to the session_type values the Pelaris app expects. */
+/** Map MCP sport names to the session_type value echoed in the response.
+ *  Response-shape parity only; the persisted session_type is derived
+ *  server-side by the core write path. */
 function mapSportToSessionType(sport: string): string {
   switch (sport) {
     case "running": return "run";
@@ -33,15 +50,53 @@ function mapSportToSessionType(sport: string): string {
   }
 }
 
-/** Generate a short random ID for blocks/exercises/sets. */
-function shortId(): string {
-  return crypto.randomBytes(8).toString("hex");
+/** Tool params after zod validation. Exercises keep the legacy planned
+ *  dialect (weight kg, duration SECONDS, distance meters) plus the additive
+ *  exerciseId; blocks[] speak the core contract directly. */
+export interface CreatePlannedSessionToolParams {
+  date: string;
+  sport: (typeof VALID_SPORTS)[number];
+  title?: string;
+  durationMinutes?: number;
+  sessionFocus?: string;
+  coachNote?: string;
+  exercises?: LegacyPlannedExerciseFields[];
+  blocks?: CoreWriteBlockSpec[];
+}
+
+/**
+ * Build the core `create_planned_session` input from the tool params. Flat
+ * legacy exercises[] are mapped field-by-field onto the core spec (weight ->
+ * weightKg, duration seconds -> durationMinutes, distance -> distanceMeters)
+ * and wrapped as per-exercise single blocks; explicit blocks[] pass through
+ * untouched and win when both are present. Never includes any profile
+ * identifier: profileId travels only as the separate bridge argument, from
+ * validated claims. Exported for contract tests.
+ */
+export function buildCreatePlannedSessionCoreInput(
+  params: CreatePlannedSessionToolParams,
+): Record<string, unknown> {
+  const blocks = resolveBlocksInput(
+    params.blocks,
+    params.exercises?.map(mapLegacyPlannedExercise),
+  );
+  return {
+    date: params.date,
+    sport: params.sport,
+    ...(params.title ? { title: params.title } : {}),
+    ...(params.durationMinutes != null ? { durationMinutes: params.durationMinutes } : {}),
+    ...(params.sessionFocus ? { sessionFocus: params.sessionFocus } : {}),
+    ...(params.coachNote ? { coachNote: params.coachNote } : {}),
+    ...(blocks ? { blocks } : {}),
+  };
 }
 
 export function registerCreatePlannedSession(server: McpServer): void {
   server.tool(
     "create_planned_session",
-    "Schedule a future workout session with target exercises. The session will appear in your training calendar ready to track.",
+    "Schedule a future workout session with target exercises. The session will appear in your " +
+      "training calendar ready to track. Express grouped work (supersets, circuits) and phases " +
+      "(warm-up / main / cool-down) with blocks[]; never encode grouping in exercise names.",
     {
       date: z
         .string()
@@ -76,7 +131,8 @@ export function registerCreatePlannedSession(server: McpServer): void {
       exercises: z
         .array(
           z.object({
-            name: z.string().min(1).max(200).describe("Exercise name"),
+            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+            exerciseId: exerciseIdField,
             sets: z.number().int().min(1).max(50).optional().describe("Number of sets"),
             reps: z.number().int().min(1).max(200).optional().describe("Target reps per set"),
             weight: z.number().min(0).max(1000).optional().describe("Target weight in kg"),
@@ -87,7 +143,8 @@ export function registerCreatePlannedSession(server: McpServer): void {
         )
         .max(30)
         .optional()
-        .describe("Array of planned exercises (max 30)"),
+        .describe("Array of planned exercises (max 30). Flat list of standalone movements; use blocks[] for grouped or phased sessions."),
+      blocks: coreWriteBlocksField,
     },
     { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
@@ -113,113 +170,49 @@ export function registerCreatePlannedSession(server: McpServer): void {
           };
         }
 
-        const profileId = claims.profile_id;
-        const sessionType = mapSportToSessionType(params.sport);
-        const sessionTitle =
-          params.title ||
-          `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`;
+        // profileId comes only from validated claims, never from tool params.
+        const bridged = await callCoreBridge(
+          "create_planned_session",
+          claims.profile_id,
+          buildCreatePlannedSessionCoreInput(params),
+        );
 
-        const diaryCol = profileSubcollection(profileId, "diary");
-
-        // Build exercise blocks with TARGET fields (not actuals)
-        const blocks: Array<Record<string, unknown>> = [];
-        if (params.exercises && params.exercises.length > 0) {
-          blocks.push({
-            id: shortId(),
-            type: "single",
-            semantic_type: "main",
-            rounds: 1,
-            exercises: params.exercises.map((ex) => {
-              const setCount = ex.sets || 1;
-              const sets: Array<Record<string, unknown>> = [];
-
-              for (let i = 0; i < setCount; i++) {
-                if (ex.weight != null || ex.reps != null) {
-                  // Strength set — use target fields
-                  sets.push({
-                    id: shortId(),
-                    type: "strength",
-                    target_weight_kg: ex.weight ?? null,
-                    target_reps: ex.reps ?? null,
-                    isCompleted: false,
-                    notes: ex.notes ?? null,
-                  });
-                } else if (ex.distance != null || ex.duration != null) {
-                  // Cardio set — use target fields
-                  sets.push({
-                    id: shortId(),
-                    type: "cardio",
-                    target_distance_meters: ex.distance ?? null,
-                    target_duration_sec: ex.duration ?? null,
-                    isCompleted: false,
-                    notes: ex.notes ?? null,
-                  });
-                } else {
-                  // General set (e.g. bodyweight exercise with just a name)
-                  sets.push({
-                    id: shortId(),
-                    type: "strength",
-                    target_reps: ex.reps ?? null,
-                    isCompleted: false,
-                    notes: ex.notes ?? null,
-                  });
-                }
-              }
-
-              return {
-                exercise_id: shortId(),
-                exercise_name: ex.name,
-                sets,
-              };
-            }),
+        const failure = bridgeFailureResponse(bridged, "creating planned session");
+        if (failure) {
+          logToolCall({
+            requestId,
+            tool: "create_planned_session",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: false,
+            error: bridged.error ?? "unknown error",
           });
+          return failure;
         }
 
-        // Build diary entry — planned session
-        const timestamp = new Date().toISOString();
-        const diaryEntry: Record<string, unknown> = {
-          title: sessionTitle,
-          scheduled_date: params.date,
-          session_type: sessionType,
-          status: "planned",
-          is_completed: false,
-          blocks,
-          source: "mcp",
-          created_at: timestamp,
-          updated_at: timestamp,
+        // Core returns CreatePlannedSessionOutput; echo the response shape
+        // users of this tool already get.
+        const core = unwrapBridgeResult(bridged) as {
+          sessionId?: string;
+          status?: string;
+          date?: string;
+          title?: string;
+          exerciseCount?: number;
         };
-
-        // Optional fields — only include if provided
-        if (params.durationMinutes != null) {
-          diaryEntry.duration_minutes = params.durationMinutes;
-        }
-        if (params.sessionFocus) {
-          diaryEntry.session_focus = params.sessionFocus;
-        }
-        if (params.coachNote) {
-          diaryEntry.coach_note = {
-            title: "Coach Note",
-            message: params.coachNote,
-            source: "mcp",
-            created_at: timestamp,
-          };
-        }
-
-        // Write to Firestore
-        const docRef = await diaryCol.add(diaryEntry);
-        const sessionId = docRef.id;
-        // Write the document ID as a field so the Flutter app can reference it
-        await docRef.update({ id: sessionId });
+        const sessionTitle = core.title ??
+          params.title ??
+          `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`;
+        const sessionDate = core.date ?? params.date;
 
         const result = scrubDocument({
-          sessionId,
-          status: "created",
-          date: params.date,
+          sessionId: core.sessionId,
+          status: core.status ?? "created",
+          date: sessionDate,
           title: sessionTitle,
           sport: params.sport,
-          sessionType,
-          exerciseCount: params.exercises?.length || 0,
-          message: `Planned session created: "${sessionTitle}" on ${params.date}. It will appear in the Train tab for tracking.`,
+          sessionType: mapSportToSessionType(params.sport),
+          exerciseCount: core.exerciseCount ?? 0,
+          message: `Planned session created: "${sessionTitle}" on ${sessionDate}. It will appear in the Train tab for tracking.`,
         });
 
         logToolCall({

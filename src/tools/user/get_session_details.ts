@@ -83,6 +83,11 @@ export function registerGetSessionDetails(server: McpServer): void {
           const exercises = (block.exercises || []) as Array<Record<string, unknown>>;
           return {
             blockType: block.type,
+            // Read symmetry with the write schema: reads teach the vocabulary
+            // write tools accept (blocks[].structure single/superset/circuit +
+            // rounds). blockType kept for existing consumers.
+            structure: block.type ?? null,
+            rounds: block.rounds ?? null,
             semanticType: block.semantic_type || null,
             exercises: exercises.map((ex) => {
               const sets = (ex.sets || []) as Array<Record<string, unknown>>;

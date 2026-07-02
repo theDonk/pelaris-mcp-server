@@ -2,31 +2,120 @@
  * MCP Tool: log_workout
  * Scope: training:write
  *
- * Creates or updates a diary entry for a completed workout.
- * Includes idempotency via date+sport+duration hash to prevent duplicate logs.
+ * Records a completed workout, either against a planned session or as a new
+ * diary entry, with idempotency via a date+sport+duration hash.
+ *
+ * Migrated onto the coreToolsBridge (WS1, exercise naming plan, 02/07/2026):
+ * the direct-Firestore body is deleted. This wrapper keeps scope, rate-limit,
+ * request logging, and scrubbing; core `log_session` owns completion
+ * semantics, idempotency (same key formula, so pre-migration entries still
+ * dedupe), completedAsPrescribed target-to-actual copying, exercise identity
+ * resolution, and planned-target resolution via session_target_resolver
+ * (diary AND queue-resident sessions, retiring the diary-only ownership
+ * path).
  */
 
-import crypto from "crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { profileSubcollection } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { callCoreBridge } from "../shared/bridge_client.js";
 import {
-  verifySessionOwnership,
-  OwnershipError,
-  ownershipErrorResponse,
-} from "../shared/ownership.js";
+  EXERCISE_NAME_DESCRIPTION,
+  type LegacyLoggedExerciseFields,
+  bridgeFailureResponse,
+  exerciseIdField,
+  mapLegacyLoggedExercise,
+  unwrapBridgeResult,
+} from "../shared/core_adapter.js";
 
 const VALID_SPORTS = ["strength", "running", "swimming", "cycling", "triathlon", "crossfit", "general", "yoga", "mobility", "other"] as const;
 const VALID_FEELINGS = ["strong", "tired", "energetic", "sluggish", "motivated", "stressed", "recovered", "sore"] as const;
 
-function generateIdempotencyKey(profileId: string, date: string, sport: string, duration: number): string {
-  const raw = `${profileId}:${date}:${sport}:${duration}`;
-  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16);
+/** The legacy params this tool maps onto the core `log_session` contract.
+ *  Mirrors the zod schema below; kept as an explicit interface so the
+ *  mapping is unit-testable without an MCP server. */
+export interface LogWorkoutParams {
+  sessionId?: string;
+  plannedSessionId?: string;
+  completedAsPrescribed?: boolean;
+  sport: string;
+  duration: number;
+  rpe: number;
+  date?: string;
+  exercises?: LegacyLoggedExerciseFields[];
+  feelings?: string[];
+  notes?: string;
+}
+
+/** Map the legacy tool params onto the core `log_session` input. Every
+ *  legacy field is mapped explicitly (the server silently ignores unknown
+ *  keys): top-level duration is already minutes (name change only), notes
+ *  becomes feedbackNote, sessionId stays a plannedSessionId alias with the
+ *  legacy priority, and exercise durationSec (seconds) converts to
+ *  durationMinutes via the shared adapter. */
+export function buildLogWorkoutCoreInput(params: LogWorkoutParams): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    detailLevel: "quick",
+    sport: params.sport,
+    durationMinutes: params.duration,
+    rpe: params.rpe,
+  };
+  // Legacy priority: plannedSessionId wins over the sessionId alias.
+  const plannedSessionId = params.plannedSessionId || params.sessionId;
+  if (plannedSessionId) input.plannedSessionId = plannedSessionId;
+  if (params.completedAsPrescribed !== undefined) input.completedAsPrescribed = params.completedAsPrescribed;
+  if (params.date !== undefined) input.date = params.date;
+  if (params.feelings !== undefined) input.feelings = params.feelings;
+  if (params.notes !== undefined) input.feedbackNote = params.notes;
+  if (params.exercises !== undefined) {
+    input.exercises = params.exercises.map(mapLegacyLoggedExercise);
+  }
+  return input;
+}
+
+/** Map the core `log_session` output back onto this tool's legacy response
+ *  shape (the status vocabulary and field names agents already parse).
+ *  Core "updated" (a planned target was completed) -> "completed_planned";
+ *  core "completed" (new diary entry, or an idempotency hit, which core
+ *  reports in the message) -> "logged". */
+export function mapLogWorkoutResult(
+  result: Record<string, unknown>,
+  completedAsPrescribed: boolean,
+): Record<string, unknown> {
+  if (result.status === "already_logged") {
+    return {
+      sessionId: result.sessionId,
+      status: "already_logged",
+      message: result.message,
+    };
+  }
+  if (result.status === "updated") {
+    return {
+      sessionId: result.sessionId,
+      status: "completed_planned",
+      date: result.date,
+      sport: result.sport,
+      duration: result.durationMinutes ?? null,
+      rpe: result.rpe ?? null,
+      completedAsPrescribed,
+      message: `Planned session "${result.sessionId}" marked as completed on ${result.date}.`,
+    };
+  }
+  return {
+    sessionId: result.sessionId,
+    status: "logged",
+    date: result.date,
+    sport: result.sport,
+    duration: result.durationMinutes ?? null,
+    rpe: result.rpe ?? null,
+    exerciseCount: result.exerciseCount ?? 0,
+    dataQuality: result.dataQuality,
+    message: result.message,
+  };
 }
 
 export function registerLogWorkout(server: McpServer): void {
@@ -69,12 +158,14 @@ export function registerLogWorkout(server: McpServer): void {
       exercises: z
         .array(
           z.object({
-            name: z.string().min(1).max(200).describe("Exercise name"),
+            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+            exerciseId: exerciseIdField,
             sets: z.number().int().min(1).max(50).optional().describe("Number of sets completed"),
             reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
             weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
             durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
             distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
+            notes: z.string().max(500).optional().describe("Exercise-specific notes"),
           }),
         )
         .max(30)
@@ -97,7 +188,6 @@ export function registerLogWorkout(server: McpServer): void {
       const start = Date.now();
 
       try {
-        // Auth & scope check
         const claims = getRequestAuth();
         if (!claims || !hasScope(claims.scope, "training:write")) {
           return {
@@ -106,7 +196,6 @@ export function registerLogWorkout(server: McpServer): void {
           };
         }
 
-        // Write rate limit
         const rateLimitError = checkWriteRateLimit(claims.sub);
         if (rateLimitError) {
           return {
@@ -115,241 +204,30 @@ export function registerLogWorkout(server: McpServer): void {
           };
         }
 
-        const profileId = claims.profile_id;
-        const workoutDate = params.date || new Date().toISOString().split("T")[0];
-        const diaryCol = profileSubcollection(profileId, "diary");
+        // profileId comes ONLY from the validated claims, never from params.
+        const bridged = await callCoreBridge(
+          "log_session",
+          claims.profile_id,
+          buildLogWorkoutCoreInput(params),
+        );
 
-        // Idempotency check
-        const idempotencyKey = generateIdempotencyKey(profileId, workoutDate, params.sport, params.duration);
-        const existingByKey = await diaryCol
-          .where("idempotency_key", "==", idempotencyKey)
-          .limit(1)
-          .get();
-
-        if (!existingByKey.empty) {
-          const existingDoc = existingByKey.docs[0];
-          const result = scrubDocument({
-            sessionId: existingDoc.id,
-            status: "already_logged",
-            message: "This workout has already been logged (matching date, sport, and duration). No duplicate created.",
-          });
+        const failure = bridgeFailureResponse(bridged, "logging workout");
+        if (failure) {
           logToolCall({
             requestId,
             tool: "log_workout",
             userPseudonym: claims.sub,
             latencyMs: Date.now() - start,
-            success: true,
+            success: false,
+            error: bridged.error ?? "unknown error",
           });
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          };
+          return failure;
         }
 
-        // Build exercise blocks if provided
-        const blocks: Array<Record<string, unknown>> = [];
-        if (params.exercises && params.exercises.length > 0) {
-          blocks.push({
-            id: crypto.randomBytes(8).toString("hex"),
-            type: "single",
-            rounds: 1,
-            semantic_type: "working",
-            exercises: params.exercises.map((ex) => {
-              const exercise: Record<string, unknown> = {
-                exercise_id: crypto.randomBytes(8).toString("hex"),
-                exercise_name: ex.name,
-              };
-              const sets: Array<Record<string, unknown>> = [];
-              const setCount = ex.sets || 1;
-              for (let i = 0; i < setCount; i++) {
-                if (ex.weightKg != null || ex.reps != null) {
-                  sets.push({
-                    id: crypto.randomBytes(8).toString("hex"),
-                    type: "strength",
-                    actual_weight_kg: ex.weightKg ?? null,
-                    actual_reps: ex.reps ?? null,
-                    isCompleted: true,
-                  });
-                } else if (ex.distanceMeters != null || ex.durationSec != null) {
-                  sets.push({
-                    id: crypto.randomBytes(8).toString("hex"),
-                    type: "cardio",
-                    actual_distance_meters: ex.distanceMeters ?? null,
-                    actual_duration_sec: ex.durationSec ?? null,
-                    isCompleted: true,
-                  });
-                } else {
-                  sets.push({
-                    id: crypto.randomBytes(8).toString("hex"),
-                    type: "general",
-                    isCompleted: true,
-                  });
-                }
-              }
-              exercise.sets = sets;
-              return exercise;
-            }),
-          });
-        }
-
-        // Resolve which session ID to use (plannedSessionId takes priority over sessionId)
-        const resolvedPlannedId = params.plannedSessionId || params.sessionId;
-
-        // --- Planned session completion path ---
-        let plannedLegacyOrigin = false;
-        if (resolvedPlannedId) {
-          // H-03: defence-in-depth ownership check before mutating the planned session.
-          let plannedRef;
-          let plannedData: Record<string, unknown>;
-          try {
-            const result = await verifySessionOwnership(profileId, resolvedPlannedId);
-            plannedRef = result.doc.ref;
-            plannedData = result.data;
-            plannedLegacyOrigin = result.legacyOrigin;
-          } catch (err) {
-            if (err instanceof OwnershipError) {
-              logToolCall({
-                requestId,
-                tool: "log_workout",
-                userPseudonym: claims.sub,
-                latencyMs: Date.now() - start,
-                success: false,
-                error: `ownership.${err.code}`,
-              });
-              return ownershipErrorResponse(err);
-            }
-            throw err;
-          }
-          // Bonus: also block log-against a Strava-imported session (parity with update_session.ts).
-          if (plannedData.strava_activity_id) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Cannot log against a Strava-imported session" }) }],
-              isError: true,
-            };
-          }
-          const timestamp = new Date().toISOString();
-          const updateData: Record<string, unknown> = {
-            status: "completed",
-            is_completed: true,
-            completed_at: timestamp,
-            source: "mcp",
-            updated_at: timestamp,
-          };
-
-          if (params.rpe != null) {
-            updateData["feedback.rpe"] = params.rpe;
-          }
-          if (params.feelings && params.feelings.length > 0) {
-            updateData["feedback.tags"] = params.feelings;
-          }
-          if (params.notes != null) {
-            updateData["feedback.note"] = params.notes;
-          }
-          if (params.duration != null) {
-            updateData.duration_minutes = params.duration;
-          }
-
-          // If completedAsPrescribed, copy target values to actuals in blocks
-          let updatedBlocks: unknown[] | undefined;
-          if (params.completedAsPrescribed) {
-            const existingBlocks = plannedData.blocks as Array<Record<string, unknown>> | undefined;
-            if (existingBlocks && existingBlocks.length > 0) {
-              updatedBlocks = existingBlocks.map((block) => {
-                const exercises = block.exercises as Array<Record<string, unknown>> | undefined;
-                if (!exercises) return block;
-                return {
-                  ...block,
-                  exercises: exercises.map((exercise) => {
-                    const sets = exercise.sets as Array<Record<string, unknown>> | undefined;
-                    if (!sets) return exercise;
-                    return {
-                      ...exercise,
-                      sets: sets.map((set) => ({
-                        ...set,
-                        isCompleted: true,
-                        ...(set.target_weight_kg != null && { actual_weight_kg: set.target_weight_kg }),
-                        ...(set.target_reps != null && { actual_reps: set.target_reps }),
-                        ...(set.target_distance_meters != null && { actual_distance_meters: set.target_distance_meters }),
-                        ...(set.target_duration_sec != null && { actual_duration_sec: set.target_duration_sec }),
-                      })),
-                    };
-                  }),
-                };
-              });
-              updateData.blocks = updatedBlocks;
-            }
-          }
-
-          // If MCP-provided exercises, build blocks and overwrite
-          if (!params.completedAsPrescribed && blocks.length > 0) {
-            updateData.blocks = blocks;
-          }
-
-          await plannedRef.update(updateData);
-
-          const result = scrubDocument({
-            sessionId: resolvedPlannedId,
-            status: "completed_planned",
-            date: workoutDate,
-            sport: params.sport,
-            duration: params.duration,
-            rpe: params.rpe,
-            completedAsPrescribed: params.completedAsPrescribed || false,
-            message: `Planned session "${resolvedPlannedId}" marked as completed on ${workoutDate}.`,
-          });
-
-          logToolCall({
-            requestId,
-            tool: "log_workout",
-            userPseudonym: claims.sub,
-            latencyMs: Date.now() - start,
-            success: true,
-            extras: plannedLegacyOrigin ? { legacy_origin: true } : undefined,
-          });
-
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          };
-        }
-
-        // --- New diary entry path (no planned session) ---
-        const timestamp = new Date().toISOString();
-        const diaryEntry: Record<string, unknown> = {
-          title: `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`,
-          scheduled_date: workoutDate,
-          session_type: params.sport,
-          status: "completed",
-          is_completed: true,
-          completed_at: timestamp,
-          duration_minutes: params.duration,
-          blocks,
-          feedback: {
-            rpe: params.rpe,
-            tags: params.feelings || [],
-            note: params.notes || null,
-          },
-          data_quality: params.exercises && params.exercises.length > 0 ? "detailed" : "quick",
-          source: "mcp",
-          idempotency_key: idempotencyKey,
-          created_at: timestamp,
-          mcp_logged_at: timestamp,
-        };
-
-        const docRef = await diaryCol.add(diaryEntry);
-        const sessionId = docRef.id;
-        // Write the document ID as a field so the Flutter app can reference it
-        await docRef.update({ id: sessionId });
-
-        const result = scrubDocument({
-          sessionId,
-          status: "logged",
-          date: workoutDate,
-          sport: params.sport,
-          duration: params.duration,
-          rpe: params.rpe,
-          exerciseCount: params.exercises?.length || 0,
-          dataQuality: diaryEntry.data_quality,
-          message: `New workout logged: ${params.sport} session on ${workoutDate}.`,
-        });
+        const result = mapLogWorkoutResult(
+          unwrapBridgeResult(bridged),
+          params.completedAsPrescribed || false,
+        );
 
         logToolCall({
           requestId,
@@ -360,7 +238,7 @@ export function registerLogWorkout(server: McpServer): void {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(scrubDocument(result), null, 2) }],
         };
       } catch (error) {
         logToolCall({

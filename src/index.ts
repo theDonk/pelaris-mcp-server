@@ -28,6 +28,7 @@ import { registerSearchEngineResources } from "./tools/user/search_engine_resour
 import { registerGetCoachInsight } from "./tools/user/get_coach_insight.js";
 import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.js";
 import { registerGetGenerationStatus } from "./tools/user/get_generation_status.js";
+import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
 
 // User write tools (OAuth-scoped — PEL-69)
 import { registerGenerateWeeklyPlan } from "./tools/user/generate_weekly_plan.js";
@@ -308,6 +309,9 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerGetCoachInsight(server);
     registerGetOnboardingStatus(server);
     registerGetGenerationStatus(server);
+    // Exercise-id preflight: read tool that teaches the write vocabulary
+    // (resolve names -> canonical exerciseId -> pass to write tools).
+    registerResolveExerciseIds(server);
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
     // generate_program (Unified Uplift G3 / C-3): the curated generate-and-enrol

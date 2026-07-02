@@ -79,12 +79,26 @@ export function registerGetBenchmarks(server: McpServer): void {
             }
           }
 
+          // "estimated" only when the whole history is projections (Epley/
+          // Riegel) — the headline is then a projection, not a tested result.
+          // Pre-basis entries (and empty legacy histories) are grandfathered
+          // as actual, mirroring core get_benchmarks.
+          const headlineBasis: "actual" | "estimated" =
+            history.length === 0 ||
+            history.some((entry) => {
+              const extras = (entry?.extras ?? {}) as Record<string, unknown>;
+              return extras.basis !== "estimated";
+            })
+              ? "actual"
+              : "estimated";
+
           return {
             benchmarkId: doc.id,
             currentValue,
             previousValue,
             trend,
             dataQuality,
+            headlineBasis,
             lastUpdated: d.last_updated?.toDate?.()?.toISOString?.() || null,
             historyCount: history.length,
           };

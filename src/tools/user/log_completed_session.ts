@@ -2,27 +2,36 @@
  * MCP Tool: log_completed_session
  * Scope: training:write
  *
- * Logs a session as completed retroactively — with full exercise detail,
+ * Logs a session as completed retroactively, with full exercise detail,
  * RPE, feedback tags, coach note, and date. Designed for AI coaching agents
  * to record sessions that have already happened.
  *
- * PEL-226
+ * PEL-226. Migrated onto the coreToolsBridge (WS1, exercise naming plan,
+ * 02/07/2026): the direct-Firestore body is deleted. This wrapper keeps
+ * scope, rate-limit, request logging, and scrubbing; core `log_session`
+ * owns completion semantics, idempotency (same date+sport+duration key
+ * formula, so pre-migration entries still dedupe), exercise identity
+ * resolution, and planned-target resolution via session_target_resolver
+ * (diary AND queue-resident sessions, retiring the diary-only ownership
+ * path).
  */
 
-import crypto from "crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { profileSubcollection } from "../../firestore-client.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { callCoreBridge } from "../shared/bridge_client.js";
 import {
-  verifySessionOwnership,
-  OwnershipError,
-  ownershipErrorResponse,
-} from "../shared/ownership.js";
+  EXERCISE_NAME_DESCRIPTION,
+  type LegacyLoggedExerciseFields,
+  bridgeFailureResponse,
+  exerciseIdField,
+  mapLegacyLoggedExercise,
+  unwrapBridgeResult,
+} from "../shared/core_adapter.js";
 
 const VALID_SPORTS = [
   "strength", "running", "swimming", "cycling", "triathlon",
@@ -34,25 +43,86 @@ const VALID_FEEDBACK_TAGS = [
   "good_form", "poor_form", "pain", "injury_flare",
 ] as const;
 
-/** Map MCP sport names to the session_type values the Pelaris app expects. */
-function mapSportToSessionType(sport: string): string {
-  switch (sport) {
-    case "running": return "run";
-    case "swimming": return "swim";
-    case "cycling": return "ride";
-    case "crossfit": return "hiit";
-    default: return sport;
+/** The legacy params this tool maps onto the core `log_session` contract.
+ *  Mirrors the zod schema below; kept as an explicit interface so the
+ *  mapping is unit-testable without an MCP server. */
+export interface LogCompletedSessionParams {
+  plannedSessionId?: string;
+  date: string;
+  sport: string;
+  title?: string;
+  sessionFocus?: string;
+  durationMinutes?: number;
+  rpe?: number;
+  feedbackTags?: string[];
+  feedbackNote?: string;
+  exercises?: LegacyLoggedExerciseFields[];
+  coachNote?: string;
+}
+
+/** Map the legacy tool params onto the core `log_session` input. Every
+ *  legacy field is mapped explicitly (the server silently ignores unknown
+ *  keys); exercise durationSec (seconds) converts to durationMinutes via
+ *  the shared adapter. */
+export function buildLogCompletedSessionCoreInput(
+  params: LogCompletedSessionParams,
+): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    detailLevel: "detailed",
+    sport: params.sport,
+    date: params.date,
+  };
+  if (params.plannedSessionId !== undefined) input.plannedSessionId = params.plannedSessionId;
+  if (params.title !== undefined) input.title = params.title;
+  if (params.sessionFocus !== undefined) input.sessionFocus = params.sessionFocus;
+  if (params.durationMinutes !== undefined) input.durationMinutes = params.durationMinutes;
+  if (params.rpe !== undefined) input.rpe = params.rpe;
+  if (params.feedbackTags !== undefined) input.feedbackTags = params.feedbackTags;
+  if (params.feedbackNote !== undefined) input.feedbackNote = params.feedbackNote;
+  if (params.coachNote !== undefined) input.coachNote = params.coachNote;
+  if (params.exercises !== undefined) {
+    input.exercises = params.exercises.map(mapLegacyLoggedExercise);
   }
+  return input;
 }
 
-/** Generate a short random ID for blocks/exercises/sets. */
-function shortId(): string {
-  return crypto.randomBytes(8).toString("hex");
-}
-
-function generateIdempotencyKey(profileId: string, date: string, sport: string, duration: number): string {
-  const raw = `${profileId}:${date}:${sport}:${duration}`;
-  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16);
+/** Map the core `log_session` output back onto this tool's legacy response
+ *  shape (the status vocabulary and field names agents already parse).
+ *  Core "updated" (a planned target was completed) -> "completed_planned";
+ *  core "completed" (new diary entry, or an idempotency hit, which core
+ *  reports in the message) -> "logged". */
+export function mapLogCompletedSessionResult(
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  if (result.status === "already_logged") {
+    return {
+      sessionId: result.sessionId,
+      status: "already_logged",
+      message: result.message,
+    };
+  }
+  if (result.status === "updated") {
+    return {
+      sessionId: result.sessionId,
+      status: "completed_planned",
+      date: result.date,
+      sport: result.sport,
+      title: result.title,
+      message: `Planned session "${result.title ?? result.sessionId}" marked as completed.`,
+    };
+  }
+  return {
+    sessionId: result.sessionId,
+    status: "logged",
+    date: result.date,
+    sport: result.sport,
+    title: result.title,
+    duration: result.durationMinutes ?? null,
+    rpe: result.rpe ?? null,
+    exerciseCount: result.exerciseCount ?? 0,
+    dataQuality: result.dataQuality,
+    message: result.message,
+  };
 }
 
 export function registerLogCompletedSession(server: McpServer): void {
@@ -64,7 +134,7 @@ export function registerLogCompletedSession(server: McpServer): void {
         .string()
         .max(200)
         .optional()
-        .describe("If completing an existing planned session, provide its diary ID. Updates in-place instead of creating a duplicate."),
+        .describe("If completing an existing planned session, provide its ID from the training context. Updates in-place instead of creating a duplicate."),
       date: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
@@ -109,12 +179,14 @@ export function registerLogCompletedSession(server: McpServer): void {
       exercises: z
         .array(
           z.object({
-            name: z.string().min(1).max(200).describe("Exercise name"),
+            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+            exerciseId: exerciseIdField,
             sets: z.number().int().min(1).max(50).optional().describe("Number of sets completed"),
             reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
             weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
             durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
             distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
+            notes: z.string().max(500).optional().describe("Exercise-specific notes"),
           }),
         )
         .max(30)
@@ -148,217 +220,27 @@ export function registerLogCompletedSession(server: McpServer): void {
           };
         }
 
-        const profileId = claims.profile_id;
-        const diaryCol = profileSubcollection(profileId, "diary");
-        const duration = params.durationMinutes || 0;
+        // profileId comes ONLY from the validated claims, never from params.
+        const bridged = await callCoreBridge(
+          "log_session",
+          claims.profile_id,
+          buildLogCompletedSessionCoreInput(params),
+        );
 
-        // Idempotency: date + sport + duration hash
-        const idempotencyKey = generateIdempotencyKey(profileId, params.date, params.sport, duration);
-        const existingByKey = await diaryCol
-          .where("idempotency_key", "==", idempotencyKey)
-          .limit(1)
-          .get();
-
-        if (!existingByKey.empty) {
-          const existingDoc = existingByKey.docs[0];
-          const result = scrubDocument({
-            sessionId: existingDoc.id,
-            status: "already_logged",
-            message: "This session has already been logged (matching date, sport, and duration). No duplicate created.",
-          });
+        const failure = bridgeFailureResponse(bridged, "logging completed session");
+        if (failure) {
           logToolCall({
             requestId,
             tool: "log_completed_session",
             userPseudonym: claims.sub,
             latencyMs: Date.now() - start,
-            success: true,
+            success: false,
+            error: bridged.error ?? "unknown error",
           });
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          };
+          return failure;
         }
 
-        // Build exercise blocks
-        const blocks: Array<Record<string, unknown>> = [];
-        if (params.exercises && params.exercises.length > 0) {
-          blocks.push({
-            id: shortId(),
-            type: "single",
-            rounds: 1,
-            semantic_type: "working",
-            exercises: params.exercises.map((ex) => {
-              const sets: Array<Record<string, unknown>> = [];
-              const setCount = ex.sets || 1;
-              for (let i = 0; i < setCount; i++) {
-                if (ex.weightKg != null || ex.reps != null) {
-                  sets.push({
-                    id: shortId(),
-                    type: "strength",
-                    actual_weight_kg: ex.weightKg ?? null,
-                    actual_reps: ex.reps ?? null,
-                    isCompleted: true,
-                  });
-                } else if (ex.distanceMeters != null || ex.durationSec != null) {
-                  sets.push({
-                    id: shortId(),
-                    type: "cardio",
-                    actual_distance_meters: ex.distanceMeters ?? null,
-                    actual_duration_sec: ex.durationSec ?? null,
-                    isCompleted: true,
-                  });
-                } else {
-                  sets.push({
-                    id: shortId(),
-                    type: "general",
-                    isCompleted: true,
-                  });
-                }
-              }
-              return {
-                exercise_id: shortId(),
-                exercise_name: ex.name,
-                sets,
-              };
-            }),
-          });
-        }
-
-        const timestamp = new Date().toISOString();
-
-        // --- Planned session completion path ---
-        if (params.plannedSessionId) {
-          // H-03: ownership check before mutating the planned session.
-          let plannedRef;
-          let plannedData: Record<string, unknown>;
-          let plannedLegacyOrigin = false;
-          try {
-            const result = await verifySessionOwnership(profileId, params.plannedSessionId);
-            plannedRef = result.doc.ref;
-            plannedData = result.data;
-            plannedLegacyOrigin = result.legacyOrigin;
-          } catch (err) {
-            if (err instanceof OwnershipError) {
-              logToolCall({
-                requestId,
-                tool: "log_completed_session",
-                userPseudonym: claims.sub,
-                latencyMs: Date.now() - start,
-                success: false,
-                error: `ownership.${err.code}`,
-              });
-              return ownershipErrorResponse(err);
-            }
-            throw err;
-          }
-          // Bonus: also block log-against a Strava-imported session (parity with update_session.ts).
-          if (plannedData.strava_activity_id) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Cannot log against a Strava-imported session" }) }],
-              isError: true,
-            };
-          }
-
-          if (plannedData.status === "completed" || plannedData.is_completed === true) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ sessionId: params.plannedSessionId, status: "already_completed", message: "This session is already completed." }) }],
-            };
-          }
-
-          const updateData: Record<string, unknown> = {
-            status: "completed",
-            is_completed: true,
-            completed_at: timestamp,
-            source: "mcp",
-            updated_at: timestamp,
-          };
-
-          if (params.title) updateData.title = params.title;
-          if (params.sessionFocus) updateData.session_focus = params.sessionFocus;
-          if (params.durationMinutes) updateData.duration_minutes = params.durationMinutes;
-          if (params.rpe != null) updateData["feedback.rpe"] = params.rpe;
-          if (params.feedbackTags && params.feedbackTags.length > 0) updateData["feedback.tags"] = params.feedbackTags;
-          if (params.feedbackNote != null) updateData["feedback.note"] = params.feedbackNote;
-          if (params.coachNote != null) updateData.coach_note = {
-            title: "Coach Note",
-            message: params.coachNote,
-            source: "mcp",
-            created_at: timestamp,
-          };
-          if (blocks.length > 0) updateData.blocks = blocks;
-
-          await plannedRef.update(updateData);
-
-          const result = scrubDocument({
-            sessionId: params.plannedSessionId,
-            status: "completed_planned",
-            date: params.date,
-            sport: params.sport,
-            title: params.title || plannedData.title,
-            message: `Planned session "${plannedData.title || params.plannedSessionId}" marked as completed.`,
-          });
-
-          logToolCall({
-            requestId,
-            tool: "log_completed_session",
-            userPseudonym: claims.sub,
-            latencyMs: Date.now() - start,
-            success: true,
-            extras: plannedLegacyOrigin ? { legacy_origin: true } : undefined,
-          });
-
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          };
-        }
-
-        // --- New diary entry path (no planned session) ---
-        const defaultTitle = `${params.sport.charAt(0).toUpperCase() + params.sport.slice(1)} Session`;
-
-        const diaryEntry: Record<string, unknown> = {
-          title: params.title || defaultTitle,
-          scheduled_date: params.date,
-          session_type: mapSportToSessionType(params.sport),
-          session_focus: params.sessionFocus || null,
-          status: "completed",
-          is_completed: true,
-          completed_at: timestamp,
-          updated_at: timestamp,
-          duration_minutes: duration || null,
-          blocks,
-          feedback: {
-            rpe: params.rpe ?? null,
-            tags: params.feedbackTags || [],
-            note: params.feedbackNote || null,
-          },
-          coach_note: params.coachNote ? {
-            title: "Coach Note",
-            message: params.coachNote,
-            source: "mcp",
-            created_at: timestamp,
-          } : null,
-          data_quality: params.exercises && params.exercises.length > 0 ? "detailed" : "quick",
-          source: "mcp",
-          idempotency_key: idempotencyKey,
-          created_at: timestamp,
-          mcp_logged_at: timestamp,
-        };
-
-        const docRef = await diaryCol.add(diaryEntry);
-        const sessionId = docRef.id;
-        await docRef.update({ id: sessionId });
-
-        const result = scrubDocument({
-          sessionId,
-          status: "logged",
-          date: params.date,
-          sport: params.sport,
-          title: diaryEntry.title,
-          duration: duration || null,
-          rpe: params.rpe ?? null,
-          exerciseCount: params.exercises?.length || 0,
-          dataQuality: diaryEntry.data_quality,
-          message: `Completed session logged: "${diaryEntry.title}" on ${params.date}.`,
-        });
+        const result = mapLogCompletedSessionResult(unwrapBridgeResult(bridged));
 
         logToolCall({
           requestId,
@@ -369,7 +251,7 @@ export function registerLogCompletedSession(server: McpServer): void {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(scrubDocument(result), null, 2) }],
         };
       } catch (error) {
         logToolCall({

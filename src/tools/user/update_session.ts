@@ -2,14 +2,21 @@
  * MCP Tool: update_session
  * Scope: training:write
  *
- * Updates an existing diary session (planned or completed) with new or
- * corrected data. Supports: title, focus, duration, status change,
- * RPE, feedback, exercises, and coach notes.
+ * Updates an existing session (planned or completed) with new or corrected
+ * data. Supports: title, focus, duration, status change, RPE, feedback,
+ * exercises, structured blocks, and coach notes.
+ *
+ * Migrated onto the coreToolsBridge (WS1.1/WS1.3, exercise naming plan
+ * 02/07/2026): the direct Firestore body is gone. Core modify_session
+ * handles metadata edits (with write-time exercise identity resolution and
+ * queue-session targets via the session_target_resolver), and core
+ * log_session handles the completed transition (target -> actual copy, or
+ * actual sets when exercises are provided). This wrapper keeps auth, scope,
+ * rate-limit, logging, and scrubbing only.
  *
  * PEL-227
  */
 
-import crypto from "crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { hasScope } from "../../auth.js";
@@ -17,16 +24,20 @@ import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { callCoreBridge, type BridgeResult } from "../shared/bridge_client.js";
 import {
-  verifySessionOwnership,
-  OwnershipError,
-  ownershipErrorResponse,
-} from "../shared/ownership.js";
-
-/** Generate a short random ID for blocks/exercises/sets. */
-function shortId(): string {
-  return crypto.randomBytes(8).toString("hex");
-}
+  EXERCISE_NAME_DESCRIPTION,
+  bridgeFailureResponse,
+  coreWriteBlocksField,
+  exerciseIdField,
+  unwrapBridgeResult,
+} from "../shared/core_adapter.js";
+import {
+  buildUpdateSessionCompletionInput,
+  buildUpdateSessionMetadataInput,
+  isCompletionRequest,
+  listProvidedUpdateFields,
+} from "./session_modify_mapping.js";
 
 const VALID_STATUSES = ["planned", "completed"] as const;
 const VALID_FEEDBACK_TAGS = [
@@ -43,7 +54,7 @@ export function registerUpdateSession(server: McpServer): void {
         .string()
         .min(1)
         .max(200)
-        .describe("The diary session document ID to update"),
+        .describe("The session ID to update (from get_training_overview or get_session_details)"),
       title: z
         .string()
         .max(200)
@@ -64,7 +75,11 @@ export function registerUpdateSession(server: McpServer): void {
       status: z
         .enum(VALID_STATUSES)
         .optional()
-        .describe("Change session status (e.g., mark planned as completed)"),
+        .describe(
+          "Change session status. Setting 'completed' completes the session: without exercises[], " +
+          "the planned targets are recorded as performed; with exercises[], the provided work is " +
+          "recorded as what was actually done.",
+        ),
       scheduledDate: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
@@ -90,7 +105,8 @@ export function registerUpdateSession(server: McpServer): void {
       exercises: z
         .array(
           z.object({
-            name: z.string().min(1).max(200).describe("Exercise name"),
+            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+            exerciseId: exerciseIdField,
             sets: z.number().int().min(1).max(50).optional().describe("Number of sets"),
             reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
             weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
@@ -100,7 +116,11 @@ export function registerUpdateSession(server: McpServer): void {
         )
         .max(30)
         .optional()
-        .describe("Replace session exercises (max 30). Overwrites existing blocks."),
+        .describe(
+          "Replace session exercises (max 30). Overwrites existing blocks. For phase grouping " +
+          "(warm-up/main/cool-down) or supersets/circuits, use blocks[] instead.",
+        ),
+      blocks: coreWriteBlocksField,
       coachNote: z
         .string()
         .max(2000)
@@ -129,212 +149,102 @@ export function registerUpdateSession(server: McpServer): void {
           };
         }
 
-        const profileId = claims.profile_id;
-
-        // H-03: defence-in-depth ownership check before per-tool guards.
-        let diaryRef;
-        let sessionData: Record<string, unknown>;
-        let legacyOrigin = false;
-        try {
-          const result = await verifySessionOwnership(profileId, params.sessionId);
-          diaryRef = result.doc.ref;
-          sessionData = result.data;
-          legacyOrigin = result.legacyOrigin;
-        } catch (err) {
-          if (err instanceof OwnershipError) {
-            logToolCall({
-              requestId,
-              tool: "update_session",
-              userPseudonym: claims.sub,
-              latencyMs: Date.now() - start,
-              success: false,
-              error: `ownership.${err.code}`,
-            });
-            return ownershipErrorResponse(err);
-          }
-          throw err;
-        }
-
-        // Guard: Strava-imported sessions are read-only
-        if (sessionData.strava_activity_id) {
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Cannot update a Strava-imported session" }) }],
-            isError: true,
-          };
-        }
-
-        // Validate at least one update field provided
-        const hasUpdate = params.title || params.sessionFocus || params.durationMinutes ||
-          params.status || params.scheduledDate || params.rpe != null ||
-          params.feedbackTags || params.feedbackNote != null ||
-          params.exercises || params.coachNote != null;
-
-        if (!hasUpdate) {
+        const providedFields = listProvidedUpdateFields(params);
+        if (providedFields.length === 0) {
           return {
             content: [{ type: "text" as const, text: "Error: At least one field to update is required" }],
             isError: true,
           };
         }
 
-        const updates: Record<string, unknown> = {};
-        const updatedFields: string[] = [];
-        const timestamp = new Date().toISOString();
+        // profileId comes ONLY from validated claims, never from tool params.
+        const profileId = claims.profile_id;
 
-        // Basic fields
-        if (params.title) {
-          updates.title = params.title;
-          updatedFields.push("title");
-        }
-        if (params.sessionFocus) {
-          updates.session_focus = params.sessionFocus;
-          updatedFields.push("sessionFocus");
-        }
-        if (params.durationMinutes) {
-          updates.duration_minutes = params.durationMinutes;
-          updatedFields.push("durationMinutes");
-        }
-        if (params.scheduledDate) {
-          updates.scheduled_date = params.scheduledDate;
-          updatedFields.push("scheduledDate");
-        }
+        const logBridgeFailure = (bridged: BridgeResult) => {
+          logToolCall({
+            requestId,
+            tool: "update_session",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: false,
+            error: bridged.error ?? "bridge_error",
+          });
+        };
 
-        // Status change — handle planned→completed transition
-        if (params.status) {
-          updates.status = params.status;
-          updatedFields.push("status");
-
-          if (params.status === "completed" && sessionData.status !== "completed") {
-            updates.is_completed = true;
-            updates.completed_at = timestamp;
-          } else if (params.status === "planned") {
-            updates.is_completed = false;
-            updates.completed_at = null;
+        if (isCompletionRequest(params)) {
+          if (params.blocks && params.blocks.length > 0) {
+            // Teaching error: blocks[] is planned structure; the completion
+            // path records performed work.
+            return {
+              content: [{
+                type: "text" as const,
+                text: "Error: blocks[] cannot be combined with status 'completed'. blocks[] describes " +
+                  "planned structure; to record what was actually performed, send exercises[] with " +
+                  "status 'completed' (or use log_completed_session). To restructure the planned " +
+                  "session, send blocks[] without a status change.",
+              }],
+              isError: true,
+            };
           }
-        }
 
-        // Feedback fields — use dot notation for nested updates
-        if (params.rpe != null) {
-          updates["feedback.rpe"] = params.rpe;
-          updatedFields.push("rpe");
-        }
-        if (params.feedbackTags) {
-          updates["feedback.tags"] = params.feedbackTags;
-          updatedFields.push("feedbackTags");
-        }
-        if (params.feedbackNote != null) {
-          updates["feedback.note"] = params.feedbackNote;
-          updatedFields.push("feedbackNote");
-        }
-
-        // Coach note — structured object matching CoachNotePayload.fromMap()
-        if (params.coachNote != null) {
-          updates.coach_note = {
-            title: "Coach Note",
-            message: params.coachNote,
-            source: "mcp",
-            created_at: timestamp,
-          };
-          updatedFields.push("coachNote");
-        }
-
-        // Determine effective completion state (prioritize in-flight status change)
-        const effectiveStatus = params.status || sessionData.status;
-        const effectivelyCompleted = effectiveStatus === "completed" &&
-          params.status !== "planned";
-
-        // W2 fix: If marking planned→completed without new exercises, copy target→actual on existing blocks
-        if (params.status === "completed" && sessionData.status !== "completed" &&
-            (!params.exercises || params.exercises.length === 0)) {
-          const existingBlocks = sessionData.blocks as Array<Record<string, unknown>> | undefined;
-          if (existingBlocks && existingBlocks.length > 0) {
-            updates.blocks = existingBlocks.map((block) => {
-              const exercises = block.exercises as Array<Record<string, unknown>> | undefined;
-              if (!exercises) return block;
-              return {
-                ...block,
-                exercises: exercises.map((exercise) => {
-                  const sets = exercise.sets as Array<Record<string, unknown>> | undefined;
-                  if (!sets) return exercise;
-                  return {
-                    ...exercise,
-                    sets: sets.map((set) => ({
-                      ...set,
-                      isCompleted: true,
-                      ...(set.target_weight_kg != null && { actual_weight_kg: set.target_weight_kg }),
-                      ...(set.target_reps != null && { actual_reps: set.target_reps }),
-                      ...(set.target_distance_meters != null && { actual_distance_meters: set.target_distance_meters }),
-                      ...(set.target_duration_sec != null && { actual_duration_sec: set.target_duration_sec }),
-                    })),
-                  };
-                }),
-              };
+          // A date change travels as a metadata edit first; the completion
+          // write below does not accept date changes by design.
+          if (params.scheduledDate != null) {
+            const rescheduled = await callCoreBridge("modify_session", profileId, {
+              type: "metadata",
+              sessionId: params.sessionId,
+              scheduledDate: params.scheduledDate,
             });
+            const rescheduleFailure = bridgeFailureResponse(rescheduled, "updating session");
+            if (rescheduleFailure) {
+              logBridgeFailure(rescheduled);
+              return rescheduleFailure;
+            }
           }
+
+          const bridged = await callCoreBridge(
+            "log_session",
+            profileId,
+            buildUpdateSessionCompletionInput(params),
+          );
+          const failure = bridgeFailureResponse(bridged, "updating session");
+          if (failure) {
+            logBridgeFailure(bridged);
+            return failure;
+          }
+          const result = unwrapBridgeResult(bridged);
+
+          logToolCall({
+            requestId,
+            tool: "update_session",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: true,
+          });
+
+          const output = scrubDocument({
+            sessionId: params.sessionId,
+            title: result.title ?? params.title,
+            status: "completed",
+            updatedFields: providedFields,
+            message: `Session updated: ${providedFields.join(", ")}`,
+          });
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
+          };
         }
 
-        // Exercise replacement — builds fresh blocks from provided exercises
-        if (params.exercises && params.exercises.length > 0) {
-          const blocks: Array<Record<string, unknown>> = [{
-            id: shortId(),
-            type: "single",
-            rounds: 1,
-            semantic_type: "working",
-            exercises: params.exercises.map((ex) => {
-              const sets: Array<Record<string, unknown>> = [];
-              const setCount = ex.sets || 1;
-              const isCompleted = effectivelyCompleted;
-
-              for (let i = 0; i < setCount; i++) {
-                if (ex.weightKg != null || ex.reps != null) {
-                  const set: Record<string, unknown> = { id: shortId(), type: "strength" };
-                  if (isCompleted) {
-                    set.actual_weight_kg = ex.weightKg ?? null;
-                    set.actual_reps = ex.reps ?? null;
-                    set.isCompleted = true;
-                  } else {
-                    set.target_weight_kg = ex.weightKg ?? null;
-                    set.target_reps = ex.reps ?? null;
-                  }
-                  sets.push(set);
-                } else if (ex.distanceMeters != null || ex.durationSec != null) {
-                  const set: Record<string, unknown> = { id: shortId(), type: "cardio" };
-                  if (isCompleted) {
-                    set.actual_distance_meters = ex.distanceMeters ?? null;
-                    set.actual_duration_sec = ex.durationSec ?? null;
-                    set.isCompleted = true;
-                  } else {
-                    set.target_distance_meters = ex.distanceMeters ?? null;
-                    set.target_duration_sec = ex.durationSec ?? null;
-                  }
-                  sets.push(set);
-                } else {
-                  sets.push({
-                    id: shortId(),
-                    type: "general",
-                    ...(isCompleted ? { isCompleted: true } : {}),
-                  });
-                }
-              }
-              return { exercise_id: shortId(), exercise_name: ex.name, sets };
-            }),
-          }];
-          updates.blocks = blocks;
-          updatedFields.push("exercises");
+        const bridged = await callCoreBridge(
+          "modify_session",
+          profileId,
+          buildUpdateSessionMetadataInput(params),
+        );
+        const failure = bridgeFailureResponse(bridged, "updating session");
+        if (failure) {
+          logBridgeFailure(bridged);
+          return failure;
         }
-
-        // Metadata
-        updates.updated_at = timestamp;
-        updates.mcp_updated_at = timestamp;
-
-        await diaryRef.update(updates);
-
-        const result = scrubDocument({
-          sessionId: params.sessionId,
-          title: params.title || sessionData.title,
-          status: params.status || sessionData.status,
-          updatedFields,
-          message: `Session updated: ${updatedFields.join(", ")}`,
-        });
+        const result = unwrapBridgeResult(bridged);
 
         logToolCall({
           requestId,
@@ -342,11 +252,22 @@ export function registerUpdateSession(server: McpServer): void {
           userPseudonym: claims.sub,
           latencyMs: Date.now() - start,
           success: true,
-          extras: legacyOrigin ? { legacy_origin: true } : undefined,
         });
 
+        const updatedFields = Array.isArray(result.updatedFields) ?
+          (result.updatedFields as string[]) :
+          providedFields;
+        const output = scrubDocument({
+          sessionId: typeof result.sessionId === "string" ? result.sessionId : params.sessionId,
+          title: result.title ?? params.title,
+          ...(params.status ? { status: params.status } : {}),
+          updatedFields,
+          message: `Session updated: ${updatedFields.join(", ")}`,
+          ...(result.resolvedTargetType != null ? { resolvedTargetType: result.resolvedTargetType } : {}),
+          ...(result.queueId != null ? { queueId: result.queueId } : {}),
+        });
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
         logToolCall({
