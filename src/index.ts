@@ -245,7 +245,7 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     code_challenge_methods_supported: ["S256"],
     scopes_supported: [
       "profile:read", "training:read", "training:write",
-      "health:read", "health:write", "coach:read",
+      "health:read", "health:write", "coach:read", "offline_access",
     ],
     token_endpoint_auth_methods_supported: ["none"],
   });
@@ -259,7 +259,7 @@ app.get("/.well-known/oauth-protected-resource", (_req, res) => {
     authorization_servers: [MCP_SERVER_URL],
     scopes_supported: [
       "profile:read", "training:read", "training:write",
-      "health:read", "health:write", "coach:read",
+      "health:read", "health:write", "coach:read", "offline_access",
     ],
     bearer_methods_supported: ["header"],
   });
@@ -272,7 +272,7 @@ app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
     authorization_servers: [MCP_SERVER_URL],
     scopes_supported: [
       "profile:read", "training:read", "training:write",
-      "health:read", "health:write", "coach:read",
+      "health:read", "health:write", "coach:read", "offline_access",
     ],
     bearer_methods_supported: ["header"],
   });
@@ -351,6 +351,20 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless — no session management
+      // Return a single application/json JSON-RPC response instead of an SSE
+      // stream. This server does no server->client streaming (GET/DELETE=405),
+      // and a Fastly CDN fronts api.pelaris.io that buffers text/event-stream,
+      // which can stall a hosted connector's session setup ("unable to
+      // connect"). Plain JSON passes the CDN cleanly. Spec-valid: the server
+      // MAY return either content type on POST /mcp.
+      enableJsonResponse: true,
+    });
+
+    // Release the per-request server + transport when the response finishes,
+    // so a load-testing connector can't leak handles.
+    res.on("close", () => {
+      void transport.close();
+      void server.close();
     });
 
     await server.connect(transport);
