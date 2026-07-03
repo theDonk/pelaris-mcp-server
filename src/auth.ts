@@ -90,6 +90,13 @@ function verifyJwt(token: string, secret: string): McpTokenClaims | null {
     if (!payload.sub || !payload.exp || !payload.iat) {
       return null;
     }
+    // Reject a refresh token presented as an access bearer token. Refresh
+    // tokens carry type:"refresh" and a 30-day TTL; access tokens carry no
+    // type. Without this check a stolen refresh token authenticates at /mcp
+    // for 30 days, defeating the 1h access-token TTL (security audit H1).
+    if (payload.type === "refresh") {
+      return null;
+    }
     return payload as McpTokenClaims;
   } catch {
     return null;
