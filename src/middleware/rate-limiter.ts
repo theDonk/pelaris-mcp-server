@@ -9,6 +9,7 @@
 
 import type { Response, NextFunction } from "express";
 import type { McpAuthenticatedRequest } from "../auth.js";
+import { db } from "../firestore-client.js";
 
 interface RateLimitEntry {
   count: number;
@@ -22,15 +23,18 @@ const MAX_WRITE_REQUESTS = 50;
 // so it is limited far tighter than ordinary writes (Unified Uplift G3 C-3).
 const MAX_GENERATION_REQUESTS = 10;
 
-// In-memory stores keyed by user identifier
-const readLimiterStore = new Map<string, RateLimitEntry>();
+// Read limiting (the /mcp middleware) is Firestore-backed so the limit is
+// global across Cloud Run instances (an in-memory Map is per-instance and is
+// bypassed by fan-out / cold starts — security audit). Write and generation
+// buckets stay in-memory for now (they are secondary, authenticated, and
+// entitlement-gated; the max-instances cap bounds generation cost too).
 const writeLimiterStore = new Map<string, RateLimitEntry>();
 const generationLimiterStore = new Map<string, RateLimitEntry>();
 
-// Periodic cleanup of expired entries (every 5 minutes)
+// Periodic cleanup of expired in-memory entries (every 5 minutes)
 setInterval(() => {
   const now = Date.now();
-  for (const store of [readLimiterStore, writeLimiterStore, generationLimiterStore]) {
+  for (const store of [writeLimiterStore, generationLimiterStore]) {
     for (const [key, entry] of store) {
       if (now - entry.windowStart > WINDOW_MS) {
         store.delete(key);
@@ -38,6 +42,46 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000).unref();
+
+/** Firestore doc id: keep it collision-free and id-safe (no "/", bounded). */
+function limitDocId(key: string): string {
+  return key.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 1400);
+}
+
+/**
+ * Global (cross-instance) fixed-window counter backed by one Firestore doc per
+ * key. Atomic via a transaction so concurrent requests can't over-count.
+ * Fails OPEN on a store error: a throttle outage must not deny service (it
+ * grants no access — verifyBearerToken already ran).
+ */
+async function checkFirestoreLimit(
+  key: string,
+  maxRequests: number,
+  now: number,
+): Promise<{ retryAfterSeconds: number; maxRequests: number } | null> {
+  const ref = db.collection("mcp_rate_limits").doc(limitDocId(key));
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? (snap.data() as RateLimitEntry) : null;
+      if (!data || now - data.windowStart > WINDOW_MS) {
+        tx.set(ref, { count: 1, windowStart: now });
+        return null;
+      }
+      if (data.count >= maxRequests) {
+        return {
+          retryAfterSeconds: Math.ceil((data.windowStart + WINDOW_MS - now) / 1000),
+          maxRequests,
+        };
+      }
+      tx.update(ref, { count: data.count + 1 });
+      return null;
+    });
+  } catch (err) {
+    console.error("[rate-limiter] Firestore limit check failed, allowing:", err);
+    return null;
+  }
+}
 
 /**
  * Extract a user identifier for rate limiting.
@@ -81,11 +125,11 @@ function checkLimit(
  * Rate limiting middleware for read operations (default).
  * Returns 429 with Retry-After header when limit exceeded.
  */
-export function rateLimiter(
+export async function rateLimiter(
   req: McpAuthenticatedRequest,
   res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   // Skip rate limiting for admin-authed requests
   if (req.isAdminAuth) {
     next();
@@ -94,7 +138,7 @@ export function rateLimiter(
 
   const key = getUserKey(req);
   const now = Date.now();
-  const exceeded = checkLimit(readLimiterStore, key, MAX_READ_REQUESTS, now);
+  const exceeded = await checkFirestoreLimit(key, MAX_READ_REQUESTS, now);
 
   if (exceeded) {
     res.set("Retry-After", String(exceeded.retryAfterSeconds));

@@ -60,6 +60,17 @@ async function getJwtSecret(): Promise<string | null> {
 
 // ─── JWT verification ─────────────────────────────────────────────────────────
 
+/**
+ * Constant-time string equality for comparing secrets (security audit).
+ * Both sides are SHA-256'd to a fixed length so timingSafeEqual never throws
+ * on a length mismatch and no length information leaks.
+ */
+function constantTimeEquals(a: string, b: string): boolean {
+  const ah = crypto.createHash("sha256").update(a, "utf8").digest();
+  const bh = crypto.createHash("sha256").update(b, "utf8").digest();
+  return crypto.timingSafeEqual(ah, bh);
+}
+
 function verifyJwt(token: string, secret: string): McpTokenClaims | null {
   const parts = token.split(".");
   if (parts.length !== 3) {
@@ -169,9 +180,13 @@ export async function verifyBearerToken(
     }
   }
 
-  // Strategy 2: Fall back to static bearer token
+  // Strategy 2: Fall back to static bearer token.
+  // Constant-time compare so the response time cannot leak how many leading
+  // characters of the admin token a guess matched (timing attack). Hash both
+  // sides to a fixed 32 bytes first: timingSafeEqual throws on unequal lengths,
+  // and comparing raw lengths would itself leak the token length.
   const expectedToken = process.env.MCP_BEARER_TOKEN;
-  if (expectedToken && token === expectedToken) {
+  if (expectedToken && constantTimeEquals(token, expectedToken)) {
     req.isAdminAuth = true;
     next();
     return;
