@@ -126,79 +126,82 @@ export function mapLogCompletedSessionResult(
 }
 
 export function registerLogCompletedSession(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "log_completed_session",
-    "Log a completed workout retroactively with exercises, RPE, feedback, and coach notes. Prevents duplicate entries automatically.",
     {
-      plannedSessionId: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("If completing an existing planned session, provide its ID from the training context. Updates in-place instead of creating a duplicate."),
-      date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .describe("Date the workout was completed (YYYY-MM-DD, can be in the past)"),
-      sport: z
-        .enum(VALID_SPORTS)
-        .describe("Sport/activity type"),
-      title: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Session title (e.g., 'Upper Body Strength', 'Easy Recovery Run')"),
-      sessionFocus: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Session focus area (e.g., 'chest and shoulders', 'tempo intervals')"),
-      durationMinutes: z
-        .number()
-        .int()
-        .min(1)
-        .max(480)
-        .optional()
-        .describe("Workout duration in minutes (1-480)"),
-      rpe: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .optional()
-        .describe("Rate of perceived exertion (1-10)"),
-      feedbackTags: z
-        .array(z.enum(VALID_FEEDBACK_TAGS))
-        .max(5)
-        .optional()
-        .describe("Feedback tags describing how the session went"),
-      feedbackNote: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Freeform notes about the session"),
-      exercises: z
-        .array(
-          z.object({
-            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
-            exerciseId: exerciseIdField,
-            sets: z.number().int().min(1).max(50).optional().describe("Number of sets completed"),
-            reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
-            weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
-            durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
-            distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
-            notes: z.string().max(500).optional().describe("Exercise-specific notes"),
-          }),
-        )
-        .max(30)
-        .optional()
-        .describe("Array of exercises performed (max 30)"),
-      coachNote: z
-        .string()
-        .max(2000)
-        .optional()
-        .describe("AI coach observation or note about this session"),
+      title: "Log Completed Session",
+      description: "Log a completed workout retroactively with exercises, RPE, feedback, and coach notes. Prevents duplicate entries automatically.",
+      inputSchema: {
+        plannedSessionId: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("If completing an existing planned session, provide its ID from the training context. Updates in-place instead of creating a duplicate."),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .describe("Date the workout was completed (YYYY-MM-DD, can be in the past)"),
+        sport: z
+          .enum(VALID_SPORTS)
+          .describe("Sport/activity type"),
+        title: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Session title (e.g., 'Upper Body Strength', 'Easy Recovery Run')"),
+        sessionFocus: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Session focus area (e.g., 'chest and shoulders', 'tempo intervals')"),
+        durationMinutes: z
+          .number()
+          .int()
+          .min(1)
+          .max(480)
+          .optional()
+          .describe("Workout duration in minutes (1-480)"),
+        rpe: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Rate of perceived exertion (1-10)"),
+        feedbackTags: z
+          .array(z.enum(VALID_FEEDBACK_TAGS))
+          .max(5)
+          .optional()
+          .describe("Feedback tags describing how the session went"),
+        feedbackNote: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Freeform notes about the session"),
+        exercises: z
+          .array(
+            z.object({
+              name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+              exerciseId: exerciseIdField,
+              sets: z.number().int().min(1).max(50).optional().describe("Number of sets completed"),
+              reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
+              weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
+              durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
+              distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
+              notes: z.string().max(500).optional().describe("Exercise-specific notes"),
+            }),
+          )
+          .max(30)
+          .optional()
+          .describe("Array of exercises performed (max 30)"),
+        coachNote: z
+          .string()
+          .max(2000)
+          .optional()
+          .describe("AI coach observation or note about this session"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Log Completed Session" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

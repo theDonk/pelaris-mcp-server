@@ -14,11 +14,14 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetCoachInsight(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_coach_insight",
-    "Get personalised coaching observations based on your recent training — consistency, fatigue, goal progress, and areas to focus on.",
-    {},
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    {
+      title: "Get Coach Insight",
+      description: "Get personalised coaching observations based on your recent training — consistency, fatigue, goal progress, and areas to focus on.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Coach Insight" },
+    },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

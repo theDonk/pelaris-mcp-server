@@ -72,11 +72,14 @@ export async function listGoalsResult(profileId: string): Promise<ToolTextResult
 }
 
 export function registerListGoals(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "list_goals",
-    "List your training goals — race events, body composition targets, and performance milestones — with completion status and linked benchmarks.",
-    {},
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    {
+      title: "List Goals",
+      description: "List your training goals — race events, body composition targets, and performance milestones — with completion status and linked benchmarks.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "List Goals" },
+    },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

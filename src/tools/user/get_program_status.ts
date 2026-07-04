@@ -18,15 +18,18 @@ import { summarizeProgram } from "../shared/program-utils.js";
 const VALID_ACTIONS = ["get_current", "list_history"] as const;
 
 export function registerGetProgramStatus(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_program_status",
-    "View your current active training programs or browse your full program history.",
     {
-      action: z
-        .enum(VALID_ACTIONS)
-        .describe("get_current: show active programs. list_history: show all programs including archived."),
+      title: "Get Program Status",
+      description: "View your current active training programs or browse your full program history.",
+      inputSchema: {
+        action: z
+          .enum(VALID_ACTIONS)
+          .describe("get_current: show active programs. list_history: show all programs including archived."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Program Status" },
     },
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

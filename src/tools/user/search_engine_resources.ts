@@ -15,15 +15,18 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerSearchEngineResources(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "search_training_resources",
-    "Search the curated library of coaching articles, videos, and guides. Find resources by topic, sport, or training goal.",
     {
-      query: z.string().describe("Search query — topic, sport, goal, or keyword (e.g., 'swimming technique', 'recovery', 'strength periodization')"),
-      category: z.string().optional().describe("Filter by category: fuel, recover, learn, prepare"),
-      sport: z.string().optional().describe("Filter by sport: strength, running, swimming, cycling, triathlon"),
+      title: "Search Training Resources",
+      description: "Search the curated library of coaching articles, videos, and guides. Find resources by topic, sport, or training goal.",
+      inputSchema: {
+        query: z.string().describe("Search query — topic, sport, goal, or keyword (e.g., 'swimming technique', 'recovery', 'strength periodization')"),
+        category: z.string().optional().describe("Filter by category: fuel, recover, learn, prepare"),
+        sport: z.string().optional().describe("Filter by sport: strength, running, swimming, cycling, triathlon"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Search Training Resources" },
     },
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async ({ query, category, sport }) => {
       const requestId = generateRequestId();
       const start = Date.now();

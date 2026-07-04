@@ -15,11 +15,14 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetTrainingContext(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_training_overview",
-    "View your complete training snapshot — active programs, recent sessions, check-in data, goals, and progress at a glance.",
-    {},
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    {
+      title: "Get Training Overview",
+      description: "View your complete training snapshot — active programs, recent sessions, check-in data, goals, and progress at a glance.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Training Overview" },
+    },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

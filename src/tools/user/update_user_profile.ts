@@ -27,54 +27,57 @@ const VALID_EQUIPMENT = [
 const VALID_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
 
 export function registerUpdateUserProfile(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "update_profile",
-    "Update your training preferences — equipment, available days, session duration, experience level, and more.",
     {
-      equipment: z
-        .array(z.enum(VALID_EQUIPMENT))
-        .min(1)
-        .max(20)
-        .optional()
-        .describe("List of available equipment"),
-      availableDays: z
-        .array(z.enum(VALID_DAYS))
-        .min(1)
-        .max(7)
-        .optional()
-        .describe("Days of the week available for training"),
-      sessionsPerWeek: z
-        .number()
-        .int()
-        .min(1)
-        .max(14)
-        .optional()
-        .describe("Preferred number of sessions per week"),
-      preferredSessionDuration: z
-        .number()
-        .int()
-        .min(15)
-        .max(180)
-        .optional()
-        .describe("Preferred session duration in minutes (15-180)"),
-      preferredUnits: z
-        .enum(["metric", "imperial"])
-        .optional()
-        .describe("Preferred measurement units"),
-      experienceLevel: z
-        .enum(["beginner", "intermediate", "advanced", "elite"])
-        .optional()
-        .describe("Training experience level"),
-      poolLength: z
-        .enum(["25m", "50m", "open_water"])
-        .optional()
-        .describe("Swimming pool length (for swim-specific training)"),
-      environment: z
-        .enum(["gym", "home", "outdoor", "pool", "mixed"])
-        .optional()
-        .describe("Primary training environment"),
+      title: "Update Profile",
+      description: "Update your training preferences — equipment, available days, session duration, experience level, and more.",
+      inputSchema: {
+        equipment: z
+          .array(z.enum(VALID_EQUIPMENT))
+          .min(1)
+          .max(20)
+          .optional()
+          .describe("List of available equipment"),
+        availableDays: z
+          .array(z.enum(VALID_DAYS))
+          .min(1)
+          .max(7)
+          .optional()
+          .describe("Days of the week available for training"),
+        sessionsPerWeek: z
+          .number()
+          .int()
+          .min(1)
+          .max(14)
+          .optional()
+          .describe("Preferred number of sessions per week"),
+        preferredSessionDuration: z
+          .number()
+          .int()
+          .min(15)
+          .max(180)
+          .optional()
+          .describe("Preferred session duration in minutes (15-180)"),
+        preferredUnits: z
+          .enum(["metric", "imperial"])
+          .optional()
+          .describe("Preferred measurement units"),
+        experienceLevel: z
+          .enum(["beginner", "intermediate", "advanced", "elite"])
+          .optional()
+          .describe("Training experience level"),
+        poolLength: z
+          .enum(["25m", "50m", "open_water"])
+          .optional()
+          .describe("Swimming pool length (for swim-specific training)"),
+        environment: z
+          .enum(["gym", "home", "outdoor", "pool", "mixed"])
+          .optional()
+          .describe("Primary training environment"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Update Profile" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -43,18 +43,21 @@ function errResult(text: string) {
 }
 
 export function registerGenerateProgram(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "generate_program",
-    "Generate a complete training program tailored to your goals and enrol it as your active program. Covers short plans (1-52 weeks); the program is automatically scored for quality.",
     {
-      goal: z.string().min(1).max(500).describe("The training goal (e.g., 'build full-body strength', 'sub-45 10k')"),
-      durationWeeks: z.number().int().min(1).max(52).optional().describe("Program length in weeks (1-52, default 4)"),
-      sessionsPerWeek: z.number().int().min(1).max(14).optional().describe("Training sessions per week (default 3)"),
-      notes: z.string().max(2000).optional().describe("Additional context, constraints, or preferences"),
-      programType: z.string().max(80).optional().describe("Program type (e.g., 'strength', 'hybrid', 'running')"),
-      startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional().describe("Start date (YYYY-MM-DD; defaults to today)"),
+      title: "Generate Program",
+      description: "Generate a complete training program tailored to your goals and enrol it as your active program. Covers short plans (1-52 weeks); the program is automatically scored for quality.",
+      inputSchema: {
+        goal: z.string().min(1).max(500).describe("The training goal (e.g., 'build full-body strength', 'sub-45 10k')"),
+        durationWeeks: z.number().int().min(1).max(52).optional().describe("Program length in weeks (1-52, default 4)"),
+        sessionsPerWeek: z.number().int().min(1).max(14).optional().describe("Training sessions per week (default 3)"),
+        notes: z.string().max(2000).optional().describe("Additional context, constraints, or preferences"),
+        programType: z.string().max(80).optional().describe("Program type (e.g., 'strength', 'hybrid', 'running')"),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional().describe("Start date (YYYY-MM-DD; defaults to today)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Generate Program" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

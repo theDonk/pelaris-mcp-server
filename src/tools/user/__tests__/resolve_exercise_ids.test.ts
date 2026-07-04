@@ -66,6 +66,7 @@ const claims: McpTokenClaims = {
 
 interface CapturedTool {
   name: string;
+  title: string;
   description: string;
   schema: Record<string, unknown>;
   annotations: Record<string, unknown>;
@@ -78,13 +79,17 @@ interface CapturedTool {
 function captureRegistration(): CapturedTool {
   let captured: CapturedTool | null = null;
   const fakeServer = {
-    tool: (...args: unknown[]) => {
+    // Modern registerTool(name, config, handler) signature: the config object
+    // carries the top-level `title` connector-cert reviewers read (precedence
+    // title -> annotations.title -> name), mirrored into annotations.title.
+    registerTool: (name: string, config: Record<string, unknown>, handler: unknown) => {
       captured = {
-        name: args[0] as string,
-        description: args[1] as string,
-        schema: args[2] as Record<string, unknown>,
-        annotations: args[3] as Record<string, unknown>,
-        handler: args[4] as CapturedTool["handler"],
+        name,
+        title: config.title as string,
+        description: config.description as string,
+        schema: config.inputSchema as Record<string, unknown>,
+        annotations: config.annotations as Record<string, unknown>,
+        handler: handler as CapturedTool["handler"],
       };
     },
   };
@@ -93,9 +98,11 @@ function captureRegistration(): CapturedTool {
   return captured;
 }
 
-test("registers with the exact name, read-only annotations, and a teaching description", () => {
+test("registers with the exact name, a human title, read-only annotations, and a teaching description", () => {
   const tool = captureRegistration();
   assert.equal(tool.name, "resolve_exercise_ids");
+  assert.ok(typeof tool.title === "string" && tool.title.length > 0, "top-level title is a non-empty string");
+  assert.equal(tool.annotations.title, tool.title, "title mirrored into annotations as a fallback");
   assert.equal(tool.annotations.readOnlyHint, true);
   assert.equal(tool.annotations.destructiveHint, false);
   assert.equal(tool.description, RESOLVE_EXERCISE_IDS_DESCRIPTION);

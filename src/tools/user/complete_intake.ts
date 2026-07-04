@@ -23,20 +23,23 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 
 export function registerCompleteIntake(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "complete_intake",
-    "Complete the athlete's intake and save it so a program can be generated. Provide the structured answers you have gathered. If a required safety question (e.g. pregnancy) is unanswered, this returns a clarification for you to ask before completing.",
     {
-      answers: z.record(z.unknown()).describe(
-        "Structured intake answers gathered from the athlete (e.g. is_pregnant, injuries, goal, experience). Safety fields (is_pregnant, injuries, demographics) are taken from here verbatim.",
-      ),
-      freeText: z.record(z.unknown()).optional().describe("Optional free-text fields, e.g. { north_star_raw: '...' }"),
-      projection: z.record(z.unknown()).optional().describe(
-        "Optional quality projection you standardised (intakeSummary, detectedMethodologyId, recommendedDurationWeeks, goals, a non-safety trainingContextProjection). Safety fields here are ignored; the answers are authoritative.",
-      ),
-      runId: z.string().max(120).optional().describe("Optional intake run id; generated if omitted."),
+      title: "Complete Intake",
+      description: "Complete the athlete's intake and save it so a program can be generated. Provide the structured answers you have gathered. If a required safety question (e.g. pregnancy) is unanswered, this returns a clarification for you to ask before completing.",
+      inputSchema: {
+        answers: z.record(z.unknown()).describe(
+          "Structured intake answers gathered from the athlete (e.g. is_pregnant, injuries, goal, experience). Safety fields (is_pregnant, injuries, demographics) are taken from here verbatim.",
+        ),
+        freeText: z.record(z.unknown()).optional().describe("Optional free-text fields, e.g. { north_star_raw: '...' }"),
+        projection: z.record(z.unknown()).optional().describe(
+          "Optional quality projection you standardised (intakeSummary, detectedMethodologyId, recommendedDurationWeeks, goals, a non-safety trainingContextProjection). Safety fields here are ignored; the answers are authoritative.",
+        ),
+        runId: z.string().max(120).optional().describe("Optional intake run id; generated if omitted."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Complete Intake" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

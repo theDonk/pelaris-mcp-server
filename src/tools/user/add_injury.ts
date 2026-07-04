@@ -93,39 +93,42 @@ function generateCoachingNote(bodyPart: string, severity: string, side?: string 
 }
 
 export function registerAddInjury(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "record_injury",
-    "Log an injury or pain point so your training plan adapts automatically. Returns a coaching note about how sessions will adjust.",
     {
-      bodyPart: z
-        .string()
-        .min(1)
-        .max(100)
-        .describe("Body part affected by the injury (e.g. 'knee', 'left knee', 'lower_back')"),
-      side: z
-        .enum(VALID_SIDES)
-        .optional()
-        .describe("Side of the body affected (left/right/bilateral). Auto-detected if included in bodyPart."),
-      severity: z
-        .enum(SEVERITY_LEVELS)
-        .describe("Injury severity: mild (discomfort), moderate (limited movement), severe (cannot train)"),
-      notes: z
-        .string()
-        .max(500)
-        .optional()
-        .describe("Additional details about the injury (when it occurred, what aggravates it)"),
-      affectedExercises: z
-        .array(z.string().min(1).max(200))
-        .max(10)
-        .optional()
-        .describe("Specific exercises that aggravate the injury"),
-      onsetDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("When the injury occurred (YYYY-MM-DD)"),
+      title: "Record Injury",
+      description: "Log an injury or pain point so your training plan adapts automatically. Returns a coaching note about how sessions will adjust.",
+      inputSchema: {
+        bodyPart: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe("Body part affected by the injury (e.g. 'knee', 'left knee', 'lower_back')"),
+        side: z
+          .enum(VALID_SIDES)
+          .optional()
+          .describe("Side of the body affected (left/right/bilateral). Auto-detected if included in bodyPart."),
+        severity: z
+          .enum(SEVERITY_LEVELS)
+          .describe("Injury severity: mild (discomfort), moderate (limited movement), severe (cannot train)"),
+        notes: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("Additional details about the injury (when it occurred, what aggravates it)"),
+        affectedExercises: z
+          .array(z.string().min(1).max(200))
+          .max(10)
+          .optional()
+          .describe("Specific exercises that aggravate the injury"),
+        onsetDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("When the injury occurred (YYYY-MM-DD)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Record Injury" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

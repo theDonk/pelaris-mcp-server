@@ -33,13 +33,16 @@ function canDelete(data: Record<string, unknown>): { allowed: boolean; reason?: 
 
 export function registerDeleteSession(server: McpServer): void {
   // ── Single delete ──
-  server.tool(
+  server.registerTool(
     "delete_session",
-    "Delete a planned training session. Completed and Strava-imported sessions cannot be deleted.",
     {
-      sessionId: z.string().min(1).describe("The diary session ID to delete"),
+      title: "Delete Session",
+      description: "Delete a planned training session. Completed and Strava-imported sessions cannot be deleted.",
+      inputSchema: {
+        sessionId: z.string().min(1).describe("The diary session ID to delete"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Delete Session" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();
@@ -134,17 +137,20 @@ export function registerDeleteSession(server: McpServer): void {
   );
 
   // ── Bulk delete ──
-  server.tool(
+  server.registerTool(
     "delete_sessions",
-    "Delete multiple planned training sessions at once (max 20). Returns per-session success/failure.",
     {
-      sessionIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(20)
-        .describe("Array of diary session IDs to delete (max 20)"),
+      title: "Delete Sessions",
+      description: "Delete multiple planned training sessions at once (max 20). Returns per-session success/failure.",
+      inputSchema: {
+        sessionIds: z
+          .array(z.string().min(1))
+          .min(1)
+          .max(20)
+          .describe("Array of diary session IDs to delete (max 20)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Delete Sessions" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

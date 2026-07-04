@@ -26,90 +26,93 @@ const VALID_SOURCES = ["intake", "coach", "manual"] as const;
 const VALID_DIRECTIONS = ["decrease", "increase", "maintain"] as const;
 
 export function registerManageGoals(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "manage_goals",
-    "Create, update, or complete your training goals: race events, body-composition targets, and performance milestones. To read your goals, use the list_goals tool.",
     {
-      // Advertised as a string (write actions only) rather than an enum that
-      // includes "list": exposing a read action alongside writes on one tool is
-      // a documented connector-cert auto-reject (§1.9). The handler still
-      // accepts the deprecated "list" alias for cached clients (stateless
-      // server, no tools/list_changed) — see the runtime allowlist below.
-      action: z
-        .string()
-        .describe("The write action to perform: 'create', 'update', or 'complete'."),
-      // Create fields
-      name: z
-        .string()
-        .min(1)
-        .max(500)
-        .optional()
-        .describe("Goal description (required for create)"),
-      targetValue: z
-        .string()
-        .optional()
-        .describe("Numeric target value (e.g., 100 for 100kg squat goal)"),
-      targetDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("Target completion date in YYYY-MM-DD format"),
-      sport: z
-        .string()
-        .max(100)
-        .optional()
-        .describe("Sport category (e.g., 'running', 'strength', 'swimming')"),
-      targetMetric: z
-        .string()
-        .max(100)
-        .optional()
-        .describe("Target metric key (e.g., 'waistCm', 'weightKg', 'squat_1rm')"),
-      targetDirection: z
-        .enum(VALID_DIRECTIONS)
-        .optional()
-        .describe("Direction of improvement: decrease, increase, or maintain"),
-      source: z
-        .enum(VALID_SOURCES)
-        .optional()
-        .describe("Origin of the goal (defaults to 'manual')"),
-      // Event/race fields
-      eventName: z
-        .string()
-        .max(300)
-        .optional()
-        .describe("Event name (e.g., 'Melbourne Marathon 2026')"),
-      eventDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("Event date in YYYY-MM-DD format"),
-      eventDistance: z
-        .string()
-        .max(100)
-        .optional()
-        .describe("Event distance (e.g., '42.2km', '5K', 'Olympic')"),
-      eventLocation: z
-        .string()
-        .max(300)
-        .optional()
-        .describe("Event location (e.g., 'Melbourne, Australia')"),
-      // Update/complete fields
-      goalId: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Goal ID (required for update and complete actions)"),
-      actualValue: z
-        .number()
-        .optional()
-        .describe("Actual achieved value (for complete action)"),
-      reflectionNotes: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Reflection notes when completing a goal"),
+      title: "Manage Goals",
+      description: "Create, update, or complete your training goals: race events, body-composition targets, and performance milestones. To read your goals, use the list_goals tool.",
+      inputSchema: {
+        // Advertised as a string (write actions only) rather than an enum that
+        // includes "list": exposing a read action alongside writes on one tool is
+        // a documented connector-cert auto-reject (§1.9). The handler still
+        // accepts the deprecated "list" alias for cached clients (stateless
+        // server, no tools/list_changed) — see the runtime allowlist below.
+        action: z
+          .string()
+          .describe("The write action to perform: 'create', 'update', or 'complete'."),
+        // Create fields
+        name: z
+          .string()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe("Goal description (required for create)"),
+        targetValue: z
+          .string()
+          .optional()
+          .describe("Numeric target value (e.g., 100 for 100kg squat goal)"),
+        targetDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("Target completion date in YYYY-MM-DD format"),
+        sport: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Sport category (e.g., 'running', 'strength', 'swimming')"),
+        targetMetric: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Target metric key (e.g., 'waistCm', 'weightKg', 'squat_1rm')"),
+        targetDirection: z
+          .enum(VALID_DIRECTIONS)
+          .optional()
+          .describe("Direction of improvement: decrease, increase, or maintain"),
+        source: z
+          .enum(VALID_SOURCES)
+          .optional()
+          .describe("Origin of the goal (defaults to 'manual')"),
+        // Event/race fields
+        eventName: z
+          .string()
+          .max(300)
+          .optional()
+          .describe("Event name (e.g., 'Melbourne Marathon 2026')"),
+        eventDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("Event date in YYYY-MM-DD format"),
+        eventDistance: z
+          .string()
+          .max(100)
+          .optional()
+          .describe("Event distance (e.g., '42.2km', '5K', 'Olympic')"),
+        eventLocation: z
+          .string()
+          .max(300)
+          .optional()
+          .describe("Event location (e.g., 'Melbourne, Australia')"),
+        // Update/complete fields
+        goalId: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Goal ID (required for update and complete actions)"),
+        actualValue: z
+          .number()
+          .optional()
+          .describe("Actual achieved value (for complete action)"),
+        reflectionNotes: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Reflection notes when completing a goal"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false, title: "Manage Goals" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

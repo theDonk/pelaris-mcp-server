@@ -27,17 +27,20 @@ function getMonday(date: Date): Date {
 }
 
 export function registerGetWeeklyDebrief(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_weekly_debrief",
-    "View your weekly training summary — session completion, highlights, areas for improvement, and next week's focus.",
     {
-      weekDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("A date within the target week (YYYY-MM-DD). Defaults to the current week."),
+      title: "Get Weekly Debrief",
+      description: "View your weekly training summary — session completion, highlights, areas for improvement, and next week's focus.",
+      inputSchema: {
+        weekDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("A date within the target week (YYYY-MM-DD). Defaults to the current week."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Get Weekly Debrief" },
     },
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -13,11 +13,14 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetActiveProgram(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_active_program",
-    "View your current training programs with progress, phase, weekly structure, and session details.",
-    {},
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    {
+      title: "Get Active Program",
+      description: "View your current training programs with progress, phase, weekly structure, and session details.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Active Program" },
+    },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

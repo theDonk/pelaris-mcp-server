@@ -24,31 +24,34 @@ const VALID_TOOL_NAMES = [
 ] as const;
 
 export function registerLogCoachFeedback(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "send_feedback",
-    "Share feedback about the coaching experience to help improve tool quality and accuracy.",
     {
-      rating: z
-        .number()
-        .int()
-        .min(1)
-        .max(5)
-        .describe("Overall rating (1 = poor, 5 = excellent)"),
-      helpful: z
-        .boolean()
-        .optional()
-        .describe("Was the tool/interaction helpful? Defaults to true if omitted."),
-      toolName: z
-        .enum(VALID_TOOL_NAMES)
-        .optional()
-        .describe("Which tool or feature the feedback is about. Defaults to 'general' if omitted."),
-      comment: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Optional freeform feedback comment"),
+      title: "Send Feedback",
+      description: "Share feedback about the coaching experience to help improve tool quality and accuracy.",
+      inputSchema: {
+        rating: z
+          .number()
+          .int()
+          .min(1)
+          .max(5)
+          .describe("Overall rating (1 = poor, 5 = excellent)"),
+        helpful: z
+          .boolean()
+          .optional()
+          .describe("Was the tool/interaction helpful? Defaults to true if omitted."),
+        toolName: z
+          .enum(VALID_TOOL_NAMES)
+          .optional()
+          .describe("Which tool or feature the feedback is about. Defaults to 'general' if omitted."),
+        comment: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Optional freeform feedback comment"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Send Feedback" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

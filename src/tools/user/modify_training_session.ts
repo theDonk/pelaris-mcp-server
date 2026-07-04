@@ -32,42 +32,45 @@ import {
 import { buildModifyTrainingOperations } from "./session_modify_mapping.js";
 
 export function registerModifyTrainingSession(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "modify_training_session",
-    "Adjust a planned session — reduce volume, change intensity, swap exercises, or reschedule to a different date.",
     {
-      sessionId: z
-        .string()
-        .min(1)
-        .max(200)
-        .describe("The session ID (from get_training_overview or get_session_details)"),
-      reduceVolume: z
-        .number()
-        .min(0.1)
-        .max(1.0)
-        .optional()
-        .describe("Volume multiplier (e.g., 0.5 = halve all sets/reps, 0.75 = reduce by 25%)"),
-      increaseIntensity: z
-        .number()
-        .min(0.5)
-        .max(2.0)
-        .optional()
-        .describe("Intensity multiplier for weights (e.g., 1.1 = increase by 10%)"),
-      swapExercise: z
-        .object({
-          from: z.string().min(1).max(200).describe("Name of the exercise to replace, as it appears in the session"),
-          to: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
-          toExerciseId: exerciseIdField,
-        })
-        .optional()
-        .describe("Swap one exercise for another"),
-      rescheduleDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("New scheduled date in YYYY-MM-DD format"),
+      title: "Modify Training Session",
+      description: "Adjust a planned session — reduce volume, change intensity, swap exercises, or reschedule to a different date.",
+      inputSchema: {
+        sessionId: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("The session ID (from get_training_overview or get_session_details)"),
+        reduceVolume: z
+          .number()
+          .min(0.1)
+          .max(1.0)
+          .optional()
+          .describe("Volume multiplier (e.g., 0.5 = halve all sets/reps, 0.75 = reduce by 25%)"),
+        increaseIntensity: z
+          .number()
+          .min(0.5)
+          .max(2.0)
+          .optional()
+          .describe("Intensity multiplier for weights (e.g., 1.1 = increase by 10%)"),
+        swapExercise: z
+          .object({
+            from: z.string().min(1).max(200).describe("Name of the exercise to replace, as it appears in the session"),
+            to: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+            toExerciseId: exerciseIdField,
+          })
+          .optional()
+          .describe("Swap one exercise for another"),
+        rescheduleDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("New scheduled date in YYYY-MM-DD format"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Modify Training Session" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

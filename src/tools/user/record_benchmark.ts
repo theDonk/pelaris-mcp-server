@@ -29,30 +29,33 @@ function normalizeBenchmarkId(name: string): string {
 }
 
 export function registerRecordBenchmark(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "record_benchmark",
-    "Record a new personal best or benchmark result. Previous values are saved to history so you can track progress over time.",
     {
-      benchmarkName: z
-        .string()
-        .min(1)
-        .max(200)
-        .describe("Name of the benchmark (e.g., 'bench_press_1rm', 'squat_1rm', '5km_run')"),
-      value: z
-        .number()
-        .describe("The benchmark value (e.g., 100 for 100kg, 1350 for 22:30 in seconds)"),
-      unit: z
-        .string()
-        .max(50)
-        .optional()
-        .describe("Unit of measurement (e.g., 'kg', 'sec', 'reps', 'watts'). Defaults to context-appropriate unit."),
-      notes: z
-        .string()
-        .max(500)
-        .optional()
-        .describe("Optional notes about this benchmark recording"),
+      title: "Record Benchmark",
+      description: "Record a new personal best or benchmark result. Previous values are saved to history so you can track progress over time.",
+      inputSchema: {
+        benchmarkName: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Name of the benchmark (e.g., 'bench_press_1rm', 'squat_1rm', '5km_run')"),
+        value: z
+          .number()
+          .describe("The benchmark value (e.g., 100 for 100kg, 1350 for 22:30 in seconds)"),
+        unit: z
+          .string()
+          .max(50)
+          .optional()
+          .describe("Unit of measurement (e.g., 'kg', 'sec', 'reps', 'watts'). Defaults to context-appropriate unit."),
+        notes: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("Optional notes about this benchmark recording"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Record Benchmark" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -13,11 +13,14 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetOnboardingStatus(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_onboarding_status",
-    "Check your account setup progress — intake completion, sport selection, program creation, and device connections.",
-    {},
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    {
+      title: "Get Onboarding Status",
+      description: "Check your account setup progress — intake completion, sport selection, program creation, and device connections.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Onboarding Status" },
+    },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

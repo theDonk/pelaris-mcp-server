@@ -25,45 +25,48 @@ function getAuth(): GoogleAuth {
 }
 
 export function registerGenerateWeeklyPlan(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "generate_weekly_plan",
-    "Deprecated: prefer generate_program, which enrols a scored, trainable program. Generate a weekly training plan tailored to your program, goals, and readiness. Sessions are written directly to your calendar.",
     {
-      focus: z
-        .string()
-        .max(500)
-        .optional()
-        .describe("Training focus for the week (e.g., 'upper body strength', 'endurance base building')"),
-      daysAvailable: z
-        .number()
-        .int()
-        .min(1)
-        .max(7)
-        .optional()
-        .describe("Number of training days available this week (1-7)"),
-      intensityPreference: z
-        .enum(["low", "moderate", "high"])
-        .optional()
-        .describe("Preferred intensity level for the generated plan"),
-      notes: z
-        .string()
-        .max(2000)
-        .optional()
-        .describe("Additional notes, goals, constraints, or athlete context for plan generation"),
-      durationWeeks: z
-        .number()
-        .int()
-        .min(1)
-        .max(8)
-        .optional()
-        .describe("Number of weeks to generate (1-8, default 4)"),
-      startDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("Start date for the plan (defaults to next Monday)"),
+      title: "Generate Weekly Plan",
+      description: "Deprecated: prefer generate_program, which enrols a scored, trainable program. Generate a weekly training plan tailored to your program, goals, and readiness. Sessions are written directly to your calendar.",
+      inputSchema: {
+        focus: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("Training focus for the week (e.g., 'upper body strength', 'endurance base building')"),
+        daysAvailable: z
+          .number()
+          .int()
+          .min(1)
+          .max(7)
+          .optional()
+          .describe("Number of training days available this week (1-7)"),
+        intensityPreference: z
+          .enum(["low", "moderate", "high"])
+          .optional()
+          .describe("Preferred intensity level for the generated plan"),
+        notes: z
+          .string()
+          .max(2000)
+          .optional()
+          .describe("Additional notes, goals, constraints, or athlete context for plan generation"),
+        durationWeeks: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .optional()
+          .describe("Number of weeks to generate (1-8, default 4)"),
+        startDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("Start date for the plan (defaults to next Monday)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Generate Weekly Plan" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

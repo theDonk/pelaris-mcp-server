@@ -15,13 +15,16 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 
 export function registerGetSessionDetails(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_session_details",
-    "View the full details of a workout session — exercises, sets, reps, weights, completion status, and feedback.",
     {
-      sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
+      title: "Get Session Details",
+      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, and feedback.",
+      inputSchema: {
+        sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Session Details" },
     },
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async ({ sessionId }) => {
       const requestId = generateRequestId();
       const start = Date.now();

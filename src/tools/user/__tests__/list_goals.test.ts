@@ -5,8 +5,8 @@
  * list_goals is the read-only split-out of manage_goals (DESIGN.md Item 3): it
  * must register with read-only annotations so connector clients (and the cert
  * check) see a non-destructive read surface. These tests capture the exact
- * server.tool(...) registration args without invoking the Firestore-backed
- * handler.
+ * server.registerTool(...) registration config without invoking the
+ * Firestore-backed handler.
  */
 
 import { test } from "node:test";
@@ -15,6 +15,7 @@ import { registerListGoals } from "../list_goals.js";
 
 interface CapturedTool {
   name: string;
+  title: string;
   description: string;
   schema: Record<string, unknown>;
   annotations: Record<string, unknown>;
@@ -24,13 +25,17 @@ interface CapturedTool {
 function captureRegistration(): CapturedTool {
   let captured: CapturedTool | null = null;
   const fakeServer = {
-    tool: (...args: unknown[]) => {
+    // Modern registerTool(name, config, handler) signature: the config object
+    // carries the top-level `title` connector-cert reviewers read (precedence
+    // title -> annotations.title -> name), mirrored into annotations.title.
+    registerTool: (name: string, config: Record<string, unknown>, handler: unknown) => {
       captured = {
-        name: args[0] as string,
-        description: args[1] as string,
-        schema: args[2] as Record<string, unknown>,
-        annotations: args[3] as Record<string, unknown>,
-        handler: args[4],
+        name,
+        title: config.title as string,
+        description: config.description as string,
+        schema: config.inputSchema as Record<string, unknown>,
+        annotations: config.annotations as Record<string, unknown>,
+        handler,
       };
     },
   };
@@ -47,7 +52,8 @@ test("registers with the exact name and read-only annotations", () => {
   assert.equal(tool.annotations.openWorldHint, false);
 });
 
-test("does not carry a title (titles are a separate pass)", () => {
+test("carries a top-level human title, mirrored into annotations", () => {
   const tool = captureRegistration();
-  assert.equal("title" in tool.annotations, false);
+  assert.ok(typeof tool.title === "string" && tool.title.length > 0, "top-level title is a non-empty string");
+  assert.equal(tool.annotations.title, tool.title, "title mirrored into annotations as a fallback");
 });

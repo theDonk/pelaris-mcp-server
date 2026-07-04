@@ -13,11 +13,14 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetBodyAnalysis(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_body_analysis",
-    "View your latest body composition data — measurements, ratios, archetype, and changes since your last analysis.",
-    {},
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    {
+      title: "Get Body Analysis",
+      description: "View your latest body composition data — measurements, ratios, archetype, and changes since your last analysis.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Body Analysis" },
+    },
     async () => {
       const requestId = generateRequestId();
       const start = Date.now();

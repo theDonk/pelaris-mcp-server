@@ -119,70 +119,73 @@ export function mapLogWorkoutResult(
 }
 
 export function registerLogWorkout(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "log_workout",
-    "Record a completed workout with exercises, RPE, and how you felt. Duplicate entries are automatically prevented.",
     {
-      sessionId: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Existing diary session ID to update (if logging against a planned session)"),
-      plannedSessionId: z
-        .string()
-        .optional()
-        .describe("ID of a planned session to mark as completed. Found in training context."),
-      completedAsPrescribed: z
-        .boolean()
-        .optional()
-        .describe("If true, copies target values (sets/reps/weight) to actuals."),
-      sport: z
-        .enum(VALID_SPORTS)
-        .describe("Sport/activity type"),
-      duration: z
-        .number()
-        .int()
-        .min(1)
-        .max(480)
-        .describe("Workout duration in minutes (1-480)"),
-      rpe: z
-        .number()
-        .min(1)
-        .max(10)
-        .describe("Rate of perceived exertion (1-10)"),
-      date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("Workout date in YYYY-MM-DD format (defaults to today)"),
-      exercises: z
-        .array(
-          z.object({
-            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
-            exerciseId: exerciseIdField,
-            sets: z.number().int().min(1).max(50).optional().describe("Number of sets completed"),
-            reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
-            weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
-            durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
-            distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
-            notes: z.string().max(500).optional().describe("Exercise-specific notes"),
-          }),
-        )
-        .max(30)
-        .optional()
-        .describe("Array of exercises performed (max 30)"),
-      feelings: z
-        .array(z.enum(VALID_FEELINGS))
-        .max(5)
-        .optional()
-        .describe("How you felt during the workout"),
-      notes: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Freeform notes about the session"),
+      title: "Log Workout",
+      description: "Record a completed workout with exercises, RPE, and how you felt. Duplicate entries are automatically prevented.",
+      inputSchema: {
+        sessionId: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Existing diary session ID to update (if logging against a planned session)"),
+        plannedSessionId: z
+          .string()
+          .optional()
+          .describe("ID of a planned session to mark as completed. Found in training context."),
+        completedAsPrescribed: z
+          .boolean()
+          .optional()
+          .describe("If true, copies target values (sets/reps/weight) to actuals."),
+        sport: z
+          .enum(VALID_SPORTS)
+          .describe("Sport/activity type"),
+        duration: z
+          .number()
+          .int()
+          .min(1)
+          .max(480)
+          .describe("Workout duration in minutes (1-480)"),
+        rpe: z
+          .number()
+          .min(1)
+          .max(10)
+          .describe("Rate of perceived exertion (1-10)"),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("Workout date in YYYY-MM-DD format (defaults to today)"),
+        exercises: z
+          .array(
+            z.object({
+              name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+              exerciseId: exerciseIdField,
+              sets: z.number().int().min(1).max(50).optional().describe("Number of sets completed"),
+              reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
+              weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
+              durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
+              distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
+              notes: z.string().max(500).optional().describe("Exercise-specific notes"),
+            }),
+          )
+          .max(30)
+          .optional()
+          .describe("Array of exercises performed (max 30)"),
+        feelings: z
+          .array(z.enum(VALID_FEELINGS))
+          .max(5)
+          .optional()
+          .describe("How you felt during the workout"),
+        notes: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Freeform notes about the session"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Log Workout" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

@@ -46,88 +46,91 @@ const VALID_FEEDBACK_TAGS = [
 ] as const;
 
 export function registerUpdateSession(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "update_session",
-    "Update an existing session with corrected or additional data — title, focus, duration, status, RPE, feedback, exercises, or coach notes.",
     {
-      sessionId: z
-        .string()
-        .min(1)
-        .max(200)
-        .describe("The session ID to update (from get_training_overview or get_session_details)"),
-      title: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Updated session title"),
-      sessionFocus: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Updated session focus area"),
-      durationMinutes: z
-        .number()
-        .int()
-        .min(1)
-        .max(480)
-        .optional()
-        .describe("Updated duration in minutes"),
-      status: z
-        .enum(VALID_STATUSES)
-        .optional()
-        .describe(
-          "Change session status. Setting 'completed' completes the session: without exercises[], " +
-          "the planned targets are recorded as performed; with exercises[], the provided work is " +
-          "recorded as what was actually done.",
-        ),
-      scheduledDate: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .optional()
-        .describe("Updated scheduled date in YYYY-MM-DD format"),
-      rpe: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .optional()
-        .describe("Rate of perceived exertion (1-10)"),
-      feedbackTags: z
-        .array(z.enum(VALID_FEEDBACK_TAGS))
-        .max(5)
-        .optional()
-        .describe("Feedback tags describing how the session went"),
-      feedbackNote: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Freeform notes about the session"),
-      exercises: z
-        .array(
-          z.object({
-            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
-            exerciseId: exerciseIdField,
-            sets: z.number().int().min(1).max(50).optional().describe("Number of sets"),
-            reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
-            weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
-            durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds"),
-            distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
-          }),
-        )
-        .max(30)
-        .optional()
-        .describe(
-          "Replace session exercises (max 30). Overwrites existing blocks. For phase grouping " +
-          "(warm-up/main/cool-down) or supersets/circuits, use blocks[] instead.",
-        ),
-      blocks: coreWriteBlocksField,
-      coachNote: z
-        .string()
-        .max(2000)
-        .optional()
-        .describe("AI coach observation or note about this session"),
+      title: "Update Session",
+      description: "Update an existing session with corrected or additional data — title, focus, duration, status, RPE, feedback, exercises, or coach notes.",
+      inputSchema: {
+        sessionId: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("The session ID to update (from get_training_overview or get_session_details)"),
+        title: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Updated session title"),
+        sessionFocus: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Updated session focus area"),
+        durationMinutes: z
+          .number()
+          .int()
+          .min(1)
+          .max(480)
+          .optional()
+          .describe("Updated duration in minutes"),
+        status: z
+          .enum(VALID_STATUSES)
+          .optional()
+          .describe(
+            "Change session status. Setting 'completed' completes the session: without exercises[], " +
+            "the planned targets are recorded as performed; with exercises[], the provided work is " +
+            "recorded as what was actually done.",
+          ),
+        scheduledDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .optional()
+          .describe("Updated scheduled date in YYYY-MM-DD format"),
+        rpe: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Rate of perceived exertion (1-10)"),
+        feedbackTags: z
+          .array(z.enum(VALID_FEEDBACK_TAGS))
+          .max(5)
+          .optional()
+          .describe("Feedback tags describing how the session went"),
+        feedbackNote: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Freeform notes about the session"),
+        exercises: z
+          .array(
+            z.object({
+              name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+              exerciseId: exerciseIdField,
+              sets: z.number().int().min(1).max(50).optional().describe("Number of sets"),
+              reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
+              weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
+              durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds"),
+              distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
+            }),
+          )
+          .max(30)
+          .optional()
+          .describe(
+            "Replace session exercises (max 30). Overwrites existing blocks. For phase grouping " +
+            "(warm-up/main/cool-down) or supersets/circuits, use blocks[] instead.",
+          ),
+        blocks: coreWriteBlocksField,
+        coachNote: z
+          .string()
+          .max(2000)
+          .optional()
+          .describe("AI coach observation or note about this session"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Update Session" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

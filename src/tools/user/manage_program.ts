@@ -21,20 +21,23 @@ import {
 } from "../shared/ownership.js";
 
 export function registerManageProgram(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "manage_program",
-    "Archive a training program. Use get_program_status to view programs first.",
     {
-      action: z
-        .literal("archive")
-        .describe("Archive a program"),
-      programId: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Program/queue ID to archive (defaults to the most recent active program)"),
+      title: "Manage Program",
+      description: "Archive a training program. Use get_program_status to view programs first.",
+      inputSchema: {
+        action: z
+          .literal("archive")
+          .describe("Archive a program"),
+        programId: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Program/queue ID to archive (defaults to the most recent active program)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false, title: "Manage Program" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

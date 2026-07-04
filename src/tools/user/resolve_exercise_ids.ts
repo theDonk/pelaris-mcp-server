@@ -41,13 +41,16 @@ export const resolveExerciseIdsQueriesField = z
   );
 
 export function registerResolveExerciseIds(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "resolve_exercise_ids",
-    RESOLVE_EXERCISE_IDS_DESCRIPTION,
     {
-      queries: resolveExerciseIdsQueriesField,
+      title: "Resolve Exercise IDs",
+      description: RESOLVE_EXERCISE_IDS_DESCRIPTION,
+      inputSchema: {
+        queries: resolveExerciseIdsQueriesField,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Resolve Exercise IDs" },
     },
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async ({ queries }) => {
       const requestId = generateRequestId();
       const start = Date.now();

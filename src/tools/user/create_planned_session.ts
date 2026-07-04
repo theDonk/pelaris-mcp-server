@@ -92,61 +92,64 @@ export function buildCreatePlannedSessionCoreInput(
 }
 
 export function registerCreatePlannedSession(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "create_planned_session",
-    "Schedule a future workout session with target exercises. The session will appear in your " +
-      "training calendar ready to track. Express grouped work (supersets, circuits) and phases " +
-      "(warm-up / main / cool-down) with blocks[]; never encode grouping in exercise names.",
     {
-      date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
-        .describe("Scheduled date for the session (YYYY-MM-DD)"),
-      sport: z
-        .enum(VALID_SPORTS)
-        .describe("Sport/activity type"),
-      title: z
-        .string()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe("Session title (defaults to '{Sport} Session')"),
-      durationMinutes: z
-        .number()
-        .int()
-        .min(1)
-        .max(480)
-        .optional()
-        .describe("Estimated duration in minutes (1-480)"),
-      sessionFocus: z
-        .string()
-        .max(200)
-        .optional()
-        .describe("Focus description, e.g. 'Upper Body Strength', 'Threshold Intervals'"),
-      coachNote: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Coaching context explaining why this session matters"),
-      exercises: z
-        .array(
-          z.object({
-            name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
-            exerciseId: exerciseIdField,
-            sets: z.number().int().min(1).max(50).optional().describe("Number of sets"),
-            reps: z.number().int().min(1).max(200).optional().describe("Target reps per set"),
-            weight: z.number().min(0).max(1000).optional().describe("Target weight in kg"),
-            duration: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for cardio/timed exercises)"),
-            distance: z.number().min(0).max(100000).optional().describe("Distance in meters"),
-            notes: z.string().max(500).optional().describe("Exercise-specific notes"),
-          }),
-        )
-        .max(30)
-        .optional()
-        .describe("Array of planned exercises (max 30). Flat list of standalone movements; use blocks[] for grouped or phased sessions."),
-      blocks: coreWriteBlocksField,
+      title: "Create Planned Session",
+      description: "Schedule a future workout session with target exercises. The session will appear in your " +
+        "training calendar ready to track. Express grouped work (supersets, circuits) and phases " +
+        "(warm-up / main / cool-down) with blocks[]; never encode grouping in exercise names.",
+      inputSchema: {
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+          .describe("Scheduled date for the session (YYYY-MM-DD)"),
+        sport: z
+          .enum(VALID_SPORTS)
+          .describe("Sport/activity type"),
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("Session title (defaults to '{Sport} Session')"),
+        durationMinutes: z
+          .number()
+          .int()
+          .min(1)
+          .max(480)
+          .optional()
+          .describe("Estimated duration in minutes (1-480)"),
+        sessionFocus: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Focus description, e.g. 'Upper Body Strength', 'Threshold Intervals'"),
+        coachNote: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Coaching context explaining why this session matters"),
+        exercises: z
+          .array(
+            z.object({
+              name: z.string().min(1).max(200).describe(EXERCISE_NAME_DESCRIPTION),
+              exerciseId: exerciseIdField,
+              sets: z.number().int().min(1).max(50).optional().describe("Number of sets"),
+              reps: z.number().int().min(1).max(200).optional().describe("Target reps per set"),
+              weight: z.number().min(0).max(1000).optional().describe("Target weight in kg"),
+              duration: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for cardio/timed exercises)"),
+              distance: z.number().min(0).max(100000).optional().describe("Distance in meters"),
+              notes: z.string().max(500).optional().describe("Exercise-specific notes"),
+            }),
+          )
+          .max(30)
+          .optional()
+          .describe("Array of planned exercises (max 30). Flat list of standalone movements; use blocks[] for grouped or phased sessions."),
+        blocks: coreWriteBlocksField,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Create Planned Session" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

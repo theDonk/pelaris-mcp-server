@@ -118,39 +118,42 @@ export function mapCoreSwapOutput(
 }
 
 export function registerSwapExercise(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "swap_exercise",
-    "Find alternative exercises with rationale, or swap an exercise in a planned session. Returns 3 " +
-      "suggestions based on movement pattern; set autoApply=true to apply the top suggestion, or pass " +
-      "replacementName to choose the replacement yourself.",
     {
-      sessionId: z
-        .string()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe("The session ID (from get_training_overview or get_session_details); omit for general alternatives"),
-      exerciseName: z
-        .string()
-        .min(1)
-        .max(200)
-        .describe(`Name of the exercise to swap out, as stored in the session. ${EXERCISE_NAME_DESCRIPTION}`),
-      reason: z
-        .enum(VALID_REASONS)
-        .optional()
-        .describe("Reason for the swap; helps find better alternatives"),
-      autoApply: z
-        .boolean()
-        .optional()
-        .describe("If true, automatically apply the swap to the session (top suggestion unless replacementName is given)"),
-      replacementName: z
-        .string()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe(`Explicit replacement to apply instead of the top suggestion. ${EXERCISE_NAME_DESCRIPTION}`),
+      title: "Swap Exercise",
+      description: "Find alternative exercises with rationale, or swap an exercise in a planned session. Returns 3 " +
+        "suggestions based on movement pattern; set autoApply=true to apply the top suggestion, or pass " +
+        "replacementName to choose the replacement yourself.",
+      inputSchema: {
+        sessionId: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("The session ID (from get_training_overview or get_session_details); omit for general alternatives"),
+        exerciseName: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe(`Name of the exercise to swap out, as stored in the session. ${EXERCISE_NAME_DESCRIPTION}`),
+        reason: z
+          .enum(VALID_REASONS)
+          .optional()
+          .describe("Reason for the swap; helps find better alternatives"),
+        autoApply: z
+          .boolean()
+          .optional()
+          .describe("If true, automatically apply the swap to the session (top suggestion unless replacementName is given)"),
+        replacementName: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(`Explicit replacement to apply instead of the top suggestion. ${EXERCISE_NAME_DESCRIPTION}`),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Swap Exercise" },
     },
-    { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

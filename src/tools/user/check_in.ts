@@ -21,41 +21,44 @@ const VALID_MOODS = [
 ] as const;
 
 export function registerCheckIn(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "daily_check_in",
-    "Log how you're feeling today — readiness, soreness, sleep, and mood. Your coach uses this to adapt upcoming sessions.",
     {
-      readiness: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .describe("Overall readiness to train (1 = very low, 10 = peak)"),
-      soreness: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .optional()
-        .describe("Muscle soreness level (1 = none, 10 = severe)"),
-      sleepQuality: z
-        .number()
-        .int()
-        .min(1)
-        .max(10)
-        .optional()
-        .describe("Sleep quality (1 = terrible, 10 = excellent)"),
-      mood: z
-        .enum(VALID_MOODS)
-        .optional()
-        .describe("Current mood/energy state"),
-      notes: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Freeform notes about how you're feeling"),
+      title: "Daily Check-In",
+      description: "Log how you're feeling today — readiness, soreness, sleep, and mood. Your coach uses this to adapt upcoming sessions.",
+      inputSchema: {
+        readiness: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe("Overall readiness to train (1 = very low, 10 = peak)"),
+        soreness: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Muscle soreness level (1 = none, 10 = severe)"),
+        sleepQuality: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Sleep quality (1 = terrible, 10 = excellent)"),
+        mood: z
+          .enum(VALID_MOODS)
+          .optional()
+          .describe("Current mood/energy state"),
+        notes: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Freeform notes about how you're feeling"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Daily Check-In" },
     },
-    { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();

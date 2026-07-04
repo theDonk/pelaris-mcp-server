@@ -18,17 +18,20 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
 export function registerGetGenerationStatus(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "get_generation_status",
-    "Check the status of a training plan generation job. Returns progress through pipeline stages and session count when complete.",
     {
-      jobId: z
-        .string()
-        .min(1)
-        .max(200)
-        .describe("The generation job ID returned by generate_weekly_plan"),
+      title: "Get Generation Status",
+      description: "Check the status of a training plan generation job. Returns progress through pipeline stages and session count when complete.",
+      inputSchema: {
+        jobId: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("The generation job ID returned by generate_weekly_plan"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Generation Status" },
     },
-    { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     async (params) => {
       const requestId = generateRequestId();
       const start = Date.now();
