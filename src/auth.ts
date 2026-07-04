@@ -17,6 +17,7 @@ export interface McpTokenClaims {
   platform: string;
   profile_id: string;
   client_id?: string; // PEL-102: added for connected_apps tracking (optional for backward compat)
+  aud?: string | string[]; // RFC 8707 audience binding (optional during rollout)
   exp: number;
   iat: number;
 }
@@ -25,6 +26,24 @@ export interface McpAuthenticatedRequest extends Request {
   mcpAuth?: McpTokenClaims;
   isAdminAuth?: boolean;
   requestId?: string;
+}
+
+// ─── RFC 8707 audience binding ──────────────────────────────────────────────────
+// The canonical MCP resource identifier (exact: scheme+host+path, no trailing
+// slash) — must equal the `resource` advertised by protected-resource metadata.
+// Access tokens carry aud = this value; a token whose aud is PRESENT but does
+// not match is rejected. `aud` may be a string or (RFC 7519) an array.
+const CANONICAL_AUDIENCE = "https://api.pelaris.io/mcp";
+// After this instant a MISSING aud is also rejected (require aud). The resource
+// server only ever sees 1h access tokens, so every token carries aud within an
+// hour of the signer rollout; this is a generous margin past that. Coded so
+// enforcement is automatic, not a manual flip that could be forgotten.
+const AUD_ENFORCE_AT = Date.parse("2026-09-01T00:00:00Z");
+
+function audienceAccepted(aud: unknown): boolean {
+  if (typeof aud === "string") return aud === CANONICAL_AUDIENCE;
+  if (Array.isArray(aud)) return aud.includes(CANONICAL_AUDIENCE);
+  return false; // present but not a string/array (null, object, …) → reject
 }
 
 // ─── JWT secret ───────────────────────────────────────────────────────────────
@@ -165,6 +184,17 @@ export async function verifyBearerToken(
       if (await isTokenRevoked(token)) {
         res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="The access token has been revoked", resource_metadata="${resourceMetadataUrl}"`);
         res.status(401).json({ error: "invalid_token", error_description: "Token has been revoked" });
+        return;
+      }
+
+      // RFC 8707 audience binding. Fail closed on a PRESENT-but-wrong aud
+      // always; allow a MISSING aud only until AUD_ENFORCE_AT (the ~1h
+      // access-token rotation window after the signer rollout). Strictly inside
+      // the JWT branch — the static admin token (Strategy 2) is never subject to aud.
+      const audMissing = claims.aud === undefined;
+      if ((!audMissing || Date.now() >= AUD_ENFORCE_AT) && !audienceAccepted(claims.aud)) {
+        res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="Token audience is not valid for this resource", resource_metadata="${resourceMetadataUrl}"`);
+        res.status(401).json({ error: "invalid_token", error_description: "Token audience mismatch" });
         return;
       }
 

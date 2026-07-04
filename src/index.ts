@@ -253,10 +253,14 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
 });
 
 // RFC 9728 — Protected Resource Metadata
-// authorization_servers must point to the MCP server (same domain as issuer above)
+// Both the root and path-aware documents advertise the SAME canonical resource
+// (`${MCP_SERVER_URL}/mcp`). The only protected endpoint is POST /mcp, and the
+// token `aud` is bound to that exact string — advertising the bare origin here
+// (which also equals the issuer) would conflate the AS and RS identifiers and
+// weaken the audience binding (RFC 8707). Keep both consistent.
 app.get("/.well-known/oauth-protected-resource", (_req, res) => {
   res.json({
-    resource: MCP_SERVER_URL,
+    resource: `${MCP_SERVER_URL}/mcp`,
     authorization_servers: [MCP_SERVER_URL],
     scopes_supported: [
       "profile:read", "training:read", "training:write",

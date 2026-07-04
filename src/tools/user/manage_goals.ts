@@ -28,11 +28,16 @@ const VALID_DIRECTIONS = ["decrease", "increase", "maintain"] as const;
 export function registerManageGoals(server: McpServer): void {
   server.tool(
     "manage_goals",
-    "Create, update, or complete your training goals. Supports race events, body composition targets, and performance milestones. (The 'list' action is deprecated — use the dedicated list_goals tool to read goals.)",
+    "Create, update, or complete your training goals: race events, body-composition targets, and performance milestones. To read your goals, use the list_goals tool.",
     {
+      // Advertised as a string (write actions only) rather than an enum that
+      // includes "list": exposing a read action alongside writes on one tool is
+      // a documented connector-cert auto-reject (§1.9). The handler still
+      // accepts the deprecated "list" alias for cached clients (stateless
+      // server, no tools/list_changed) — see the runtime allowlist below.
       action: z
-        .enum(VALID_ACTIONS)
-        .describe("The action to perform: create, update, or complete. ('list' is deprecated — use the list_goals tool.)"),
+        .string()
+        .describe("The write action to perform: 'create', 'update', or 'complete'."),
       // Create fields
       name: z
         .string()
@@ -115,6 +120,17 @@ export function registerManageGoals(server: McpServer): void {
         if (!claims || !hasScope(claims.scope, "training:write")) {
           return {
             content: [{ type: "text" as const, text: "Error: training:write scope required" }],
+            isError: true,
+          };
+        }
+
+        // Runtime allowlist. The schema advertises a free string (so cached
+        // clients sending the deprecated action:"list" alias still validate),
+        // so validate the action here; "list" is accepted as the deprecated
+        // read alias, everything outside the set is rejected.
+        if (!(VALID_ACTIONS as readonly string[]).includes(params.action)) {
+          return {
+            content: [{ type: "text" as const, text: `Error: unknown action '${params.action}'. Use create, update, or complete.` }],
             isError: true,
           };
         }
