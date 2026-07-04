@@ -49,6 +49,7 @@ import { registerUpdateSession } from "./tools/user/update_session.js";
 import { registerRecordBenchmark } from "./tools/user/record_benchmark.js";
 import { registerCheckIn } from "./tools/user/check_in.js";
 import { registerManageGoals } from "./tools/user/manage_goals.js";
+import { registerListGoals } from "./tools/user/list_goals.js";
 import { registerManageProgram } from "./tools/user/manage_program.js";
 import { registerGetProgramStatus } from "./tools/user/get_program_status.js";
 import { registerGetWeeklyDebrief } from "./tools/user/get_weekly_debrief.js";
@@ -336,6 +337,9 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerRecordBenchmark(server);
     registerCheckIn(server);
     registerManageGoals(server);
+    // Read-only companion to manage_goals (cert polish — DESIGN.md Item 3).
+    // manage_goals{action:"list"} remains as a deprecated alias to this logic.
+    registerListGoals(server);
     registerManageProgram(server);
     registerGetProgramStatus(server);
     registerGetWeeklyDebrief(server);

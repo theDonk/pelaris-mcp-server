@@ -2,7 +2,12 @@
  * MCP Tool: manage_goals
  * Scope: training:write
  *
- * CRUD operations for user goals. Supports create, update, complete, and list actions.
+ * Write operations for user goals: create, update, and complete.
+ *
+ * The "list" action is DEPRECATED — use the dedicated read-only `list_goals`
+ * tool instead. It is retained here only as a delegating alias (see below): the
+ * /mcp server is stateless (no tools/list_changed push), so cached clients that
+ * still call manage_goals{action:"list"} must keep working for ≥1 release.
  */
 
 import crypto from "crypto";
@@ -14,6 +19,7 @@ import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { listGoalsResult } from "./list_goals.js";
 
 const VALID_ACTIONS = ["create", "update", "complete", "list"] as const;
 const VALID_SOURCES = ["intake", "coach", "manual"] as const;
@@ -22,11 +28,11 @@ const VALID_DIRECTIONS = ["decrease", "increase", "maintain"] as const;
 export function registerManageGoals(server: McpServer): void {
   server.tool(
     "manage_goals",
-    "Create, update, complete, or list your training goals. Supports race events, body composition targets, and performance milestones.",
+    "Create, update, or complete your training goals. Supports race events, body composition targets, and performance milestones. (The 'list' action is deprecated — use the dedicated list_goals tool to read goals.)",
     {
       action: z
         .enum(VALID_ACTIONS)
-        .describe("The action to perform: create, update, complete, or list"),
+        .describe("The action to perform: create, update, or complete. ('list' is deprecated — use the list_goals tool.)"),
       // Create fields
       name: z
         .string()
@@ -127,41 +133,15 @@ export function registerManageGoals(server: McpServer): void {
         const profileId = claims.profile_id;
         const goalsCol = profileSubcollection(profileId, "goals");
 
-        // ── LIST ──────────────────────────────────────────────────
+        // ── LIST (DEPRECATED ALIAS) ───────────────────────────────
+        // Delegates to the shared listGoalsResult that also backs the dedicated
+        // read-only `list_goals` tool. Retained as a deprecated alias because
+        // the /mcp server is stateless (index.ts sessionIdGenerator: undefined —
+        // no tools/list_changed push), so cached clients still calling
+        // manage_goals{action:"list"} must keep working for ≥1 release. New
+        // callers should use list_goals. See DESIGN.md Item 3.
         if (params.action === "list") {
-          const goalsSnap = await goalsCol.orderBy("date_created", "desc").limit(50).get();
-
-          if (goalsSnap.empty) {
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify({ goals: [], message: "No goals found" }) }],
-            };
-          }
-
-          const goals = goalsSnap.docs.map((doc) => {
-            const d = doc.data();
-            return {
-              goalId: doc.id,
-              description: d.description,
-              isCompleted: d.is_completed || false,
-              dateCreated: d.date_created || null,
-              targetDate: d.target_date || null,
-              targetValue: d.target_value ?? null,
-              targetMetric: d.target_metric || null,
-              targetDirection: d.target_direction || null,
-              source: d.source || null,
-              eventName: d.event_name || null,
-              eventDate: d.event_date || null,
-              eventDistance: d.event_distance || null,
-              eventLocation: d.event_location || null,
-              // Benchmark ids this goal is tracked against (linked at write
-              // time by intake, the dashboard AI suggestion, or the coach).
-              linkedBenchmarkIds: Array.isArray(d.linked_benchmark_ids)
-                ? d.linked_benchmark_ids
-                : [],
-            };
-          });
-
-          const result = scrubDocument({ goals } as Record<string, unknown>);
+          const result = await listGoalsResult(profileId);
 
           logToolCall({
             requestId,
@@ -171,9 +151,7 @@ export function registerManageGoals(server: McpServer): void {
             success: true,
           });
 
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-          };
+          return result;
         }
 
         // ── CREATE ────────────────────────────────────────────────
