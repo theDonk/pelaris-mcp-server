@@ -68,7 +68,7 @@ Once connected, talk to your AI assistant naturally. It maps your intent to the 
 - "How are my benchmarks trending?" → `get_benchmarks`
 - "Swap the barbell bench for a dumbbell variation." → `swap_exercise`
 - "My right shoulder's been sore." → `record_injury`
-- "Build me a 4-week running plan." → `generate_weekly_plan`
+- "Build me a 4-week running plan." → `generate_program`
 
 (Illustrative prompts only; no personal data is shown. Responses are grounded in your own training data and PII-scrubbed.)
 

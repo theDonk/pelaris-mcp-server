@@ -294,6 +294,17 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
       version: VERSION,
+    }, {
+      // Server-level framing the client reads. Establishes Pelaris as a
+      // fitness/wellness coaching tool (general information, NOT medical advice)
+      // and discloses AI-generated output — connector-cert requirement (no
+      // tailored medical advice + AI disclosure).
+      instructions:
+        "Pelaris provides AI-assisted fitness and training coaching — general " +
+        "training information and personalised training plans, not medical, " +
+        "diagnostic, or therapeutic advice. Do not diagnose or treat. If a user " +
+        "reports pain, injury, or health symptoms, recommend they consult a " +
+        "licensed professional. All coaching output is AI-generated.",
     });
 
     // ─── Admin tools (only for admin-authed requests) ───────────
