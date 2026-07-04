@@ -106,8 +106,8 @@ test("registers with the exact name, a human title, read-only annotations, and a
   assert.equal(tool.annotations.readOnlyHint, true);
   assert.equal(tool.annotations.destructiveHint, false);
   assert.equal(tool.description, RESOLVE_EXERCISE_IDS_DESCRIPTION);
-  assert.ok(tool.description.includes("exercise_id"), "description teaches the id vocabulary");
-  assert.ok(tool.description.includes("exerciseId"), "description teaches the write-tool field name");
+  assert.ok(tool.description.includes("canonical exercise IDs"), "description teaches the id vocabulary");
+  assert.ok(tool.description.includes("null match"), "description explains the null-match contract");
   assert.ok("queries" in tool.schema);
 });
 

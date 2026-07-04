@@ -72,8 +72,17 @@ export function registerGetOnboardingStatus(server: McpServer): void {
           // Integrations subcollection may not exist yet — default to false
         }
 
+        // Return only the first name (given name). The scrubber's PII field list
+        // can't safely redact a bare `name` key globally (it would also strip
+        // legitimate `name` fields such as exercise movement names in other
+        // tools), so we minimise here instead.
+        const firstName =
+          typeof d.name === "string" && d.name.trim()
+            ? d.name.trim().split(/\s+/)[0]
+            : null;
+
         const status = {
-          name: d.name || null,
+          name: firstName,
           hasCompletedOnboarding: !!d.currentIntakeRunId,
           hasSport: !!sport,
           hasProgram: activeQueueDocs.length > 0,

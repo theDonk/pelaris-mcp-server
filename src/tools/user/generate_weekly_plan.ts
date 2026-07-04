@@ -29,7 +29,7 @@ export function registerGenerateWeeklyPlan(server: McpServer): void {
     "generate_weekly_plan",
     {
       title: "Generate Weekly Plan",
-      description: "Deprecated: prefer generate_program, which enrols a scored, trainable program. Generate a weekly training plan tailored to your program, goals, and readiness. Sessions are written directly to your calendar.",
+      description: "Generate a weekly training plan tailored to your program, goals, and readiness; sessions are written to your calendar.",
       inputSchema: {
         focus: z
           .string()

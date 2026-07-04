@@ -88,9 +88,8 @@ export function registerGetTrainingContext(server: McpServer): void {
           const sessions = d.sessions || [];
           const completed = sessions.filter((s: Record<string, unknown>) => s.is_completed).length;
           return {
-            queueId: doc.id,
+            programId: doc.id,
             title: d.title,
-            methodologyId: d.methodology_id,
             sport: d.sport || null,
             type: d.type,
             totalSessions: sessions.length,
@@ -110,7 +109,10 @@ export function registerGetTrainingContext(server: McpServer): void {
           profileData.intakeSummary?.primaryGoal ||
           null;
         if (!sport && programs.length > 0) {
-          sport = programs[0].sport || programs[0].methodologyId?.split("_")[0] || null;
+          // methodology_id is internal and no longer returned to the client, so
+          // read it from the raw first active doc for sport inference only.
+          const firstMethodologyId = activeDocs[0]?.data()?.methodology_id as string | undefined;
+          sport = programs[0].sport || firstMethodologyId?.split("_")[0] || null;
         }
 
         const profileContext = {

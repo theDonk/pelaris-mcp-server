@@ -125,7 +125,7 @@ export function registerGenerateProgram(server: McpServer): void {
 
         const result = scrubDocument({
           status,
-          queueId: data.queueId,
+          programId: data.queueId,
           sessionCount,
           programName,
           message,

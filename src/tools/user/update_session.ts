@@ -266,8 +266,6 @@ export function registerUpdateSession(server: McpServer): void {
           ...(params.status ? { status: params.status } : {}),
           updatedFields,
           message: `Session updated: ${updatedFields.join(", ")}`,
-          ...(result.resolvedTargetType != null ? { resolvedTargetType: result.resolvedTargetType } : {}),
-          ...(result.queueId != null ? { queueId: result.queueId } : {}),
         });
         return {
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],

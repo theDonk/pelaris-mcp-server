@@ -99,7 +99,6 @@ export function registerSearchEngineResources(server: McpServer): void {
         const resources = topResults.map((r) => {
           const d = r.doc.data();
           return {
-            resourceId: r.doc.id,
             title: d.title,
             summary: d.summary,
             url: d.url,

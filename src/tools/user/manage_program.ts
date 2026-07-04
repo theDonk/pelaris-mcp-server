@@ -25,7 +25,7 @@ export function registerManageProgram(server: McpServer): void {
     "manage_program",
     {
       title: "Manage Program",
-      description: "Archive a training program. Use get_program_status to view programs first.",
+      description: "Archive a training program by ID (defaults to the most recent active program).",
       inputSchema: {
         action: z
           .literal("archive")
@@ -115,7 +115,7 @@ export function registerManageProgram(server: McpServer): void {
         const completed = sessions.filter((s) => s.is_completed).length;
 
         const result = scrubDocument({
-          queueId: targetDocId,
+          programId: targetDocId,
           action: "archived",
           title: existingData.title,
           completedSessions: completed,

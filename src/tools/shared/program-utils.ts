@@ -12,10 +12,8 @@ export function summarizeProgram(doc: QueryDocumentSnapshot | DocumentSnapshot):
   const weeks = [...new Set(sessions.map((s) => s.week_number as number))].sort((a, b) => a - b);
 
   return {
-    queueId: doc.id,
+    programId: doc.id,
     title: d.title || null,
-    methodologyId: d.methodology_id || null,
-    sourceProgramId: d.source_program_id || null,
     type: d.type || null,
     totalSessions: sessions.length,
     completedSessions: completed,

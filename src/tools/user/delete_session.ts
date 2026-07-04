@@ -189,7 +189,9 @@ export function registerDeleteSession(server: McpServer): void {
               return { sessionId, success: true, title: data.title || sessionId };
             } catch (err) {
               if (err instanceof OwnershipError) {
-                return { sessionId, success: false, error: err.message, ownershipCode: err.code };
+                // ownershipCode is an internal error-taxonomy enum; surface only
+                // the human-readable error to the client.
+                return { sessionId, success: false, error: err.message };
               }
               throw err;
             }

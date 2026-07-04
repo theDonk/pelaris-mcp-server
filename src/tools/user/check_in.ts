@@ -125,7 +125,6 @@ export function registerCheckIn(server: McpServer): void {
         }
 
         const result = scrubDocument({
-          checkinId: docId,
           date: today,
           readiness: params.readiness,
           soreness: params.soreness ?? null,

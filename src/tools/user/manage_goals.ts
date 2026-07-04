@@ -30,7 +30,7 @@ export function registerManageGoals(server: McpServer): void {
     "manage_goals",
     {
       title: "Manage Goals",
-      description: "Create, update, or complete your training goals: race events, body-composition targets, and performance milestones. To read your goals, use the list_goals tool.",
+      description: "Create, update, or complete your training goals: race events, body-composition targets, and performance milestones.",
       inputSchema: {
         // Advertised as a string (write actions only) rather than an enum that
         // includes "list": exposing a read action alongside writes on one tool is

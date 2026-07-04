@@ -24,11 +24,9 @@ import { callCoreBridge } from "../shared/bridge_client.js";
 import { bridgeFailureResponse, unwrapBridgeResult } from "../shared/core_adapter.js";
 
 export const RESOLVE_EXERCISE_IDS_DESCRIPTION =
-  "Resolve exercise names to canonical exercise IDs. Call this FIRST, before any write tool that " +
-  "takes exercises: it turns names into canonical exercise_id values you then pass as exerciseId " +
-  "in create_planned_session, log_workout, log_completed_session, and update_session, so history, " +
-  "'Last' values, and PR detection attach to the right movement. A null match means no catalog " +
-  "entry exists; write the clean movement name and omit exerciseId.";
+  "Resolve exercise names to canonical exercise IDs so logged work attaches to the right " +
+  "movement's history and PR detection. A null match means no catalog entry exists. Use the " +
+  "plain movement name and omit the ID.";
 
 /** Exported for unit tests: the queries[] input field (1-20 movement names). */
 export const resolveExerciseIdsQueriesField = z

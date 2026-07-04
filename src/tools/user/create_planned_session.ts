@@ -98,7 +98,7 @@ export function registerCreatePlannedSession(server: McpServer): void {
       title: "Create Planned Session",
       description: "Schedule a future workout session with target exercises. The session will appear in your " +
         "training calendar ready to track. Express grouped work (supersets, circuits) and phases " +
-        "(warm-up / main / cool-down) with blocks[]; never encode grouping in exercise names.",
+        "(warm-up / main / cool-down) with blocks[].",
       inputSchema: {
         date: z
           .string()
@@ -145,7 +145,7 @@ export function registerCreatePlannedSession(server: McpServer): void {
           )
           .max(30)
           .optional()
-          .describe("Array of planned exercises (max 30). Flat list of standalone movements; use blocks[] for grouped or phased sessions."),
+          .describe("Array of planned exercises (max 30). Flat list of standalone movements; use blocks[] for grouped or phased sessions. Use plain movement names only; never encode grouping (supersets, circuits) in exercise names."),
         blocks: coreWriteBlocksField,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Create Planned Session" },

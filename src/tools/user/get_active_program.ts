@@ -79,10 +79,8 @@ export function registerGetActiveProgram(server: McpServer): void {
           });
 
           return {
-            queueId: doc.id,
+            programId: doc.id,
             title: d.title,
-            methodologyId: d.methodology_id,
-            sourceProgramId: d.source_program_id,
             type: d.type,
             totalSessions: sessions.length,
             completedSessions: completed,

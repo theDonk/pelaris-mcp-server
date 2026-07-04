@@ -13,6 +13,22 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
+/**
+ * Human-readable label for a benchmark. Prefers an explicit display-name field
+ * when present; otherwise humanizes the slug id (e.g. "bench_press_1rm" ->
+ * "Bench Press 1rm") so insight text never surfaces a raw document id.
+ */
+function benchmarkDisplayName(bm: Record<string, unknown>): string {
+  const explicit = (bm.name ?? bm.display_name ?? bm.label) as string | undefined;
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  const id = String(bm.id ?? "");
+  return id
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export function registerGetCoachInsight(server: McpServer): void {
   server.registerTool(
     "get_coach_insight",
@@ -143,7 +159,7 @@ export function registerGetCoachInsight(server: McpServer): void {
               if (pctChange >= 5) {
                 insights.push({
                   type: "benchmark_progress",
-                  text: `${bm.id} improved ${pctChange.toFixed(1)}% — from ${prevVal} to ${latestVal}. Progress is trending in the right direction.`,
+                  text: `${benchmarkDisplayName(bm)} improved ${pctChange.toFixed(1)}%, from ${prevVal} to ${latestVal}. Progress is trending in the right direction.`,
                   confidence: "high",
                   context: "benchmark_improvement",
                 });
@@ -214,8 +230,11 @@ export function registerGetCoachInsight(server: McpServer): void {
           });
         }
 
+        // `context` is an internal telemetry label; keep it server-side only and
+        // omit it from the returned content.
+        const clientInsights = insights.slice(0, 5).map(({ context: _context, ...rest }) => rest);
         const result = scrubDocument({
-          insights: insights.slice(0, 5), // Cap at 5 most relevant
+          insights: clientInsights, // Cap at 5 most relevant
           generatedAt: new Date().toISOString(),
         } as Record<string, unknown>);
 

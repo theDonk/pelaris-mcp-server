@@ -27,7 +27,7 @@ export function registerCompleteIntake(server: McpServer): void {
     "complete_intake",
     {
       title: "Complete Intake",
-      description: "Complete the athlete's intake and save it so a program can be generated. Provide the structured answers you have gathered. If a required safety question (e.g. pregnancy) is unanswered, this returns a clarification for you to ask before completing.",
+      description: "Complete and save the athlete's intake so a program can be generated. If a required safety field (e.g. pregnancy) is missing, the response indicates what still needs to be answered.",
       inputSchema: {
         answers: z.record(z.unknown()).describe(
           "Structured intake answers gathered from the athlete (e.g. is_pregnant, injuries, goal, experience). Safety fields (is_pregnant, injuries, demographics) are taken from here verbatim.",
@@ -94,7 +94,23 @@ export function registerCompleteIntake(server: McpServer): void {
           };
         }
 
-        return { content: [{ type: "text" as const, text: JSON.stringify(scrubDocument(result), null, 2) }] };
+        // Project to an explicit allow-list of user-facing fields. The raw core
+        // envelope can carry internal handles/projection fields (runId,
+        // detectedMethodologyId, trainingContextProjection, ...) the model never
+        // needs; only surface the outcome fields that help the coach proceed.
+        const INTAKE_RESPONSE_FIELDS = [
+          "status",
+          "message",
+          "recommendedDurationWeeks",
+          "goals",
+        ] as const;
+        const projected: Record<string, unknown> = {};
+        for (const key of INTAKE_RESPONSE_FIELDS) {
+          if (result[key] !== undefined) projected[key] = result[key];
+        }
+        if (projected.status === undefined) projected.status = "completed";
+
+        return { content: [{ type: "text" as const, text: JSON.stringify(scrubDocument(projected), null, 2) }] };
       } catch (error) {
         logToolCall({
           requestId,
