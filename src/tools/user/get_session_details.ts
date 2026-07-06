@@ -19,7 +19,7 @@ export function registerGetSessionDetails(server: McpServer): void {
     "get_session_details",
     {
       title: "Get Session Details",
-      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, and feedback.",
+      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap).",
       inputSchema: {
         sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
       },
@@ -168,6 +168,30 @@ export function registerGetSessionDetails(server: McpServer): void {
             elevationGainMeters: d.imported_actuals.elevationGainMeters ?? null,
             kilojoules: d.imported_actuals.kilojoules ?? null,
             sufferScore: d.imported_actuals.sufferScore ?? null,
+            // PEL-233 Phase 6: per-lap/split breakdown. The unified activity
+            // pipeline (buildImportedActuals) writes a canonical ActivitySplit[]
+            // here. Sport-agnostic: running/cycling carry pace/HR/cadence/power,
+            // swimming carries strokes/strokeType. Sessions without synced lap
+            // data have no splits → null, so the response shape is unchanged for
+            // strength/manual sessions.
+            splits: Array.isArray(d.imported_actuals.splits) && (d.imported_actuals.splits as unknown[]).length > 0
+              ? (d.imported_actuals.splits as Array<Record<string, unknown>>).map((sp) => ({
+                  index: sp.index ?? null,
+                  distanceMeters: sp.distanceMeters ?? null,
+                  elapsedSeconds: sp.elapsedSeconds ?? null,
+                  movingSeconds: sp.movingSeconds ?? null,
+                  // Pre-formatted for readability; raw numerics above for computation.
+                  pace: sp.pace ?? null,
+                  time: sp.time ?? null,
+                  heartRate: sp.heartRate ?? sp.avgHr ?? null,
+                  cadence: sp.cadence ?? null,
+                  elevationGainMeters: sp.elevation ?? null,
+                  averageSpeedKmh: sp.avgSpeed ?? null,
+                  averageWatts: sp.avgWatts ?? null,
+                  strokes: sp.strokes ?? null,
+                  strokeType: sp.strokeType ?? null,
+                }))
+              : null,
           } : null,
           feedback: d.feedback ? {
             rpe: d.feedback.rpe,
