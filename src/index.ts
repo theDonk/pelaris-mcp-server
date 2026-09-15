@@ -31,7 +31,10 @@ import { registerGetGenerationStatus } from "./tools/user/get_generation_status.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
 
 // User write tools (OAuth-scoped — PEL-69)
-import { registerGenerateWeeklyPlan } from "./tools/user/generate_weekly_plan.js";
+// generate_weekly_plan (src/tools/user/generate_weekly_plan.ts) is RETIRED
+// (GL-I16, Spring Tide 1.2.0, 16/09/2026) and deliberately no longer
+// imported here — see the "User write tools" comment further down, right
+// above its former registration call site.
 import { registerGenerateProgram } from "./tools/user/generate_program.js";
 import { registerCompleteIntake } from "./tools/user/complete_intake.js";
 import { registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
@@ -331,12 +334,13 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
     // generate_program (Unified Uplift G3 / C-3): the curated generate-and-enrol
-    // path (server-side generation + enrol -> scored queue). generate_weekly_plan is
-    // deprecated (old pipeline -> orphan diary entries, never scored) and kept
-    // only for the migration window.
+    // path (server-side generation + enrol -> scored queue). generate_weekly_plan
+    // is RETIRED (GL-I16, Spring Tide 1.2.0, 16/09/2026): its /generateProgramHttp
+    // endpoint is gone in this release, so the tool would now 404 on every call.
+    // No longer registered — the module stays at
+    // src/tools/user/generate_weekly_plan.ts, unregistered, for history.
     registerCompleteIntake(server);
     registerGenerateProgram(server);
-    registerGenerateWeeklyPlan(server);
     registerModifyTrainingSession(server);
     registerLogWorkout(server);
     registerSwapExercise(server);
