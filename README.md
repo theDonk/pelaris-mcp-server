@@ -17,9 +17,9 @@ Settings → Connectors → Add Custom → enter the MCP Server URL above → Ad
 ### Any MCP Client
 Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dynamic Client Registration.
 
-## Tools (30)
+## Tools (29)
 
-### Read Tools (13)
+### Read Tools (12)
 | Tool | Description |
 |------|-------------|
 | `get_training_overview` | View your training context, active programs, and recent sessions |
@@ -32,7 +32,6 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `get_coach_insight` | Get data-driven coaching insights based on your training |
 | `get_onboarding_status` | Check profile setup completion status |
 | `get_weekly_debrief` | View weekly training summary and coaching focus |
-| `get_generation_status` | Check the status of an in-progress program-generation job |
 | `get_program_status` | Check the status and progress of your training programs |
 | `list_goals` | List your training goals with completion status and linked benchmarks |
 

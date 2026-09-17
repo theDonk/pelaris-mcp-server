@@ -27,7 +27,10 @@ import { registerGetBodyAnalysis } from "./tools/user/get_body_analysis.js";
 import { registerSearchEngineResources } from "./tools/user/search_engine_resources.js";
 import { registerGetCoachInsight } from "./tools/user/get_coach_insight.js";
 import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.js";
-import { registerGetGenerationStatus } from "./tools/user/get_generation_status.js";
+// get_generation_status (src/tools/user/get_generation_status.ts) is
+// RETIRED (GL-I43, Spring Tide 1.2.0, 17/09/2026) and deliberately no
+// longer imported here. See the "User coaching tools" comment further
+// down, right above its former registration call site.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
 
 // User write tools (OAuth-scoped — PEL-69)
@@ -327,7 +330,12 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerSearchEngineResources(server);
     registerGetCoachInsight(server);
     registerGetOnboardingStatus(server);
-    registerGetGenerationStatus(server);
+    // get_generation_status (src/tools/user/get_generation_status.ts) is
+    // RETIRED (GL-I43, Spring Tide 1.2.0, 17/09/2026): no registered tool
+    // has produced a job id for it to poll since generate_weekly_plan was
+    // retired (GL-I16), so every call returned nothing useful. No longer
+    // registered. The module stays at
+    // src/tools/user/get_generation_status.ts, unregistered, for history.
     // Exercise-id preflight: read tool that teaches the write vocabulary
     // (resolve names -> canonical exerciseId -> pass to write tools).
     registerResolveExerciseIds(server);

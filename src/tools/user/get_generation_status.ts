@@ -1,3 +1,8 @@
+// RETIRED 17/09/2026 (GL-I43, Spring Tide 1.2.0): no longer registered in
+// src/index.ts. No registered tool hands out a job id for this to poll
+// since generate_weekly_plan was retired (GL-I16), so every call returned
+// nothing useful. Left in place, unregistered, for history. Use
+// generate_program, which returns the result directly.
 /**
  * MCP Tool: get_generation_status
  * Scope: training:read
