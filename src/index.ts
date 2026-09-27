@@ -27,11 +27,17 @@ import { registerGetBodyAnalysis } from "./tools/user/get_body_analysis.js";
 import { registerSearchEngineResources } from "./tools/user/search_engine_resources.js";
 import { registerGetCoachInsight } from "./tools/user/get_coach_insight.js";
 import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.js";
-import { registerGetGenerationStatus } from "./tools/user/get_generation_status.js";
+// get_generation_status (src/tools/user/get_generation_status.ts) is
+// RETIRED (GL-I43, Spring Tide 1.2.0, 17/09/2026) and deliberately no
+// longer imported here. See the "User coaching tools" comment further
+// down, right above its former registration call site.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
 
 // User write tools (OAuth-scoped — PEL-69)
-import { registerGenerateWeeklyPlan } from "./tools/user/generate_weekly_plan.js";
+// generate_weekly_plan (src/tools/user/generate_weekly_plan.ts) is RETIRED
+// (GL-I16, Spring Tide 1.2.0, 16/09/2026) and deliberately no longer
+// imported here — see the "User write tools" comment further down, right
+// above its former registration call site.
 import { registerGenerateProgram } from "./tools/user/generate_program.js";
 import { registerCompleteIntake } from "./tools/user/complete_intake.js";
 import { registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
@@ -324,19 +330,25 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerSearchEngineResources(server);
     registerGetCoachInsight(server);
     registerGetOnboardingStatus(server);
-    registerGetGenerationStatus(server);
+    // get_generation_status (src/tools/user/get_generation_status.ts) is
+    // RETIRED (GL-I43, Spring Tide 1.2.0, 17/09/2026): no registered tool
+    // has produced a job id for it to poll since generate_weekly_plan was
+    // retired (GL-I16), so every call returned nothing useful. No longer
+    // registered. The module stays at
+    // src/tools/user/get_generation_status.ts, unregistered, for history.
     // Exercise-id preflight: read tool that teaches the write vocabulary
     // (resolve names -> canonical exerciseId -> pass to write tools).
     registerResolveExerciseIds(server);
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
     // generate_program (Unified Uplift G3 / C-3): the curated generate-and-enrol
-    // path (server-side generation + enrol -> scored queue). generate_weekly_plan is
-    // deprecated (old pipeline -> orphan diary entries, never scored) and kept
-    // only for the migration window.
+    // path (server-side generation + enrol -> scored queue). generate_weekly_plan
+    // is RETIRED (GL-I16, Spring Tide 1.2.0, 16/09/2026): its /generateProgramHttp
+    // endpoint is gone in this release, so the tool would now 404 on every call.
+    // No longer registered — the module stays at
+    // src/tools/user/generate_weekly_plan.ts, unregistered, for history.
     registerCompleteIntake(server);
     registerGenerateProgram(server);
-    registerGenerateWeeklyPlan(server);
     registerModifyTrainingSession(server);
     registerLogWorkout(server);
     registerSwapExercise(server);

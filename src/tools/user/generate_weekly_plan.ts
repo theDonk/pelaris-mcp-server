@@ -1,3 +1,7 @@
+// RETIRED 16/09/2026 (GL-I16, Spring Tide 1.2.0): no longer registered in
+// src/index.ts. The endpoint this tool calls (POST /generateProgramHttp) is
+// gone in this release, so a live call would 404. Left in place, unregistered,
+// for history — use generate_program instead.
 /**
  * MCP Tool: generate_weekly_plan
  * Scope: training:write
