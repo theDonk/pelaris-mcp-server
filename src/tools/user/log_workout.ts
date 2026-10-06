@@ -77,6 +77,17 @@ export function buildLogWorkoutCoreInput(params: LogWorkoutParams): Record<strin
   return input;
 }
 
+/** ST-11 (U4): core `log_session` may return a structured `attention` flag
+ *  ("planned session completed, no sets marked done; confirm completedAsPrescribed?").
+ *  MCP clients never see the coach's prompt, so it must cross the mapper on
+ *  every branch; the calling model still decides what to do. */
+function withAttention(
+  mapped: Record<string, unknown>,
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  return result.attention !== undefined ? { ...mapped, attention: result.attention } : mapped;
+}
+
 /** Map the core `log_session` output back onto this tool's legacy response
  *  shape (the status vocabulary and field names agents already parse).
  *  Core "updated" (a planned target was completed) -> "completed_planned";
@@ -87,14 +98,14 @@ export function mapLogWorkoutResult(
   completedAsPrescribed: boolean,
 ): Record<string, unknown> {
   if (result.status === "already_logged") {
-    return {
+    return withAttention({
       sessionId: result.sessionId,
       status: "already_logged",
       message: result.message,
-    };
+    }, result);
   }
   if (result.status === "updated") {
-    return {
+    return withAttention({
       sessionId: result.sessionId,
       status: "completed_planned",
       date: result.date,
@@ -103,9 +114,9 @@ export function mapLogWorkoutResult(
       rpe: result.rpe ?? null,
       completedAsPrescribed,
       message: `Planned session "${result.sessionId}" marked as completed on ${result.date}.`,
-    };
+    }, result);
   }
-  return {
+  return withAttention({
     sessionId: result.sessionId,
     status: "logged",
     date: result.date,
@@ -115,7 +126,7 @@ export function mapLogWorkoutResult(
     exerciseCount: result.exerciseCount ?? 0,
     dataQuality: result.dataQuality,
     message: result.message,
-  };
+  }, result);
 }
 
 export function registerLogWorkout(server: McpServer): void {
@@ -137,7 +148,7 @@ export function registerLogWorkout(server: McpServer): void {
         completedAsPrescribed: z
           .boolean()
           .optional()
-          .describe("If true, copies target values (sets/reps/weight) to actuals."),
+          .describe("Set true only when the athlete says they did the planned session as written (copies target values to actuals). If they report their own distance or time, pass those in exercises instead. If neither applies, leave unset and ask them; do not mark a session done with no sets."),
         sport: z
           .enum(VALID_SPORTS)
           .describe("Sport/activity type"),

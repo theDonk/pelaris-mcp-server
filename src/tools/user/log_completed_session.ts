@@ -86,6 +86,17 @@ export function buildLogCompletedSessionCoreInput(
   return input;
 }
 
+/** ST-11 (U4): core `log_session` may return a structured `attention` flag
+ *  ("planned session completed, no sets marked done; confirm completedAsPrescribed?").
+ *  MCP clients never see the coach's prompt, so it must cross the mapper on
+ *  every branch; the calling model still decides what to do. */
+function withAttention(
+  mapped: Record<string, unknown>,
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  return result.attention !== undefined ? { ...mapped, attention: result.attention } : mapped;
+}
+
 /** Map the core `log_session` output back onto this tool's legacy response
  *  shape (the status vocabulary and field names agents already parse).
  *  Core "updated" (a planned target was completed) -> "completed_planned";
@@ -95,23 +106,23 @@ export function mapLogCompletedSessionResult(
   result: Record<string, unknown>,
 ): Record<string, unknown> {
   if (result.status === "already_logged") {
-    return {
+    return withAttention({
       sessionId: result.sessionId,
       status: "already_logged",
       message: result.message,
-    };
+    }, result);
   }
   if (result.status === "updated") {
-    return {
+    return withAttention({
       sessionId: result.sessionId,
       status: "completed_planned",
       date: result.date,
       sport: result.sport,
       title: result.title,
       message: `Planned session "${result.title ?? result.sessionId}" marked as completed.`,
-    };
+    }, result);
   }
-  return {
+  return withAttention({
     sessionId: result.sessionId,
     status: "logged",
     date: result.date,
@@ -122,7 +133,7 @@ export function mapLogCompletedSessionResult(
     exerciseCount: result.exerciseCount ?? 0,
     dataQuality: result.dataQuality,
     message: result.message,
-  };
+  }, result);
 }
 
 export function registerLogCompletedSession(server: McpServer): void {

@@ -19,7 +19,7 @@ export function registerGetSessionDetails(server: McpServer): void {
     "get_session_details",
     {
       title: "Get Session Details",
-      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap).",
+      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap). When an activity recorded two or more laps, importedActuals.laps carries them exactly as the device or app recorded them (SI units; lapsSource says how they were recorded; lapsCapped marks a long list cut to its first laps). Describe laps as recorded.",
       inputSchema: {
         sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
       },
@@ -134,6 +134,29 @@ export function registerGetSessionDetails(server: McpServer): void {
           };
         });
 
+        // LAP-11: the recorded laps come from the core tool (one owner of the
+        // lap_prompt_max_laps cap, the sanitising and the provenance tags), so this
+        // surface never hardcodes a limit. Only asked for when the diary holds two or
+        // more laps; fail-open: any bridge error means no laps, never a failed read.
+        const lapKeys = ["laps", "lapsSource", "lapsPlatform", "lapsTotal", "lapsTruncated", "lapsCapped"];
+        let lapFields: Record<string, unknown> = {};
+        const storedLaps = d.imported_actuals?.laps;
+        if (Array.isArray(storedLaps) && storedLaps.length >= 2) {
+          try {
+            const bridged = await callCoreBridge("get_session_details", profileId, { sessionId });
+            const bridgedActuals = bridged.ok
+              ? (bridged.result as { importedActuals?: Record<string, unknown> } | null)?.importedActuals
+              : undefined;
+            if (bridgedActuals) {
+              lapFields = Object.fromEntries(
+                lapKeys.filter((k) => bridgedActuals[k] !== undefined).map((k) => [k, bridgedActuals[k]]),
+              );
+            }
+          } catch (bridgeErr) {
+            console.warn(`[get_session_details] core bridge lap read failed: ${(bridgeErr as Error).message}`);
+          }
+        }
+
         const session = {
           sessionId: sessionDoc.id,
           title: d.title,
@@ -192,6 +215,7 @@ export function registerGetSessionDetails(server: McpServer): void {
                   strokeType: sp.strokeType ?? null,
                 }))
               : null,
+            ...lapFields,
           } : null,
           feedback: d.feedback ? {
             rpe: d.feedback.rpe,

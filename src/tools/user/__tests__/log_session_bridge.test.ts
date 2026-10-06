@@ -254,6 +254,39 @@ test("log_completed_session result: idempotency hit preserves core's no-duplicat
   });
 });
 
+test("ST-11: the attention flag crosses both mappers on every branch (U4)", () => {
+  const attention = {
+    code: "planned_completed_no_sets_marked",
+    message: "The planned session is marked complete, and none of its sets are ticked yet. Ask the athlete whether they did it as planned or what numbers they would like recorded, then log those so the sets count.",
+  };
+  const updated = {
+    sessionId: "diary_5",
+    status: "updated",
+    date: "2026-06-30",
+    sport: "cycling",
+    title: "Ride",
+    durationMinutes: 60,
+    rpe: 7,
+    exerciseCount: 1,
+    dataQuality: "quick",
+    message: "Logged workout against planned session diary_5.",
+    attention,
+  };
+  assert.deepEqual(mapLogCompletedSessionResult(updated).attention, attention);
+  assert.deepEqual(mapLogWorkoutResult(updated, false).attention, attention);
+  // Absent when core did not raise it: the legacy shapes are unchanged.
+  const { attention: _dropped, ...withoutAttention } = updated;
+  assert.equal("attention" in mapLogCompletedSessionResult(withoutAttention), false);
+  assert.equal("attention" in mapLogWorkoutResult(withoutAttention, false), false);
+  // And on the other branches.
+  const logged = mapLogWorkoutResult({ ...withoutAttention, status: "completed", attention }, false);
+  assert.deepEqual(logged.attention, attention);
+  const already = mapLogCompletedSessionResult({
+    sessionId: "diary_5", status: "already_logged", message: "dup", attention,
+  });
+  assert.deepEqual(already.attention, attention);
+});
+
 test("log_completed_session result: missing duration and rpe map to null like legacy", () => {
   const mapped = mapLogCompletedSessionResult({
     sessionId: "diary_4",
