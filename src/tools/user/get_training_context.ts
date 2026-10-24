@@ -4,6 +4,12 @@
  *
  * Returns a comprehensive training context snapshot including:
  * profile, active program, recent diary sessions, check-in data.
+ *
+ * 1.4.1 D2 (connector truth, PEL-1211): each program's week, phase and completion, and
+ * the week's counts, come from the app's backend (`get_training_truth` over the
+ * coreToolsBridge), the same answer the app shows. The "current week" here used to be
+ * the highest built week, so a program in week 9 of 24 read as week 12. Existing output
+ * fields keep their names; plain-language fields are added.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -13,6 +19,7 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { programTruthFields, readTrainingTruth, type TruthReader } from "../shared/training_truth.js";
 
 /** An injury id as the core issues it. */
 const INJURY_ID = /^inj_[0-9a-f]{10}$/;
@@ -43,7 +50,15 @@ export function activeInjuriesWithIds(entries: unknown): Array<{ injuryId: strin
   return out;
 }
 
-export function registerGetTrainingContext(server: McpServer): void {
+/** The program truth this tool reads, injectable for tests. */
+export interface TrainingContextDeps {
+  truth: TruthReader;
+}
+
+export function registerGetTrainingContext(
+  server: McpServer,
+  deps: TrainingContextDeps = { truth: readTrainingTruth },
+): void {
   server.registerTool(
     "get_training_overview",
     {
@@ -68,7 +83,8 @@ export function registerGetTrainingContext(server: McpServer): void {
         const profileId = claims.profile_id;
 
         // Parallel reads for performance
-        const [profileSnap, queuesSnap, diarySnap, checkinsSnap, goalsSnap] = await Promise.all([
+        const [truth, profileSnap, queuesSnap, diarySnap, checkinsSnap, goalsSnap] = await Promise.all([
+          deps.truth(profileId),
           db.collection("profiles").doc(profileId).get(),
           profileSubcollection(profileId, "queues")
             .where("generation_status", "in", ["complete", null])
@@ -105,30 +121,31 @@ export function registerGetTrainingContext(server: McpServer): void {
 
         const profileData = profileSnap.data() || {};
 
-        // PEL-220: Use profile.active_queues to determine truly active programs
+        // PEL-220: Use profile.active_queues to determine truly active programs (the truth reads the same list)
         const activeQueueIds = new Set(
           ((profileData.active_queues || []) as Array<Record<string, unknown>>)
             .filter((q) => q.is_active === true)
             .map((q) => q.queue_id as string),
         );
-        const activeDocs = queuesSnap.docs.filter((doc) => activeQueueIds.has(doc.id));
-        const programs = activeDocs.map((doc) => {
-          const d = doc.data();
-          const sessions = d.sessions || [];
-          const completed = sessions.filter((s: Record<string, unknown>) => s.is_completed).length;
+        const queueById = new Map(queuesSnap.docs.map((doc) => [doc.id, doc.data()]));
+        // The week, phase and completion are the app's (truth). If the backend could not answer, say so
+        // rather than guess a week: the rest of the snapshot is still true.
+        const programs = (truth?.programs ?? []).map((p) => {
+          const d = queueById.get(p.queueId) ?? {};
           return {
-            programId: doc.id,
-            title: d.title,
+            programId: p.queueId,
+            title: p.title,
             sport: d.sport || null,
-            type: d.type,
-            totalSessions: sessions.length,
-            completedSessions: completed,
-            currentWeek: sessions.length > 0
-              ? Math.max(...sessions.map((s: Record<string, unknown>) => (s.week_number as number) || 1))
-              : 1,
-            generationStatus: d.generation_status || null,
+            type: d.type ?? null,
+            totalSessions: p.completion.sessionsTotal,
+            completedSessions: p.completion.sessionsCompleted,
+            currentWeek: p.currentWeek,
+            currentPhase: p.phase ? { phase: p.phase.phase, focus: p.phase.focus } : null,
+            generationStatus: p.generationStatus,
+            ...programTruthFields(p),
           };
         });
+        const activeDocs = queuesSnap.docs.filter((doc) => activeQueueIds.has(doc.id));
 
         // Extract profile context (minimal, no PII)
         // Try multiple field paths for sport (different profile formats exist)
@@ -209,6 +226,24 @@ export function registerGetTrainingContext(server: McpServer): void {
         const result = scrubDocument({
           profile: profileContext,
           activePrograms: programs,
+          ...(truth == null
+            ? {
+                programsNote:
+                  "Your program details could not be read just now, so this list may be incomplete. This does not mean " +
+                  "you have no program: do not offer to create a new one. Try again in a moment.",
+              }
+            : {
+                primaryProgramId: truth.primaryQueueId,
+                thisWeek: truth.weekCounts == null
+                  ? null
+                  : {
+                      weekStarting: truth.week.weekId,
+                      weekEnding: truth.week.weekEndId,
+                      ...truth.weekCounts,
+                      note: "Counts for the calendar week, Monday to Sunday. Program sessions are counted against the plan; bonus sessions are extra and never a shortfall.",
+                    },
+                asOf: truth.asOf,
+              }),
           recentSessions,
           checkins,
           goals,
