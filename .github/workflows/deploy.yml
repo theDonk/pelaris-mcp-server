@@ -20,11 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -34,6 +29,20 @@ jobs:
 
       # Type check before deploying
       - run: npx tsc --noEmit
+
+      # Build, then run every test (scripts/run_tests.mjs lists them explicitly
+      # and points Firestore at a dead loopback port). These run BEFORE the
+      # cloud credentials load, so no test can reach a cloud service. A failing
+      # test blocks the deploy. Rollback: gcloud run services update-traffic
+      # pelaris-mcp-server --to-revisions <previous>=100 --region australia-southeast1
+      # --project wayfinder-ai-fitness
+      - run: npm run build
+      - run: npm test
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       # Deploy to Cloud Run (--source uses Dockerfile, preserves existing env/secrets)
       - uses: google-github-actions/setup-gcloud@v2

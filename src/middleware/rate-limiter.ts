@@ -171,6 +171,10 @@ export function checkWriteRateLimit(userKey: string): string | null {
  * bucket). Program generation triggers live server-side AI inference, so it is a
  * denial-of-wallet surface and is limited well below ordinary writes
  * (Unified Uplift G3 C-3). Returns null if within limit, else an error message.
+ *
+ * NOT CALLED since 20/10/2026 (connector rev 2.1, Brad's ruling BRAD_RETURN #46): generate_program
+ * builds nothing now, it answers with the Pelaris link. Kept, not deleted, with its bucket, for the
+ * future ticket that lets the connector build programs again.
  */
 export function checkGenerationRateLimit(userKey: string): string | null {
   const now = Date.now();
@@ -179,4 +183,19 @@ export function checkGenerationRateLimit(userKey: string): string | null {
     return `Program-generation rate limit of ${MAX_GENERATION_REQUESTS} per hour exceeded. Retry after ${exceeded.retryAfterSeconds} seconds.`;
   }
   return null;
+}
+
+/**
+ * B2a C6 (a): the shared `dcr_per_hour` limit for NEW client registrations
+ * (the caller charges only after its idempotent lookup misses, P1-02), on the
+ * same Firestore-backed hourly window (`mcp_rate_limits`, key `dcr:<address>`).
+ * Fails open on a store error, as every bucket here does. Returns null within
+ * the limit, else the retry window. Whether to refuse is the caller's call
+ * (log-only until `create_limit_mode` is `enforce`).
+ */
+export async function checkDcrLimit(
+  key: string,
+  maxRequests: number,
+): Promise<{ retryAfterSeconds: number; maxRequests: number } | null> {
+  return checkFirestoreLimit(`dcr:${key}`, maxRequests, Date.now());
 }

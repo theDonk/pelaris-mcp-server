@@ -1,152 +1,165 @@
 /**
- * MCP Tool: generate_program
- * Scope: training:write
+ * MCP Tool: generate_program (a reply-only tool since connector rev 2.1, 22/10/2026)
+ * Scope: training:read or training:write
  *
- * Generate a complete training program and enrol it as the active program, via
- * the curated wayfinder `generateProgramServer` CF (server-side generation + the C-2 server
- * enrol). Produces a real `ai_generated` queue that the quality judge scores,
- * replacing the deprecated generate_weekly_plan (old pipeline -> orphan diary
- * entries, never scored). Covers short plans (durationWeeks 1-52).
+ * Programs are built in Pelaris, not in a chat (Brad 20/10/2026, BRAD_RETURN #46).
+ * This tool stays listed under its old name so an assistant that is asked for a
+ * program explains and hands over a link instead of failing. It writes nothing,
+ * starts no job and calls nothing outside this server: it reads the person's
+ * profile once and answers with the First Light entry link that opens Pelaris at
+ * the right place (`../shared/entry_links.ts`).
  *
- * Generation triggers live server-side AI inference (Critical System #4) on a PUBLIC
- * surface, so this tool carries a STRICT generation rate-limit
- * (checkGenerationRateLimit) on top of the write limit (denial-of-wallet).
+ * Why: on 16/10 a long build held open as one request, retried by an assistant
+ * whose clock was shorter than the job, produced four programs for one person in
+ * ten minutes and left their active-program pointer dangling
+ * (`design_docs/release_1_4_2026_10/mcp_generation_rca/DESIGN.md`). The app's own
+ * build path is reliable; the connector now hands people to it. The long-build
+ * limiter in `middleware/rate-limiter.ts` is kept for the future ticket that lets
+ * the connector build again, and is not called from here.
  *
- * CANARY-AT-BIRTH (Unified Uplift G3): in the local emulator CF_BASE_URL MUST be
- * overridden to the local functions emulator. If FIRESTORE_EMULATOR_HOST is set
- * but CF_BASE_URL still points at a non-local URL, the tool REFUSES rather than
- * write to prod (the single biggest footgun in this workstream).
+ * The reply is decided from two stored facts, read the way `get_onboarding_status`
+ * reads them (`onboardingFactsOf`: the intake marker and the app's `hasPlan` rule
+ * through the gateway's pinned copy), through that tool's own `next_step` mapping.
+ * No text is matched and no threshold decides anything: the model decides what the
+ * person asked for, this code reports where they stand.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { GoogleAuth } from "google-auth-library";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
-import { checkWriteRateLimit, checkGenerationRateLimit } from "../../middleware/rate-limiter.js";
-import { scrubDocument } from "../../scrubber.js";
+import { db } from "../../firestore-client.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { ENTRY_LINK_PROGRAM, ENTRY_LINK_TRAIN } from "../shared/entry_links.js";
+import { onboardingFactsOf, onboardingNextStep, type OnboardingNextStep } from "./get_onboarding_status.js";
 
-const CF_BASE_URL =
-  process.env.CF_BASE_URL || "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net";
+/** Where the person stands: they hold a program, can build one now, or need the intake first. */
+export type GenerateProgramState = "has_program" | "ready_to_build" | "needs_intake";
 
-let _auth: GoogleAuth | null = null;
-function getAuth(): GoogleAuth {
-  if (!_auth) _auth = new GoogleAuth();
-  return _auth;
-}
-function isEmulator(): boolean {
-  return !!process.env.FIRESTORE_EMULATOR_HOST;
-}
-function errResult(text: string) {
-  return { content: [{ type: "text" as const, text: `Error: ${text}` }], isError: true };
+export interface GenerateProgramReply {
+  state: GenerateProgramState;
+  link: string;
+  message: string;
 }
 
-export function registerGenerateProgram(server: McpServer): void {
+export const GENERATE_PROGRAM_DESCRIPTION =
+  "Start or continue the athlete's training program in Pelaris. Programs are built in the Pelaris app, " +
+  "where the athlete can see them come together and shape them, so this tool does not build one in this " +
+  "chat. It returns the link that opens Pelaris at the right place: building their program, or their " +
+  "program if they already have one. If the athlete has not done their intake yet, you can ask the " +
+  "intake questions here and save the answers with complete_intake first. Planning a single session or " +
+  "a week here with create_planned_session is still fine.";
+
+/** The fixed words for each state, addressed to the assistant. Positive, no ids, nothing about the person. */
+export const GENERATE_PROGRAM_MESSAGES: Readonly<Record<GenerateProgramState, string>> = {
+  ready_to_build:
+    "Programs are built in Pelaris, where the athlete can see their program come together and shape it. " +
+    "Their intake is done, so this link takes them straight to building their program. Share the link and " +
+    "tell them it opens Pelaris. Please do not try to build the program in this chat. Planning a single " +
+    "session or a week here is still fine.",
+  needs_intake:
+    "Programs are built in Pelaris. First Pelaris needs a few answers about the athlete: their goal, " +
+    "experience, training days, and any injuries or health conditions. You can ask them here and save " +
+    "their answers with complete_intake, then call generate_program again for their link. Or share the " +
+    "link now and they can answer the same questions inside Pelaris. Either way, the program itself is " +
+    "built in Pelaris.",
+  has_program:
+    "This athlete already has a program in Pelaris (it may be paused), so there is nothing to build. " +
+    "This link opens it on Today, where they can resume it if it is paused. Planning or changing " +
+    "individual sessions here is still fine.",
+};
+
+/**
+ * The state is `get_onboarding_status`'s own `next_step`, renamed for this tool's three answers:
+ * `complete_intake` (no program yet, intake missing), `generate_program` (intake done, no program),
+ * `train_today` (a program is held, running or not).
+ */
+const STATE_OF_NEXT_STEP: Readonly<Record<OnboardingNextStep, GenerateProgramState>> = {
+  complete_intake: "needs_intake",
+  generate_program: "ready_to_build",
+  train_today: "has_program",
+};
+
+export function generateProgramStateOf(
+  facts: { hasCompletedOnboarding: boolean; hasProgram: boolean },
+): GenerateProgramState {
+  return STATE_OF_NEXT_STEP[onboardingNextStep(facts)];
+}
+
+/** The reply for a state: the link that opens Pelaris at the right place and the fixed words. */
+export function buildGenerateProgramReply(state: GenerateProgramState): GenerateProgramReply {
+  return {
+    state,
+    link: state === "has_program" ? ENTRY_LINK_TRAIN : ENTRY_LINK_PROGRAM,
+    message: GENERATE_PROGRAM_MESSAGES[state],
+  };
+}
+
+/** The seam the tests use; production reads the person's own profile document. */
+export interface GenerateProgramDeps {
+  readProfile: (profileId: string) => Promise<Record<string, unknown> | null>;
+}
+
+const DEFAULT_DEPS: GenerateProgramDeps = {
+  readProfile: async (profileId) => {
+    const snap = await db.collection("profiles").doc(profileId).get();
+    return snap.exists ? (snap.data() as Record<string, unknown>) : null;
+  },
+};
+
+/** Fixed sentences for the three ways this tool can say no. Never an error message, never an id. */
+export const GENERATE_PROGRAM_ERRORS = {
+  scope: "Error: training:read or training:write scope required",
+  profileMissing: "Error: I could not find a Pelaris profile for this account.",
+  tryAgain: "Error: I could not check your Pelaris account just now. Please try again in a moment.",
+} as const;
+
+function errorResult(text: string) {
+  return { content: [{ type: "text" as const, text }], isError: true };
+}
+
+export function registerGenerateProgram(server: McpServer, deps: GenerateProgramDeps = DEFAULT_DEPS): void {
   server.registerTool(
     "generate_program",
     {
-      title: "Generate Program",
-      description: "Generate a complete training program tailored to your goals and enrol it as your active program. Covers short plans (1-52 weeks); the program is automatically scored for quality.",
-      inputSchema: {
-        goal: z.string().min(1).max(500).describe("The training goal (e.g., 'build full-body strength', 'sub-45 10k')"),
-        durationWeeks: z.number().int().min(1).max(52).optional().describe("Program length in weeks (1-52, default 4)"),
-        sessionsPerWeek: z.number().int().min(1).max(14).optional().describe("Training sessions per week (default 3)"),
-        notes: z.string().max(2000).optional().describe("Additional context, constraints, or preferences"),
-        programType: z.string().max(80).optional().describe("Program type (e.g., 'strength', 'hybrid', 'running')"),
-        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD").optional().describe("Start date (YYYY-MM-DD; defaults to today)"),
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Generate Program" },
+      title: "Start Your Program",
+      description: GENERATE_PROGRAM_DESCRIPTION,
+      // No arguments. A cached schema from before 22/10/2026 may still send goal, weeks or notes: the
+      // validator strips them and the person still gets their link.
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false, title: "Start Your Program" },
     },
-    async (params) => {
+    async () => {
       const requestId = generateRequestId();
       const start = Date.now();
+      // Read before the try so the catch can name the person's pseudonym too.
+      const claims = getRequestAuth();
+      const log = (success: boolean, error?: string, extras?: Record<string, unknown>) =>
+        logToolCall({
+          requestId,
+          tool: "generate_program",
+          userPseudonym: claims?.sub,
+          latencyMs: Date.now() - start,
+          success,
+          ...(error ? { error } : {}),
+          ...(extras ? { extras } : {}),
+        });
       try {
-        const claims = getRequestAuth();
-        if (!claims || !hasScope(claims.scope, "training:write")) {
-          return errResult("training:write scope required");
+        if (!claims || !(hasScope(claims.scope, "training:read") || hasScope(claims.scope, "training:write"))) {
+          log(false, "scope_required");
+          return errorResult(GENERATE_PROGRAM_ERRORS.scope);
         }
-        // Strict generation limit first (denial-of-wallet), then the write limit.
-        const genLimit = checkGenerationRateLimit(claims.sub);
-        if (genLimit) return errResult(genLimit);
-        const writeLimit = checkWriteRateLimit(claims.sub);
-        if (writeLimit) return errResult(writeLimit);
-
-        // CANARY-AT-BIRTH: never let an emulator run write to prod.
-        if (isEmulator() && !/127\.0\.0\.1|localhost/.test(CF_BASE_URL)) {
-          return errResult(
-            "Refusing to generate: FIRESTORE_EMULATOR_HOST is set but CF_BASE_URL is not local. " +
-              "Override CF_BASE_URL to the local functions emulator to avoid writing to production.",
-          );
+        const profile = await deps.readProfile(claims.profile_id);
+        if (profile === null) {
+          log(false, "profile_not_found");
+          return errorResult(GENERATE_PROGRAM_ERRORS.profileMissing);
         }
-
-        const targetUrl = `${CF_BASE_URL}/generateProgramServer`;
-        const payload: Record<string, unknown> = {
-          profileId: claims.profile_id,
-          request: {
-            goal: params.goal,
-            durationWeeks: params.durationWeeks ?? 4,
-            sessionsPerWeek: params.sessionsPerWeek ?? 3,
-            ...(params.notes ? { notes: params.notes } : {}),
-            ...(params.programType ? { programType: params.programType } : {}),
-          },
-          ...(params.startDate ? { startDate: params.startDate } : {}),
-        };
-
-        let data: Record<string, unknown>;
-        if (isEmulator()) {
-          const resp = await fetch(targetUrl, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-          data = (await resp.json()) as Record<string, unknown>;
-        } else {
-          const client = await getAuth().getIdTokenClient(targetUrl);
-          const r = await client.request({
-            url: targetUrl,
-            method: "POST",
-            data: payload,
-            timeout: 570_000, // generation is multi-stage; allow up to ~9.5 min
-          });
-          data = r.data as Record<string, unknown>;
-        }
-
-        if (!data || data.ok !== true) {
-          return errResult(`Generation failed: ${(data && (data.error as string)) || "unknown error"}`);
-        }
-
-        const status = data.generationStatus as string;
-        const programName = (data.programName as string) ?? "your program";
-        const sessionCount = (data.sessionCount as number) ?? 0;
-        const message = status === "complete"
-          ? `Your program "${programName}" is ready with ${sessionCount} sessions and is now your active program.`
-          : `Your program "${programName}" has been started (${sessionCount} sessions so far); later weeks fill in as you progress.`;
-
-        const result = scrubDocument({
-          status,
-          programId: data.queueId,
-          sessionCount,
-          programName,
-          message,
-        });
-        logToolCall({
-          requestId,
-          tool: "generate_program",
-          userPseudonym: claims.sub,
-          latencyMs: Date.now() - start,
-          success: true,
-        });
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        const reply = buildGenerateProgramReply(generateProgramStateOf(onboardingFactsOf(profile)));
+        log(true, undefined, { reply_state: reply.state });
+        return { content: [{ type: "text" as const, text: JSON.stringify(reply, null, 2) }] };
       } catch (error) {
-        logToolCall({
-          requestId,
-          tool: "generate_program",
-          latencyMs: Date.now() - start,
-          success: false,
-          error: (error as Error).message,
-        });
-        return errResult((error as Error).message);
+        // The error's name only: its message can carry a path or an id.
+        log(false, "generate_program_failed", { error_name: error instanceof Error ? error.name : "unknown" });
+        return errorResult(GENERATE_PROGRAM_ERRORS.tryAgain);
       }
     },
   );

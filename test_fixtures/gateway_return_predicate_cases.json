@@ -1,0 +1,822 @@
+{
+  "about": "B2a C6 (h): the gateway's vendored return predicates (mayHaveReturnWork(profile, 'resting') and connectorStampDue) pinned to wayfinder's real ones. Profiles are copied from test_fixtures/plan_state_cases.json (synthetic). Expectations are computed by wayfinder and re-asserted by functions/src/__tests__/gateway_return_contract.test.ts; the gateway pins the canonical SHA-256. The has_plan table (M1, connector rev 2.1, 22/10/2026) pins the gateway's vendored hasPlan (utils/plan_state.ts) the same way: the nine `profile:` rows are the app's own profile_cases, the `gateway:` rows add the shapes a connector sees (a removed program, a paused one, the manual container).",
+  "may_have_return_work_resting": [
+    {
+      "name": "selection: one rested AI plan (mirror)",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: legacy rest with no mirror, queue carries rest evidence (server only)",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: inactive with no mirror and no evidence: the person's pause",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: user_paused mirror wins over queue evidence",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "user_paused"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: resume_refused reads paused (Resume it in Profile)",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "resume_refused"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: UX-B2: a newer AI plan paused by the person blocks an older rested one",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_old",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q_new",
+            "methodology_id": "ai_generated",
+            "is_active": false,
+            "pause_reason": "user_paused"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: a newer AI plan active: the older rested one never resumes",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_old",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q_new",
+            "methodology_id": "ai_gen",
+            "is_active": true
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: newest by array position, not by start_date",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_a",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "user_paused",
+            "start_date": "2026-12-01"
+          },
+          {
+            "queue_id": "q_b",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days",
+            "start_date": "2026-01-01"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: SRE-B3: a retired entry a client rebuild stripped, stale marker, successor after it: never selected",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_stripped",
+            "methodology_id": "ai_gen",
+            "is_active": false
+          },
+          {
+            "queue_id": "q_successor",
+            "methodology_id": "ai_gen",
+            "is_active": true
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: a retired newer entry does not block: the older rested plan is the newest live one",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q2",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "retired_at": "2026-09-30T00:00:00.000Z",
+            "superseded_by": "q3"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: the manual container is never a candidate and never blocks",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual",
+            "program_id": "manual",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: a rested template plan that is the newest plan resumes beside an older running AI plan (R4, CR-4)",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_ai",
+            "methodology_id": "ai_gen",
+            "is_active": true
+          },
+          {
+            "queue_id": "q_tpl",
+            "methodology_id": "hybrid_strength",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: R4: a newer template plan blocks an older rested template plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_tpl_old",
+            "methodology_id": "5x5",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q_tpl_new",
+            "methodology_id": "hybrid_strength",
+            "is_active": true
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: CR-4: both families rested: only the newest plan of any family resumes",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_tpl",
+            "methodology_id": "5x5",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q_ai",
+            "methodology_id": "ai_generated",
+            "is_active": false
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "selection: CR-4: an older rested AI plan behind a newer running template plan never resumes",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_ai",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q_tpl",
+            "methodology_id": "hybrid_strength",
+            "is_active": true
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: CR-4: an older rested template plan behind a newer AI plan the person paused reads paused",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_tpl",
+            "methodology_id": "5x5",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          },
+          {
+            "queue_id": "q_ai",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "user_paused"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: CR-2: an older running plan stays a candidate (a Profile Resume may await its shift); only the newest can resume on its own",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q_old",
+            "methodology_id": "ai_gen",
+            "is_active": true
+          },
+          {
+            "queue_id": "q_new",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "user_paused"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: S7: a queue id with a '/' is no queue id: never a candidate (it still counts as a live plan)",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1/locks/jit_generation",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: no plans",
+      "profile": {},
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "selection: only retired and manual",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "removed_at": "x"
+          },
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: no active_queues",
+      "profile": {},
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: only the manual container",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual",
+            "is_active": true
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: one active program",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": true
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: a rested plan is still a plan, and returnable",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "profile: a plan paused by the person is a plan, not returnable",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": false
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "profile: only retired plans",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "retired_at": "2026-09-30T00:00:00.000Z"
+          },
+          {
+            "queue_id": "q2",
+            "superseded_by": "q3"
+          }
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: a bare-string entry is a plan",
+      "profile": {
+        "active_queues": [
+          "q9"
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: junk entries are ignored",
+      "profile": {
+        "active_queues": [
+          null,
+          7,
+          "",
+          [
+            "q1"
+          ]
+        ]
+      },
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "profile: mixed: manual, retired, rested",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual"
+          },
+          {
+            "queue_id": "q1",
+            "removed_at": "x"
+          },
+          {
+            "queue_id": "q2",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "may_have_return_work_resting": true
+    },
+    {
+      "name": "no profile",
+      "profile": null,
+      "may_have_return_work_resting": false
+    },
+    {
+      "name": "active_queues not a list",
+      "profile": {
+        "active_queues": "q1"
+      },
+      "may_have_return_work_resting": false
+    }
+  ],
+  "connector_stamp_due": [
+    {
+      "name": "never stamped",
+      "profile": {},
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "stamped 30 minutes ago (ms)",
+      "profile": {
+        "last_connector_use_at": 1792474200000
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": false
+    },
+    {
+      "name": "stamped exactly 60 minutes ago (ms)",
+      "profile": {
+        "last_connector_use_at": 1792472400000
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "stamped 2 hours ago (ISO string)",
+      "profile": {
+        "last_connector_use_at": "2026-10-20T04:00:00.000Z"
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "stamped 10 minutes ago ({_seconds})",
+      "profile": {
+        "last_connector_use_at": {
+          "_seconds": 1792475400,
+          "_nanoseconds": 0
+        }
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": false
+    },
+    {
+      "name": "stamped 10 minutes ago ({seconds}), dial 5",
+      "profile": {
+        "last_connector_use_at": {
+          "seconds": 1792475400,
+          "nanoseconds": 0
+        }
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 5,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "unreadable value",
+      "profile": {
+        "last_connector_use_at": "not a date"
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "blank string",
+      "profile": {
+        "last_connector_use_at": "  "
+      },
+      "now_ms": 1792476000000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    }
+  ],
+  "has_plan": [
+    {
+      "name": "profile: no active_queues",
+      "profile": {},
+      "has_plan": false
+    },
+    {
+      "name": "profile: only the manual container",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "profile: one active program",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "profile: a rested plan is still a plan, and returnable",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "profile: a plan paused by the person is a plan, not returnable",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": false
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "profile: only retired plans",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "retired_at": "2026-09-30T00:00:00.000Z"
+          },
+          {
+            "queue_id": "q2",
+            "superseded_by": "q3"
+          }
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "profile: a bare-string entry is a plan",
+      "profile": {
+        "active_queues": [
+          "q9"
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "profile: junk entries are ignored",
+      "profile": {
+        "active_queues": [
+          null,
+          7,
+          "",
+          [
+            "q1"
+          ]
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "profile: mixed: manual, retired, rested",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual"
+          },
+          {
+            "queue_id": "q1",
+            "removed_at": "x"
+          },
+          {
+            "queue_id": "q2",
+            "is_active": false,
+            "pause_reason": "inactive_21_days"
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: a running AI program",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "queue_strength_20261001_090000",
+            "methodology_id": "ai_gen",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: a program the person paused (user_paused) is a plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "pause_reason": "user_paused"
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: a program removed with Remove (removed_at on the entry) is not a plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "removed_at": "2026-10-20T01:00:00.000Z"
+          }
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "gateway: replaced by a newer program that was then removed: no plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "superseded_by": "q2"
+          },
+          {
+            "queue_id": "q2",
+            "methodology_id": "ai_gen",
+            "is_active": false,
+            "removed_at": "2026-10-20T01:00:00.000Z"
+          }
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "gateway: the manual container by program_id alone is not a plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "program_id": "manual",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "gateway: the manual container by methodology alone is not a plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q2",
+            "methodology_id": "manual",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": false
+    },
+    {
+      "name": "gateway: the manual container beside a running program",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "manual_workouts",
+            "methodology_id": "manual",
+            "is_active": true
+          },
+          {
+            "queue_id": "q1",
+            "methodology_id": "ai_gen",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: an entry that keeps its id under the id key",
+      "profile": {
+        "active_queues": [
+          {
+            "id": "q1",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: a blank retired_at does not retire the plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "is_active": true,
+            "retired_at": "  "
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: a template plan (not AI) is a plan",
+      "profile": {
+        "active_queues": [
+          {
+            "queue_id": "q1",
+            "methodology_id": "starting_strength",
+            "is_active": true
+          }
+        ]
+      },
+      "has_plan": true
+    },
+    {
+      "name": "gateway: active_queues is not a list",
+      "profile": {
+        "active_queues": "q1"
+      },
+      "has_plan": false
+    },
+    {
+      "name": "gateway: no profile at all",
+      "profile": null,
+      "has_plan": false
+    }
+  ]
+}
