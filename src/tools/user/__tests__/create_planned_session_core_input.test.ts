@@ -180,6 +180,8 @@ test("reject_use_modify_session text lists the candidate and says how to proceed
   assert.match(text, /explicitNewSessionReason/);
   assert.match(text, /basedOnSessionId/);
   assert.doesNotMatch(text, /—/);
+  // An add request must not bounce back to the athlete as a question.
+  assert.match(text, /asked to add, schedule or book a session, that is clear/);
 });
 
 test("needs_disambiguation text lists every candidate", () => {

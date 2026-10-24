@@ -120,7 +120,8 @@ export function preflightGuidanceText(bridged: BridgeResult): string | null {
       "explicitNewSessionReason set to a short phrase saying why this is a new session and not a change to an existing one.",
     "3. To repeat or vary an existing session, call create_planned_session with basedOnSessionId set to that session's id; " +
       "anything else you pass overrides the copy.",
-    "If the person's request does not make clear which they want, ask them.",
+    "If the person asked to add, schedule or book a session, that is clear: use option 2 straight away and tell them it sits " +
+      "alongside the session already planned. Ask only when they may have meant to change or replace one of these sessions.",
   ].join("\n");
 }
 
@@ -160,7 +161,8 @@ export function registerCreatePlannedSession(server: McpServer): void {
       title: "Create Planned Session",
       description: "Schedule a future workout session with target exercises. The session will appear in your " +
         "training calendar ready to track. Express grouped work (supersets, circuits) and phases " +
-        "(warm-up / main / cool-down) with blocks[].",
+        "(warm-up / main / cool-down) with blocks[]. When the person asks to add a session on a day that already " +
+        "has one, add it alongside with explicitNewSessionReason; to change an existing session use modify_training_session.",
       inputSchema: {
         date: z
           .string()
@@ -214,9 +216,11 @@ export function registerCreatePlannedSession(server: McpServer): void {
           .max(200)
           .optional()
           .describe(
-            "Why this is a new, additional session rather than a change to an existing one. Needed only when that " +
-            "day already has a planned session of the same sport and the person wants a separate extra one. " +
-            "If you omit it, the refusal lists the sessions already planned that day and how to proceed.",
+            "Why this is a new, additional session rather than a change to an existing one, in a few words from the " +
+            "person's request (for example 'extra interval run they asked to add'). Set it whenever the person asked to " +
+            "add, schedule or book a session, so it goes in first time even on a day that already has one. Leave it out " +
+            "when they asked to change or replace a session; use modify_training_session for that. If it is left out and " +
+            "the day already has a same-sport session, the refusal lists those sessions and how to proceed.",
           ),
         basedOnSessionId: z
           .string()
