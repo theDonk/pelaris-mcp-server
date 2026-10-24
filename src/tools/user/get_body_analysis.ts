@@ -11,6 +11,23 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { plainDay } from "../shared/training_truth.js";
+
+/**
+ * 1.4.1 D2 (connector truth): the "as of" line. A body analysis is a snapshot from the day it was
+ * made; a weight logged since (a benchmark, a weigh-in) can be newer. Without the date an assistant
+ * set a March scan beside an October weight as if both were current. Pure (exported for tests).
+ */
+export function bodyAnalysisAsOf(analyzedAtIso: string | null, source: string | null): { asOf: string | null; asOfNote: string } {
+  const day = plainDay(analyzedAtIso);
+  const from = source ? ` (source: ${source})` : "";
+  return day != null
+    ? {
+        asOf: analyzedAtIso ? analyzedAtIso.slice(0, 10) : null,
+        asOfNote: `Measured on ${day}${from}. A weight or benchmark logged since then may be newer than these measurements.`,
+      }
+    : { asOf: null, asOfNote: `The date of this analysis is not recorded${from}.` };
+}
 
 export function registerGetBodyAnalysis(server: McpServer): void {
   server.registerTool(
@@ -51,10 +68,12 @@ export function registerGetBodyAnalysis(server: McpServer): void {
         const latest = biometricsSnap.docs[0].data();
         const previous = biometricsSnap.docs.length > 1 ? biometricsSnap.docs[1].data() : null;
 
+        const analyzedAtIso: string | null = latest.analyzedAt?.toDate?.()?.toISOString?.() || null;
         const analysis = {
-          analyzedAt: latest.analyzedAt?.toDate?.()?.toISOString?.() || null,
+          analyzedAt: analyzedAtIso,
           source: latest.source || null,
           confidence: latest.confidence || null,
+          ...bodyAnalysisAsOf(analyzedAtIso, (latest.source as string | undefined) || null),
 
           // Measurements
           measurements: {
