@@ -19,6 +19,7 @@ import {
   OwnershipError,
   ownershipErrorResponse,
 } from "../shared/ownership.js";
+import { captureBeforeRemoval, describeRemoved } from "../shared/removal_capture.js";
 
 /** Guard: only planned sessions can be deleted. */
 function canDelete(data: Record<string, unknown>): { allowed: boolean; reason?: string } {
@@ -99,6 +100,11 @@ export function registerDeleteSession(server: McpServer): void {
           };
         }
 
+        // Coach autonomy uplift (P7a): the connector host's own approval is the only consent, and this write
+        // has no core and no copy, so the gateway saves the session server-side first and says what went.
+        const captured = await captureBeforeRemoval({
+          profileId, kind: "delete", sessionOrQueueId: params.sessionId, previous: data, targetType: "diary_session",
+        });
         await docRef.delete();
 
         logToolCall({
@@ -116,6 +122,8 @@ export function registerDeleteSession(server: McpServer): void {
             text: JSON.stringify({
               success: true,
               deletedSessionId: params.sessionId,
+              removed: describeRemoved(data),
+              captured,
               message: `Session "${data.title || params.sessionId}" deleted`,
             }),
           }],
@@ -185,8 +193,11 @@ export function registerDeleteSession(server: McpServer): void {
               if (!guard.allowed) {
                 return { sessionId, success: false, error: guard.reason };
               }
+              const captured = await captureBeforeRemoval({
+                profileId, kind: "bulkDelete", sessionOrQueueId: sessionId, previous: data, targetType: "diary_session",
+              });
               await doc.ref.delete();
-              return { sessionId, success: true, title: data.title || sessionId };
+              return { sessionId, success: true, title: data.title || sessionId, removed: describeRemoved(data), captured };
             } catch (err) {
               if (err instanceof OwnershipError) {
                 // ownershipCode is an internal error-taxonomy enum; surface only

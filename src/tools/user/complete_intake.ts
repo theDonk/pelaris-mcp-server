@@ -10,7 +10,9 @@
  * answers verbatim and refuses to silently complete when a blocking safety
  * answer (is_pregnant) is missing, returning a clarification the coach must ask.
  *
- * After this, the coach can call generate_program (intake context now persisted).
+ * After this, the coach calls generate_program for the link that starts the person's program in
+ * Pelaris (intake context now persisted). Programs are built in Pelaris, not in the chat (connector
+ * rev 2.1, 22/10/2026).
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -27,7 +29,7 @@ export function registerCompleteIntake(server: McpServer): void {
     "complete_intake",
     {
       title: "Complete Intake",
-      description: "Complete and save the athlete's intake so a program can be generated. If a required safety field (e.g. pregnancy) is missing, the response indicates what still needs to be answered.",
+      description: "Complete and save the athlete's intake so Pelaris can build their program. If a required safety field (e.g. pregnancy) is missing, the response indicates what still needs to be answered. After this, call generate_program for the link that starts their program in Pelaris.",
       inputSchema: {
         answers: z.record(z.unknown()).describe(
           "Structured intake answers gathered from the athlete (e.g. is_pregnant, injuries, goal, experience). Safety fields (is_pregnant, injuries, demographics) are taken from here verbatim.",

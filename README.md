@@ -32,14 +32,14 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `get_coach_insight` | Get data-driven coaching insights based on your training |
 | `get_onboarding_status` | Check profile setup completion status |
 | `get_weekly_debrief` | View weekly training summary and coaching focus |
-| `get_program_status` | Check the status and progress of your training programs |
+| `get_program_status` | Check the status and progress of your training programs (running, paused, replaced or removed) |
 | `list_goals` | List your training goals with completion status and linked benchmarks |
 
 ### Write Tools (17)
 | Tool | Description |
 |------|-------------|
 | `complete_intake` | Complete onboarding intake and persist your training profile |
-| `generate_program` | Generate and enrol a full training program from your profile |
+| `generate_program` | Get the link that starts your training program in Pelaris (programs are built in Pelaris) |
 | `create_planned_session` | Create a planned workout with exercises and targets |
 | `log_workout` | Log a completed workout or mark a planned session as done |
 | `log_completed_session` | Log a full completed session with exercises, sets, and feedback |
@@ -54,7 +54,7 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `record_benchmark` | Record a benchmark value with history tracking |
 | `daily_check_in` | Log daily readiness, soreness, and sleep quality |
 | `manage_goals` | Create, update, or complete training goals |
-| `manage_program` | View, archive, or manage training programs |
+| `manage_program` | Set a program aside: removes one you have not started, and points you to Pause, Stop and Remove in the app for the rest |
 
 ## Example prompts
 
@@ -66,7 +66,7 @@ Once connected, talk to your AI assistant naturally. It maps your intent to the 
 - "How are my benchmarks trending?" → `get_benchmarks`
 - "Swap the barbell bench for a dumbbell variation." → `swap_exercise`
 - "My right shoulder's been sore." → `record_injury`
-- "Build me a 4-week running plan." → `generate_program`
+- "I want a training program." → `generate_program` (returns your Pelaris link, where your program is built)
 
 (Illustrative prompts only; no personal data is shown. Responses are grounded in your own training data and PII-scrubbed.)
 
@@ -90,6 +90,13 @@ Strength · Running · Swimming · Cycling · Triathlon · CrossFit · General F
 - Users can disconnect anytime
 
 [Privacy Policy](https://pelaris.io/privacy) · [Terms of Service](https://pelaris.io/terms)
+
+## Development
+
+- `npm run build`, then `npm test`. Every test file is listed in `scripts/run_tests.mjs`, and Firestore points at a dead loopback port unless an emulator is set, so a test never reaches a real project. CI runs both before each deploy.
+- Local runs use `scripts/run_local_gateway.sh`. It refuses to start unless Firestore, the OAuth function and the core bridge are all on loopback, the port is not an emulator port, and the secrets are the local test values.
+- End to end, locally: with the Pelaris local stack up (emulators, functions and web, sends off), `node tools/connector_e2e/run_connector_e2e.mjs --reseed --start-gateway --transcript <file>` starts this gateway under wayfinder's egress guard and drives it with a real MCP client as seeded people (newcomer, program holder, unstarted, started and two-program athletes), then checks the replies, the emulator's data and the gateway log. Local only: it refuses anything that is not loopback and mints test tokens with the runner's published dummy secret. The header of the script lists the people and the flags.
+- The contracts shared with the Pelaris backend live in `test_fixtures/` (redirect policy, token ownership, return predicates). Each is pinned by its SHA-256 on both sides.
 
 ## Built by
 

@@ -7,6 +7,8 @@
 
 import crypto from "crypto";
 
+import { noteConnectorToolSuccess } from "./connector/connector_use.js";
+
 export interface LogEntry {
   severity: "INFO" | "WARN" | "ERROR" | "DEBUG";
   message: string;
@@ -67,6 +69,10 @@ export function logToolCall(params: {
     error: params.error,
     ...(params.extras ?? {}),
   });
+  // B2a C6 (d), FL-9 1.6: presence through ChatGPT or Claude. Its own closed
+  // line (tool_call stays pseudonym-only); only under OAuth facts the
+  // ownership check allowed, never for admin auth.
+  if (params.success) noteConnectorToolSuccess();
 }
 
 /**

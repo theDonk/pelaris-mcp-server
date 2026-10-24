@@ -11,6 +11,7 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { NO_RUNNING_PROGRAM_MESSAGE } from "../shared/program-utils.js";
 
 export function registerGetActiveProgram(server: McpServer): void {
   server.registerTool(
@@ -41,7 +42,7 @@ export function registerGetActiveProgram(server: McpServer): void {
 
         if (queueDocs.length === 0) {
           return {
-            content: [{ type: "text" as const, text: JSON.stringify({ programs: [], message: "No active programs found" }) }],
+            content: [{ type: "text" as const, text: JSON.stringify({ programs: [], message: NO_RUNNING_PROGRAM_MESSAGE }) }],
           };
         }
 

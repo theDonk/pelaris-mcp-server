@@ -8,6 +8,13 @@
 import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./firestore-client.js";
+import {
+  firestoreTokenAccessReader,
+  judgeTokenAccess,
+  type AssistantClass,
+  type TokenAccess,
+  type TokenAccessReader,
+} from "./connector/token_access.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +33,16 @@ export interface McpAuthenticatedRequest extends Request {
   mcpAuth?: McpTokenClaims;
   isAdminAuth?: boolean;
   requestId?: string;
+  /**
+   * B2a C6 (c): set only when the ownership check ALLOWED the token (never on
+   * the fail-open read-error path, never for admin auth). The return hook and
+   * `connector_use` run only when it is present.
+   */
+  connectorAccess?: {
+    profileId: string;
+    profileData: Record<string, unknown>;
+    assistantClass: AssistantClass | null;
+  };
 }
 
 // ─── RFC 8707 audience binding ──────────────────────────────────────────────────
@@ -133,20 +150,29 @@ function verifyJwt(token: string, secret: string): McpTokenClaims | null {
   }
 }
 
-// ─── Revocation check ─────────────────────────────────────────────────────────
+// ─── Revocation and ownership check (B2a C6 c) ────────────────────────────────
+// Was `isTokenRevoked` (refused only an existing revoked doc). Its refusal is
+// kept (`revoked` below), and it now also refuses a missing token doc and a
+// token whose profile its uid no longer owns (`connector/token_access.ts`).
+// A Firestore read error still fails open (OH-4), with one log line.
 
-async function isTokenRevoked(token: string): Promise<boolean> {
-  const tokenHash = crypto.createHash("sha256").update(token, "utf8").digest("hex");
-  try {
-    const tokenDoc = await db.collection("mcp_tokens").doc(tokenHash).get();
-    if (tokenDoc.exists) {
-      const data = tokenDoc.data();
-      if (data?.revoked === true) return true;
-    }
-  } catch (err) {
-    console.error("[auth] Firestore revocation check failed:", err);
+let tokenAccessReader: TokenAccessReader | null = null;
+
+async function checkTokenAccess(token: string, claims: McpTokenClaims): Promise<TokenAccess> {
+  tokenAccessReader ??= await firestoreTokenAccessReader();
+  const access = await judgeTokenAccess(token, claims, tokenAccessReader);
+  if (access.kind === "fail_open") {
+    console.error(JSON.stringify({ event: "gateway_token_check_failed_open", stage: access.stage }));
+  } else if (access.kind === "deny" && access.reason !== "revoked") {
+    // Closed reason only: never the token, the uid or the profile id.
+    console.warn(JSON.stringify({ event: "gateway_token_refused", reason: access.reason }));
   }
-  return false;
+  return access;
+}
+
+/** Test hook: an injected reader (gateway tests never touch Firestore). */
+export function __setTokenAccessReaderForTest(reader: TokenAccessReader | null): void {
+  tokenAccessReader = reader;
 }
 
 // ─── Dual-strategy middleware ─────────────────────────────────────────────────
@@ -181,16 +207,12 @@ export async function verifyBearerToken(
         return;
       }
 
-      if (await isTokenRevoked(token)) {
-        res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="The access token has been revoked", resource_metadata="${resourceMetadataUrl}"`);
-        res.status(401).json({ error: "invalid_token", error_description: "Token has been revoked" });
-        return;
-      }
-
       // RFC 8707 audience binding. Fail closed on a PRESENT-but-wrong aud
       // always; allow a MISSING aud only until AUD_ENFORCE_AT (the ~1h
       // access-token rotation window after the signer rollout). Strictly inside
       // the JWT branch — the static admin token (Strategy 2) is never subject to aud.
+      // (B2a C6: checked before the Firestore reads below, so a wrong-audience
+      // token costs no read.)
       const audMissing = claims.aud === undefined;
       if ((!audMissing || Date.now() >= AUD_ENFORCE_AT) && !audienceAccepted(claims.aud)) {
         res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="Token audience is not valid for this resource", resource_metadata="${resourceMetadataUrl}"`);
@@ -198,12 +220,34 @@ export async function verifyBearerToken(
         return;
       }
 
+      // B2a C6 (c): revoked, missing token doc, or a profile the token's uid
+      // no longer owns: 401, and nothing is written (P2-6).
+      const access = await checkTokenAccess(token, claims);
+      if (access.kind === "deny") {
+        const description = access.reason === "revoked" ? "The access token has been revoked" : "The access token is no longer valid";
+        res.setHeader("WWW-Authenticate", `Bearer realm="${mcpRealm}", error="invalid_token", error_description="${description}", resource_metadata="${resourceMetadataUrl}"`);
+        res.status(401).json({
+          error: "invalid_token",
+          error_description: access.reason === "revoked" ? "Token has been revoked" : "Token is no longer valid",
+        });
+        return;
+      }
+
       req.mcpAuth = claims;
       req.isAdminAuth = false;
 
-      // PEL-102: Fire-and-forget last_used_at update for connected_apps tracking.
-      // Non-blocking to avoid adding latency to MCP tool calls.
-      updateLastUsedAt(token, claims).catch(() => {});
+      if (access.kind === "allow") {
+        req.connectorAccess = {
+          profileId: access.profileId,
+          profileData: access.profileData,
+          assistantClass: access.assistantClass,
+        };
+        // PEL-102: Fire-and-forget last_used_at update for connected_apps tracking.
+        // Non-blocking to avoid adding latency to MCP tool calls. B2a C6: only
+        // once ownership is confirmed (nothing after a failed or fail-open
+        // check touches the profile).
+        updateLastUsedAt(token, claims).catch(() => {});
+      }
 
       next();
       return;

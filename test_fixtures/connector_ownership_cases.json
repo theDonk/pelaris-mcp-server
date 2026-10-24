@@ -1,0 +1,137 @@
+{
+  "contract": "connector_ownership_cases",
+  "version": 1,
+  "owner": "wayfinder functions/src/mcp/connector_access.ts (profileOwnershipVerdict); vendored by the MCP gateway",
+  "rule": "profiles/{profile_id} is owned by uid when the profile exists, its status is not deletion_pending, and either ownerUid equals uid, or the doc id equals uid and ownerUid is unset (absent, null or empty string). A missing profile and an empty uid are owned by nobody.",
+  "verdicts": ["owned", "missing", "deletion_pending", "not_owner"],
+  "cases": [
+    {
+      "name": "owner_on_uid_keyed_doc",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_owner_000001" },
+      "verdict": "owned",
+      "owned": true
+    },
+    {
+      "name": "doc_key_owner_unset",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": {},
+      "verdict": "owned",
+      "owned": true
+    },
+    {
+      "name": "doc_key_owner_null",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": null },
+      "verdict": "owned",
+      "owned": true
+    },
+    {
+      "name": "doc_key_owner_empty_string",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "" },
+      "verdict": "owned",
+      "owned": true
+    },
+    {
+      "name": "random_id_owned",
+      "profile_id": "fixture_profile_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_owner_000001" },
+      "verdict": "owned",
+      "owned": true
+    },
+    {
+      "name": "random_id_owner_unset",
+      "profile_id": "fixture_profile_000001",
+      "uid": "uid_owner_000001",
+      "profile": {},
+      "verdict": "not_owner",
+      "owned": false
+    },
+    {
+      "name": "random_id_owner_other",
+      "profile_id": "fixture_profile_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_other_000002" },
+      "verdict": "not_owner",
+      "owned": false
+    },
+    {
+      "name": "doc_key_repointed_to_other",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_other_000002" },
+      "verdict": "not_owner",
+      "owned": false
+    },
+    {
+      "name": "owner_uid_not_a_string",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": 42 },
+      "verdict": "not_owner",
+      "owned": false
+    },
+    {
+      "name": "other_status_still_owned",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_owner_000001", "status": "active" },
+      "verdict": "owned",
+      "owned": true
+    },
+    {
+      "name": "deletion_pending_owner",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_owner_000001", "status": "deletion_pending" },
+      "verdict": "deletion_pending",
+      "owned": false
+    },
+    {
+      "name": "deletion_pending_random_id_owned",
+      "profile_id": "fixture_profile_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_owner_000001", "status": "deletion_pending" },
+      "verdict": "deletion_pending",
+      "owned": false
+    },
+    {
+      "name": "deletion_pending_not_owner",
+      "profile_id": "fixture_profile_000001",
+      "uid": "uid_owner_000001",
+      "profile": { "ownerUid": "uid_other_000002", "status": "deletion_pending" },
+      "verdict": "deletion_pending",
+      "owned": false
+    },
+    {
+      "name": "missing_profile",
+      "profile_id": "uid_owner_000001",
+      "uid": "uid_owner_000001",
+      "profile": null,
+      "verdict": "missing",
+      "owned": false
+    },
+    {
+      "name": "empty_uid",
+      "profile_id": "uid_owner_000001",
+      "uid": "",
+      "profile": { "ownerUid": "" },
+      "verdict": "not_owner",
+      "owned": false
+    },
+    {
+      "name": "empty_profile_id",
+      "profile_id": "",
+      "uid": "uid_owner_000001",
+      "profile": null,
+      "verdict": "missing",
+      "owned": false
+    }
+  ]
+}

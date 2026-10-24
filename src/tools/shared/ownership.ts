@@ -125,7 +125,10 @@ export async function verifySessionOwnership(
 
 /**
  * Verify a queue ID belongs to the user's active_queues set.
- * Used by manage_program.ts for archive / pause / resume operations.
+ * No tool calls this since connector rev 2.1 (22/10/2026): manage_program's archive goes through the
+ * core tool `archive_program`, which checks ownership structurally in the person's own list (and its
+ * Remove accepts paused and repeat requests, which this running-list check would refuse). Kept, not
+ * deleted.
  */
 export async function verifyQueueOwnership(
   profileId: string,

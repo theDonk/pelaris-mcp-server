@@ -14,6 +14,7 @@ import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
+import { callCoreBridge } from "../shared/bridge_client.js";
 
 /** Allowed equipment values. */
 const VALID_EQUIPMENT = [
@@ -25,6 +26,35 @@ const VALID_EQUIPMENT = [
 
 /** Allowed availability days. */
 const VALID_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+
+/** Where the athlete is in their season. */
+const SEASON_PHASES = ["in_season", "off_season", "pre_season"] as const;
+
+/**
+ * The sport the athlete plays and when (1.4 B2c, TS-7). Validated by the wayfinder
+ * core, which owns the one sport list: this schema holds no sport vocabulary of
+ * its own beyond the hint text, so an id the core does not know is refused there
+ * with `unknown_sport_id`.
+ */
+export const teamSportField = z
+  .object({
+    sportId: z
+      .string()
+      .min(1)
+      .max(40)
+      .optional()
+      .describe(
+        "A sport id: afl, soccer, rugby_league, rugby_union, netball, cricket, basketball, gaelic_football, field_hockey, ice_hockey, american_football, baseball, tennis, or other. " +
+        "If the athlete says only 'rugby' or 'hockey', ask which code first. A sport not listed is 'other' with sportLabel.",
+      ),
+    sportLabel: z.string().min(1).max(60).optional().describe("The athlete's own words for the sport, used with sportId 'other'"),
+    matchDays: z.array(z.enum(VALID_DAYS)).max(7).optional().describe("Match or game days"),
+    trainingDays: z.array(z.enum(VALID_DAYS)).max(7).optional().describe("Club or team training days"),
+    recoveryDaysNeeded: z.number().int().min(0).max(2).optional().describe("Days needed to recover after a match (0 to 2)"),
+    seasonPhase: z.enum(SEASON_PHASES).optional().describe("Where the athlete is in their season; write it only when they tell you"),
+    notPlaying: z.boolean().optional().describe("True when the athlete says they do not play a team sport"),
+  })
+  .strict();
 
 export function registerUpdateUserProfile(server: McpServer): void {
   server.registerTool(
@@ -75,6 +105,9 @@ export function registerUpdateUserProfile(server: McpServer): void {
           .enum(["gym", "home", "outdoor", "pool", "mixed"])
           .optional()
           .describe("Primary training environment"),
+        teamSport: teamSportField
+          .optional()
+          .describe("The sport the athlete plays and when: sport, match days, club training days, recovery, season. Include only what changed."),
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Update Profile" },
     },
@@ -104,7 +137,7 @@ export function registerUpdateUserProfile(server: McpServer): void {
         // Validate at least one field provided
         const hasUpdates = params.equipment || params.availableDays || params.sessionsPerWeek != null ||
           params.preferredSessionDuration != null || params.preferredUnits || params.experienceLevel ||
-          params.poolLength || params.environment;
+          params.poolLength || params.environment || params.teamSport;
 
         if (!hasUpdates) {
           return {
@@ -112,17 +145,43 @@ export function registerUpdateUserProfile(server: McpServer): void {
               type: "text" as const,
               text: JSON.stringify({
                 status: "no_changes",
-                message: "No changes specified. Provide at least one field to update (equipment, availableDays, sessionsPerWeek, preferredSessionDuration, preferredUnits, experienceLevel, poolLength, environment).",
+                message: "No changes specified. Provide at least one field to update (equipment, availableDays, sessionsPerWeek, preferredSessionDuration, preferredUnits, experienceLevel, poolLength, environment, teamSport).",
               }, null, 2),
             }],
           };
         }
 
         const profileId = claims.profile_id;
-        const profileRef = db.collection("profiles").doc(profileId);
-        const profileDoc = await profileRef.get();
 
-        if (!profileDoc.exists) {
+        // 1.4 B2c (TS-7): the team sport goes to the wayfinder core's update_athlete over
+        // the bridge, the one validated writer (registry ids only, origin coach, server
+        // time), for the token's own profile only. It runs first so a refusal (a closed
+        // code, never the typed input) stops the call before anything else is written,
+        // and there is no direct-write fallback.
+        if (params.teamSport) {
+          const bridged = await callCoreBridge("update_athlete", profileId, { type: "profile", teamSport: params.teamSport });
+          if (!bridged.ok || bridged.result == null) {
+            logToolCall({
+              requestId,
+              tool: "update_user_profile",
+              latencyMs: Date.now() - start,
+              success: false,
+              error: bridged.error ?? "bridge_failed",
+            });
+            return {
+              content: [{ type: "text" as const, text: `Error: ${bridged.error ?? "unknown error"}` }],
+              isError: true,
+            };
+          }
+        }
+
+        const onlyTeamSport = !!params.teamSport && !(params.equipment || params.availableDays || params.sessionsPerWeek != null ||
+          params.preferredSessionDuration != null || params.preferredUnits || params.experienceLevel ||
+          params.poolLength || params.environment);
+        const profileRef = db.collection("profiles").doc(profileId);
+        const profileDoc = onlyTeamSport ? null : await profileRef.get();
+
+        if (profileDoc && !profileDoc.exists) {
           return {
             content: [{ type: "text" as const, text: "Profile not found" }],
             isError: true,
@@ -166,10 +225,13 @@ export function registerUpdateUserProfile(server: McpServer): void {
           updatedFields.push("environment");
         }
 
+        if (params.teamSport) updatedFields.push("teamSport");
+
         // Add metadata
         updates["mcp_updated_at"] = new Date().toISOString();
 
-        await profileRef.update(updates);
+        // A team-sport-only call has already been written by the core.
+        if (!onlyTeamSport) await profileRef.update(updates);
 
         const result = scrubDocument({
           updatedFields,

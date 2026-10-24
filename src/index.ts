@@ -7,6 +7,9 @@ import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
 import { logServer, generateRequestId } from "./logger.js";
 import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
+// Pelaris 1.4 B2a lane C, C6: DCR guard, client address, return hook, connector_use.
+import { DEFAULT_OAUTH_CF_BASE, mountConnectorRoutes, runConnectorReturnStep } from "./connector/routes.js";
+import { runWithConnectorFacts } from "./connector/connector_use.js";
 
 // Single source of truth for version — reads from package.json
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -98,137 +101,17 @@ app.get("/favicon.ico", (_req, res) => {
 // stripping the path from the MCP server URL and use default paths (/register,
 // /authorize, /token) when metadata discovery fails or is ignored.
 // Claude uses these defaults, so we proxy them to the actual OAuth CF.
-const OAUTH_CF_BASE = process.env.OAUTH_CF_BASE || "https://australia-southeast1-wayfinder-ai-fitness.cloudfunctions.net/mcpOAuthServer";
+const OAUTH_CF_BASE = process.env.OAUTH_CF_BASE || DEFAULT_OAUTH_CF_BASE;
 
-// POST /register — Dynamic Client Registration (DCR) for third-party apps.
-// Pre-registered clients (pelaris-claude, pelaris-chatgpt) bypass this.
-// DCR is idempotent: same redirect_uris returns the same client_id.
-app.post("/register", async (req, res) => {
-  try {
-    const { redirect_uris, client_name } = req.body || {};
-
-    if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
-      res.status(400).json({ error: "invalid_request", error_description: "redirect_uris required" });
-      return;
-    }
-
-    // Idempotency: hash redirect_uris to create a deterministic client_id
-    const crypto = await import("crypto");
-    const uriHash = crypto.createHash("sha256")
-      .update(redirect_uris.sort().join("|"))
-      .digest("hex")
-      .slice(0, 32);
-    const clientId = `dyn-${uriHash}`;
-
-    // Check if this client already exists in Firestore
-    const { db: firestoreDb } = await import("./firestore-client.js");
-    const dbRef = firestoreDb.collection("mcp_clients").doc(clientId);
-    const existing = await dbRef.get();
-
-    if (existing.exists) {
-      // Return existing client — idempotent
-      const data = existing.data()!;
-      res.status(200).json({
-        client_id: clientId,
-        client_name: data.client_name || client_name || "MCP Client",
-        redirect_uris: data.redirect_uris,
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "none",
-      });
-      return;
-    }
-
-    // Create new dynamic client
-    await dbRef.set({
-      client_name: client_name || "MCP Client",
-      redirect_uris,
-      platform: "direct",
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-      created_at: new Date().toISOString(),
-    });
-
-    res.status(201).json({
-      client_id: clientId,
-      client_name: client_name || "MCP Client",
-      redirect_uris,
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-    });
-  } catch (err) {
-    console.error("[register] DCR failed:", err);
-    res.status(500).json({ error: "server_error", error_description: "Registration failed" });
-  }
-});
+// POST /register, POST /token and POST /revoke live in connector/routes.ts (B2a fix
+// pass, CR-15: they are testable there with Firestore, the limiter, the bridge
+// and the function stubbed). /authorize stays here: it is a plain redirect.
+mountConnectorRoutes(app);
 
 // GET /authorize → redirect to OAuth CF authorization endpoint
 app.get("/authorize", (req, res) => {
   const qs = new URLSearchParams(req.query as Record<string, string>).toString();
   res.redirect(302, `${OAUTH_CF_BASE}/oauth/authorize?${qs}`);
-});
-
-// POST /token → proxy to OAuth CF token endpoint
-// OAuth spec requires application/x-www-form-urlencoded for token requests
-app.post("/token", express.urlencoded({ extended: true }), async (req, res) => {
-  try {
-    const contentType = req.headers["content-type"] || "";
-    let upstream: Response;
-
-    if (contentType.includes("application/x-www-form-urlencoded")) {
-      // Forward as form-encoded (per OAuth spec)
-      const formBody = new URLSearchParams(req.body as Record<string, string>).toString();
-      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formBody,
-      });
-    } else {
-      // Forward as JSON (fallback)
-      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req.body),
-      });
-    }
-
-    const data = await upstream.json();
-    res.status(upstream.status).json(data);
-  } catch (err) {
-    console.error("[oauth-proxy] /token failed:", err);
-    res.status(502).json({ error: "proxy_error", error_description: "Failed to reach authorization server" });
-  }
-});
-
-// POST /revoke → proxy to OAuth CF revocation endpoint
-app.post("/revoke", express.urlencoded({ extended: true }), async (req, res) => {
-  try {
-    const contentType = req.headers["content-type"] || "";
-    let upstream: Response;
-
-    if (contentType.includes("application/x-www-form-urlencoded")) {
-      const formBody = new URLSearchParams(req.body as Record<string, string>).toString();
-      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/revoke`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formBody,
-      });
-    } else {
-      upstream = await fetch(`${OAUTH_CF_BASE}/oauth/revoke`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req.body),
-      });
-    }
-
-    const data = await upstream.json();
-    res.status(upstream.status).json(data);
-  } catch (err) {
-    console.error("[oauth-proxy] /revoke failed:", err);
-    res.status(502).json({ error: "proxy_error", error_description: "Failed to reach authorization server" });
-  }
 });
 
 // OAuth 2.0 Authorization Server Metadata (RFC 8414)
@@ -294,9 +177,21 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
   const requestId = generateRequestId();
   const authContext = req.mcpAuth || null;
 
+  // B2a C6 (d), (h): the connector facts for logToolCall (FL-9 1.6); the return check itself
+  // runs inside the try below (B2a fix pass, CR-10).
+  const connector = req.isAdminAuth ? undefined : req.connectorAccess;
+  const connectorFacts = connector ?
+    { profileId: connector.profileId, clientClass: connector.assistantClass ?? "unknown" as const } :
+    null;
+
   // PEL-122: Use AsyncLocalStorage for concurrency-safe per-request auth context
-  await runWithAuth(authContext, async () => {
+  await runWithConnectorFacts(connectorFacts, () => runWithAuth(authContext, async () => {
   try {
+    // B2a C6 (h), CR-10: B1R's return check before a direct tool. It never throws and is
+    // awaited here, inside the handler's try, so a malformed bridge reply can never
+    // become an unhandled rejection that ends the process.
+    await runConnectorReturnStep(req);
+
     const server = new McpServer({
       name: "pelaris-firebase-mcp",
       version: VERSION,
@@ -310,7 +205,23 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
         "training information and personalised training plans, not medical, " +
         "diagnostic, or therapeutic advice. Do not diagnose or treat. If a user " +
         "reports pain, injury, or health symptoms, recommend they consult a " +
-        "licensed professional. All coaching output is AI-generated.",
+        "licensed professional. All coaching output is AI-generated. " +
+        // B2a C6 (f), FL-3 §3.6 (★★ semantic review): one guidance line; the
+        // model chooses the words. Reworded 22/10/2026 (connector rev 2.1, M3, forced by
+        // Brad's 20/10 ruling, BRAD_RETURN #46): programs are built in Pelaris, never in the
+        // chat, so the line no longer promises a plan "right here in the conversation". It
+        // asks the intake here, hands over the link generate_program returns, and keeps the
+        // offer of a first session today. A wording change, not a new behaviour: flag for the
+        // FL-3 owner and the B2a reviewer.
+        "When get_onboarding_status shows setup is not finished (its next_step is " +
+        "complete_intake or generate_program), offer to get the person started: if " +
+        "their intake is not done, ask the intake questions here and save the answers " +
+        "with complete_intake; then call generate_program for the link that opens " +
+        "their program in Pelaris, and offer to do their first session today. " +
+        "Programs are built in Pelaris, not in this chat; plan single sessions or a " +
+        "week at a time here. " +
+        "When it reports preferred_units, use them and do not ask for units again. " +
+        "Offer this once; if the person declines, carry on with what they asked.",
     });
 
     // ─── Admin tools (only for admin-authed requests) ───────────
@@ -341,11 +252,15 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     registerResolveExerciseIds(server);
 
     // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
-    // generate_program (Unified Uplift G3 / C-3): the curated generate-and-enrol
-    // path (server-side generation + enrol -> scored queue). generate_weekly_plan
-    // is RETIRED (GL-I16, Spring Tide 1.2.0, 16/09/2026): its /generateProgramHttp
-    // endpoint is gone in this release, so the tool would now 404 on every call.
-    // No longer registered — the module stays at
+    // generate_program is a reply-only tool since connector rev 2.1 (22/10/2026, Brad's
+    // ruling BRAD_RETURN #46): it builds nothing here and answers with the link that opens
+    // Pelaris at the right place (building their program, or the one they hold); the program
+    // itself is built in the app. It stays listed so an assistant that is asked for a program
+    // explains instead of failing. (Its former build-and-enrol path, Unified Uplift G3 / C-3,
+    // is gone from this server; the long-build limiter is kept for a future ticket.)
+    // generate_weekly_plan is RETIRED (GL-I16, Spring Tide 1.2.0, 16/09/2026): its
+    // /generateProgramHttp endpoint is gone in this release, so the tool would now 404 on
+    // every call. No longer registered: the module stays at
     // src/tools/user/generate_weekly_plan.ts, unregistered, for history.
     registerCompleteIntake(server);
     registerGenerateProgram(server);
@@ -406,7 +321,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
       res.status(500).json({ error: "Internal server error" });
     }
   }
-  }); // end runWithAuth
+  })); // end runWithAuth, runWithConnectorFacts
 });
 
 // Handle GET and DELETE on /mcp (required by Streamable HTTP spec)

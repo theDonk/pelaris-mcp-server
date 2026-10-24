@@ -14,6 +14,35 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 
+/** An injury id as the core issues it. */
+const INJURY_ID = /^inj_[0-9a-f]{10}$/;
+const BODY_PART_TOKEN = /^[a-z_]{1,24}$/;
+
+/**
+ * Active injury entries that carry a stored `injury_id`, as closed values
+ * (id, body part, side, severity): the ids a connector needs for
+ * record_injury's update and resolve. Entries written before ids existed have
+ * none and are not listed (the in-app coach can still reach them). Never a note.
+ */
+export function activeInjuriesWithIds(entries: unknown): Array<{ injuryId: string; bodyPart: string; side: string | null; severity: string | null }> {
+  if (!Array.isArray(entries)) return [];
+  const out: Array<{ injuryId: string; bodyPart: string; side: string | null; severity: string | null }> = [];
+  for (const raw of entries) {
+    if (raw == null || typeof raw !== "object") continue;
+    const e = raw as Record<string, unknown>;
+    if (e.is_active === false || typeof e.injury_id !== "string" || !INJURY_ID.test(e.injury_id)) continue;
+    const side = e.side;
+    const severity = e.severity;
+    out.push({
+      injuryId: e.injury_id,
+      bodyPart: typeof e.body_part === "string" && BODY_PART_TOKEN.test(e.body_part) ? e.body_part : "general",
+      side: typeof side === "string" && ["left", "right", "both", "bilateral", "n/a"].includes(side) ? side : null,
+      severity: typeof severity === "string" && ["mild", "moderate", "severe"].includes(severity) ? severity : null,
+    });
+  }
+  return out;
+}
+
 export function registerGetTrainingContext(server: McpServer): void {
   server.registerTool(
     "get_training_overview",
@@ -122,6 +151,9 @@ export function registerGetTrainingContext(server: McpServer): void {
           sessionsPerWeek: profileData.preferences?.sessions_per_week || profileData.availability?.days_per_week || null,
           preferredUnits: profileData.preferredUnits || profileData.preferred_units || "metric",
           hasInjuries: !!profileData.training_context?.injury_history,
+          // 1.4 B2c (IJ-3b): the active injuries that carry an id, as closed values, so a
+          // connector can update or resolve one with record_injury. No notes.
+          activeInjuries: activeInjuriesWithIds(profileData.training_context?.injuries),
         };
 
         // Recent diary entries
