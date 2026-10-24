@@ -135,3 +135,74 @@ test("profile identifiers never cross from params into the core input", () => {
   assert.ok(!("profileId" in input), "profileId must come from claims, not params");
   assert.ok(!("profile_id" in input), "profile_id must come from claims, not params");
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1.4.1 D4: explicitNewSessionReason / basedOnSessionId pass-through and the
+// actionable preflight text
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { preflightGuidanceText } from "../create_planned_session.js";
+import type { BridgeResult } from "../../shared/bridge_client.js";
+
+test("explicitNewSessionReason and basedOnSessionId cross the bridge, trimmed", () => {
+  const input = buildCreatePlannedSessionCoreInput({
+    date: "2026-10-26",
+    sport: "running",
+    explicitNewSessionReason: "  second easy run, evening  ",
+    basedOnSessionId: " plan_abc ",
+  });
+  assert.equal(input.explicitNewSessionReason, "second easy run, evening");
+  assert.equal(input.basedOnSessionId, "plan_abc");
+});
+
+test("absent or blank D4 fields add nothing to the core input", () => {
+  const input = buildCreatePlannedSessionCoreInput({
+    date: "2026-10-26", sport: "running", explicitNewSessionReason: "   ",
+  });
+  assert.deepEqual(input, { date: "2026-10-26", sport: "running" });
+});
+
+test("reject_use_modify_session text lists the candidate and says how to proceed", () => {
+  const bridged: BridgeResult = {
+    ok: false,
+    tool: "create_planned_session",
+    error: "session_write_preflight: reject_use_modify_session target=plan_s1",
+    errorDetail: {
+      kind: "reject_use_modify_session",
+      target: { id: "plan_s1", title: "Easy Run", date: "2026-10-26" },
+      candidates: [{ id: "plan_s1", title: "Easy Run", date: "2026-10-26" }],
+    },
+  };
+  const text = preflightGuidanceText(bridged);
+  assert.ok(text);
+  assert.match(text, /plan_s1: Easy Run \(2026-10-26\)/);
+  assert.match(text, /modify_training_session with its id/);
+  assert.match(text, /explicitNewSessionReason/);
+  assert.match(text, /basedOnSessionId/);
+  assert.doesNotMatch(text, /—/);
+});
+
+test("needs_disambiguation text lists every candidate", () => {
+  const bridged: BridgeResult = {
+    ok: false,
+    tool: "create_planned_session",
+    error: "session_write_preflight: needs_disambiguation candidates=2",
+    errorDetail: {
+      kind: "needs_disambiguation",
+      candidates: [
+        { id: "plan_a", title: "Tempo Run", date: "2026-10-27" },
+        { id: "plan_b", title: "Long Run", date: "2026-10-27" },
+      ],
+    },
+  };
+  const text = preflightGuidanceText(bridged);
+  assert.ok(text);
+  assert.match(text, /more than one planned session/);
+  assert.match(text, /plan_a: Tempo Run/);
+  assert.match(text, /plan_b: Long Run/);
+});
+
+test("other failures and successes get no preflight text", () => {
+  assert.equal(preflightGuidanceText({ ok: false, tool: "create_planned_session", error: "boom" }), null);
+  assert.equal(preflightGuidanceText({ ok: true, tool: "create_planned_session", result: {} }), null);
+});

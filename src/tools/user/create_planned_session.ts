@@ -19,7 +19,7 @@ import { getRequestAuth } from "../../request-context.js";
 import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { callCoreBridge } from "../shared/bridge_client.js";
+import { callCoreBridge, type BridgeResult } from "../shared/bridge_client.js";
 import {
   EXERCISE_NAME_DESCRIPTION,
   bridgeFailureResponse,
@@ -62,6 +62,66 @@ export interface CreatePlannedSessionToolParams {
   coachNote?: string;
   exercises?: LegacyPlannedExerciseFields[];
   blocks?: CoreWriteBlockSpec[];
+  /** 1.4.1 D4: why this is a new, additional session rather than a change to an existing one. */
+  explicitNewSessionReason?: string;
+  /** 1.4.1 D4: an existing session to copy the structure of. */
+  basedOnSessionId?: string;
+}
+
+/** The closed shape of the core's same-day preflight detail (`SessionWritePreflightDetail`). */
+interface PreflightDetail {
+  kind: "reject_use_modify_session" | "needs_disambiguation";
+  target?: { id: string; title: string; date: string };
+  candidates: Array<{ id: string; title: string; date: string }>;
+}
+
+function preflightDetailOf(detail: unknown): PreflightDetail | null {
+  if (detail == null || typeof detail !== "object") return null;
+  const d = detail as Record<string, unknown>;
+  if (d.kind !== "reject_use_modify_session" && d.kind !== "needs_disambiguation") return null;
+  const asCandidate = (c: unknown): { id: string; title: string; date: string } | null => {
+    if (c == null || typeof c !== "object") return null;
+    const r = c as Record<string, unknown>;
+    return typeof r.id === "string"
+      ? { id: r.id, title: typeof r.title === "string" ? r.title : "", date: typeof r.date === "string" ? r.date : "" }
+      : null;
+  };
+  const candidates = (Array.isArray(d.candidates) ? d.candidates : [])
+    .map(asCandidate)
+    .filter((c): c is { id: string; title: string; date: string } => c !== null);
+  const target = asCandidate(d.target);
+  return { kind: d.kind, ...(target ? { target } : {}), candidates };
+}
+
+/**
+ * 1.4.1 D4: the actionable text for the core's same-day preflight refusals
+ * (`reject_use_modify_session`, `needs_disambiguation`), or null for any other
+ * failure. It lists the candidate sessions as DATA and says exactly how to
+ * proceed; it does not decide whether the new session is "the same" as one of
+ * them. The model decides, from the candidates and the person's request
+ * (AI-first: no title or token matching here).
+ */
+export function preflightGuidanceText(bridged: BridgeResult): string | null {
+  if (bridged.ok) return null;
+  const detail = preflightDetailOf(bridged.errorDetail);
+  if (!detail) return null;
+  const list = detail.candidates.length > 0 ? detail.candidates : detail.target ? [detail.target] : [];
+  const lines = list.map((c) => `- ${c.id}: ${c.title || "Untitled session"} (${c.date})`);
+  const headline = detail.kind === "reject_use_modify_session"
+    ? "That day already has a planned session of the same sport, so nothing was created."
+    : "That day already has more than one planned session of the same sport, so nothing was created.";
+  return [
+    `Error creating planned session: ${headline}`,
+    "Sessions already planned that day:",
+    ...lines,
+    "How to proceed, choose one:",
+    "1. To change one of these sessions, call modify_training_session with its id (the id at the start of the line).",
+    "2. To add a separate, additional session on that day, call create_planned_session again with the same details plus " +
+      "explicitNewSessionReason set to a short phrase saying why this is a new session and not a change to an existing one.",
+    "3. To repeat or vary an existing session, call create_planned_session with basedOnSessionId set to that session's id; " +
+      "anything else you pass overrides the copy.",
+    "If the person's request does not make clear which they want, ask them.",
+  ].join("\n");
 }
 
 /**
@@ -88,6 +148,8 @@ export function buildCreatePlannedSessionCoreInput(
     ...(params.sessionFocus ? { sessionFocus: params.sessionFocus } : {}),
     ...(params.coachNote ? { coachNote: params.coachNote } : {}),
     ...(blocks ? { blocks } : {}),
+    ...(params.explicitNewSessionReason?.trim() ? { explicitNewSessionReason: params.explicitNewSessionReason.trim() } : {}),
+    ...(params.basedOnSessionId?.trim() ? { basedOnSessionId: params.basedOnSessionId.trim() } : {}),
   };
 }
 
@@ -147,6 +209,23 @@ export function registerCreatePlannedSession(server: McpServer): void {
           .optional()
           .describe("Array of planned exercises (max 30). Flat list of standalone movements; use blocks[] for grouped or phased sessions. Use plain movement names only; never encode grouping (supersets, circuits) in exercise names."),
         blocks: coreWriteBlocksField,
+        explicitNewSessionReason: z
+          .string()
+          .max(200)
+          .optional()
+          .describe(
+            "Why this is a new, additional session rather than a change to an existing one. Needed only when that " +
+            "day already has a planned session of the same sport and the person wants a separate extra one. " +
+            "If you omit it, the refusal lists the sessions already planned that day and how to proceed.",
+          ),
+        basedOnSessionId: z
+          .string()
+          .max(120)
+          .optional()
+          .describe(
+            "Optional. The id of an existing session (from get_session_details or get_active_program) to copy the " +
+            "structure of. Anything else you pass (date, title, blocks) overrides the copy.",
+          ),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false, title: "Create Planned Session" },
     },
@@ -182,6 +261,8 @@ export function registerCreatePlannedSession(server: McpServer): void {
 
         const failure = bridgeFailureResponse(bridged, "creating planned session");
         if (failure) {
+          const guidance = preflightGuidanceText(bridged);
+          if (guidance) failure.content = [{ type: "text" as const, text: guidance }];
           logToolCall({
             requestId,
             tool: "create_planned_session",
