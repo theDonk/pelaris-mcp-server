@@ -119,7 +119,7 @@ export async function raiseConnectorDcrRefusedAlertOnce(
         registrar: line.registrar,
         reason: line.reason,
         scheme: line.scheme,
-        note: "A client registration naming a mapped AI assistant host (C9's HOST_LABELS) was refused by the " +
+        note: "A client registration naming an AI assistant host (C9's ASSISTANT_HOSTS, oauth_handback.ts) was refused by the " +
           "redirect policy. Anyone can " +
           "send a registration, so this alone is never a reason to list a scheme. List one in " +
           "system/oauth_redirect_policy.custom_schemes only after the assistant's own published docs name it " +
