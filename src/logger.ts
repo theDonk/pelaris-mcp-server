@@ -108,8 +108,18 @@ function headerValue(headers: Record<string, unknown>, name: string): string | u
   return cleanField(Array.isArray(raw) ? raw.join(",") : raw);
 }
 
+/** At most this many method names per line; `rpcMessageCount` keeps the true size (security F1). */
+const MAX_LOGGED_METHODS = 10;
+
+/**
+ * Only spec method names are logged verbatim; anything else is "(other)", so a client can't
+ * write free text (an email, say) into the log through `method` (security F2).
+ */
+const KNOWN_METHOD = /^(initialize|ping|server\/discover|subscriptions\/listen|(tools|resources|prompts|notifications|logging|completion|tasks|elicitation|sampling|roots)\/[a-z_]+(\/[a-z_]+)?)$/i;
+
 export interface McpRequestDescription {
   rpcMethods: string[];
+  rpcMessageCount: number;
   clientProtocolVersion?: string;
   clientName?: string;
   clientVersion?: string;
@@ -131,14 +141,19 @@ export function describeMcpRequest(
 ): McpRequestDescription {
   const messages = Array.isArray(body) ? body : [body];
   const rpcMethods: string[] = [];
-  const description: McpRequestDescription = { rpcMethods };
+  const description: McpRequestDescription = { rpcMethods, rpcMessageCount: 0 };
   for (const message of messages) {
     if (!message || typeof message !== "object") continue;
+    description.rpcMessageCount++;
     const { method, params } = message as { method?: unknown; params?: unknown };
-    const name = cleanField(method);
-    if (name) rpcMethods.push(name);
-    else if ("result" in (message as object) || "error" in (message as object)) rpcMethods.push("(response)");
-    else if (Object.keys(message as object).length > 0) rpcMethods.push("(unknown)");
+    const raw = cleanField(method);
+    const name = raw && KNOWN_METHOD.test(raw) ? raw : undefined;
+    let label: string | undefined;
+    if (name) label = name;
+    else if (raw) label = "(other)";
+    else if ("result" in (message as object) || "error" in (message as object)) label = "(response)";
+    else if (Object.keys(message as object).length > 0) label = "(unknown)";
+    if (label && rpcMethods.length < MAX_LOGGED_METHODS) rpcMethods.push(label);
     if (name === "initialize" && params && typeof params === "object") {
       const { protocolVersion, clientInfo } = params as { protocolVersion?: unknown; clientInfo?: unknown };
       description.clientProtocolVersion = cleanField(protocolVersion);

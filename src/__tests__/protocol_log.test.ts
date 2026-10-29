@@ -37,6 +37,7 @@ test("tools/call: only the method name, never arguments, results or ids", () => 
     { "mcp-protocol-version": "2025-11-25", authorization: "Bearer abc.def.ghi" },
   );
   assert.deepEqual(d.rpcMethods, ["tools/call"]);
+  assert.equal(d.rpcMessageCount, 1);
   assert.equal(d.mcpProtocolVersionHeader, "2025-11-25");
   const line = JSON.stringify(d);
   assert.ok(!line.includes("log_workout"), "tool name is not in the protocol line (logToolCall records it)");
@@ -59,6 +60,24 @@ test("client-controlled strings are capped and stripped of control characters", 
   assert.ok(d.clientName && d.clientName.length <= 120);
   assert.ok(!/[\n\u0000]/.test(d.clientName ?? ""));
   assert.equal(d.accept, "a,b");
+});
+
+test("security F1: a huge batch logs at most 10 method names and keeps the true count", () => {
+  const batch = Array.from({ length: 5000 }, () => ({ jsonrpc: "2.0", method: "tools/list" }));
+  const d = describe(batch);
+  assert.equal(d.rpcMethods.length, 10);
+  assert.equal(d.rpcMessageCount, 5000);
+});
+
+test("security F2: only spec method names are logged verbatim; free text becomes (other)", () => {
+  const d = describe([
+    { jsonrpc: "2.0", id: 1, method: "brad@pelaris.io" },
+    { jsonrpc: "2.0", id: 2, method: "tools/call" },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { jsonrpc: "2.0", id: 3, method: "server/discover" },
+  ]);
+  assert.deepEqual(d.rpcMethods, ["(other)", "tools/call", "notifications/initialized", "server/discover"]);
+  assert.ok(!JSON.stringify(d).includes("@"));
 });
 
 test("logMcpRequest never throws, even when stdout fails", () => {

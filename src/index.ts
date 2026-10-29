@@ -92,14 +92,20 @@ app.use("/mcp", (req, res, next) => {
     description = undefined;
   }
   res.on("finish", () => {
-    logMcpRequest({
-      requestId,
-      httpMethod: req.method,
-      status: res.statusCode,
-      durationMs: Date.now() - started,
-      clientClass: (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined,
-      description,
-    });
+    // Inside an EventEmitter listener a throw would be uncaught, so the whole body is guarded
+    // (security F3), not just the write.
+    try {
+      logMcpRequest({
+        requestId,
+        httpMethod: req.method,
+        status: res.statusCode,
+        durationMs: Date.now() - started,
+        clientClass: (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined,
+        description,
+      });
+    } catch {
+      // Observability only.
+    }
   });
   next();
 });
