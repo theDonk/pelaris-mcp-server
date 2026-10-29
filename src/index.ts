@@ -5,7 +5,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { verifyBearerToken, type McpAuthenticatedRequest } from "./auth.js";
 import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
-import { logServer, generateRequestId } from "./logger.js";
+import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
+import { logServer, generateRequestId, describeMcpRequest, logMcpRequest, type McpRequestDescription } from "./logger.js";
 import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
 // Pelaris 1.4 B2a lane C, C6: DCR guard, client address, return hook, connector_use.
 import { DEFAULT_OAUTH_CF_BASE, mountConnectorRoutes, runConnectorReturnStep } from "./connector/routes.js";
@@ -77,6 +78,31 @@ const app = express();
 // CORS before body parsing so OPTIONS preflights short-circuit cleanly.
 app.use(corsMiddleware);
 app.use(express.json());
+
+// Protocol-level request log (MCP_FIXES.md §1.4 step 1b): one allow-listed line per /mcp
+// request, written when the response finishes, so 401s and the GET/DELETE 405s are seen too.
+// Describing the request can never fail the request: any fault just skips the description.
+app.use("/mcp", (req, res, next) => {
+  const started = Date.now();
+  const requestId = generateRequestId();
+  let description: McpRequestDescription | undefined;
+  try {
+    description = describeMcpRequest(req.body, req.headers, SUPPORTED_PROTOCOL_VERSIONS, LATEST_PROTOCOL_VERSION);
+  } catch {
+    description = undefined;
+  }
+  res.on("finish", () => {
+    logMcpRequest({
+      requestId,
+      httpMethod: req.method,
+      status: res.statusCode,
+      durationMs: Date.now() - started,
+      clientClass: (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined,
+      description,
+    });
+  });
+  next();
+});
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {

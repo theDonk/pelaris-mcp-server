@@ -85,3 +85,104 @@ export function logServer(message: string, extra?: Record<string, unknown>): voi
     ...extra,
   });
 }
+
+// ─── Protocol-level request log (MCP_FIXES.md §1.4 step 1b) ─────────────────────────
+//
+// One line per HTTP request to /mcp, so a client that misbehaves (Gemini, 28/10/2026) can be
+// diagnosed from evidence: which JSON-RPC methods it sent, which protocol version it asked
+// for, which one we answered, and how the transport headers looked. ALLOW-LIST ONLY: never
+// arguments, results, tokens, the Authorization header, emails, uids or profile ids. Every
+// string is length-capped and stripped of control characters, because clientInfo and headers
+// are client-controlled.
+
+const MAX_FIELD = 120;
+
+function cleanField(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, MAX_FIELD);
+}
+
+function headerValue(headers: Record<string, unknown>, name: string): string | undefined {
+  const raw = headers[name];
+  return cleanField(Array.isArray(raw) ? raw.join(",") : raw);
+}
+
+export interface McpRequestDescription {
+  rpcMethods: string[];
+  clientProtocolVersion?: string;
+  clientName?: string;
+  clientVersion?: string;
+  negotiatedProtocolVersion?: string;
+  accept?: string;
+  mcpProtocolVersionHeader?: string;
+}
+
+/**
+ * Pure: the allow-listed facts about one /mcp request. `supportedVersions` and
+ * `latestVersion` are the SDK's, so `negotiatedProtocolVersion` mirrors what the SDK answers
+ * an `initialize` with (the requested version when supported, otherwise its latest).
+ */
+export function describeMcpRequest(
+  body: unknown,
+  headers: Record<string, unknown>,
+  supportedVersions: readonly string[],
+  latestVersion: string,
+): McpRequestDescription {
+  const messages = Array.isArray(body) ? body : [body];
+  const rpcMethods: string[] = [];
+  const description: McpRequestDescription = { rpcMethods };
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const { method, params } = message as { method?: unknown; params?: unknown };
+    const name = cleanField(method);
+    if (name) rpcMethods.push(name);
+    else if ("result" in (message as object) || "error" in (message as object)) rpcMethods.push("(response)");
+    else if (Object.keys(message as object).length > 0) rpcMethods.push("(unknown)");
+    if (name === "initialize" && params && typeof params === "object") {
+      const { protocolVersion, clientInfo } = params as { protocolVersion?: unknown; clientInfo?: unknown };
+      description.clientProtocolVersion = cleanField(protocolVersion);
+      if (clientInfo && typeof clientInfo === "object") {
+        const info = clientInfo as { name?: unknown; version?: unknown };
+        description.clientName = cleanField(info.name);
+        description.clientVersion = cleanField(info.version);
+      }
+      if (description.clientProtocolVersion) {
+        description.negotiatedProtocolVersion = supportedVersions.includes(description.clientProtocolVersion) ?
+          description.clientProtocolVersion :
+          latestVersion;
+      }
+    }
+  }
+  description.accept = headerValue(headers, "accept");
+  description.mcpProtocolVersionHeader = headerValue(headers, "mcp-protocol-version");
+  return description;
+}
+
+/**
+ * Write the protocol line. Never throws: a logging fault must not reach the request path.
+ */
+export function logMcpRequest(params: {
+  requestId: string;
+  httpMethod: string;
+  status: number;
+  durationMs: number;
+  clientClass?: string;
+  description?: McpRequestDescription;
+}): void {
+  try {
+    log({
+      severity: "INFO",
+      message: "mcp_request",
+      event: "mcp_request",
+      requestId: params.requestId,
+      httpMethod: params.httpMethod,
+      status: params.status,
+      durationMs: params.durationMs,
+      ...(params.clientClass ? { clientClass: params.clientClass } : {}),
+      ...(params.description ?? {}),
+    });
+  } catch {
+    // Observability only: swallow.
+  }
+}
