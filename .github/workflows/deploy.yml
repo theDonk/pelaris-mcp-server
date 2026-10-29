@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     env:
       PROJECT_ID: wayfinder-ai-fitness
@@ -18,9 +17,11 @@ jobs:
       SERVICE_NAME: pelaris-mcp-server
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -40,15 +41,17 @@ jobs:
       - run: npm test
 
       - id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       # Deploy to Cloud Run (--source uses Dockerfile, preserves existing env/secrets)
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
 
       - name: Deploy to Cloud Run
+        # The service URL gcloud prints is masked in the log.
         run: |
+          set -o pipefail
           gcloud run deploy $SERVICE_NAME \
             --source . \
             --project $PROJECT_ID \
@@ -59,7 +62,7 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 3 \
-            --quiet
+            --quiet 2>&1 | sed -E 's#https://[A-Za-z0-9.-]+[.]run[.]app#<service-url>#g'
 
       - name: Verify deployment
         run: |
@@ -67,7 +70,7 @@ jobs:
             --project $PROJECT_ID \
             --region $REGION \
             --format 'value(status.url)')
-          echo "Service URL: $URL"
+          echo "::add-mask::$URL"
           HTTP_STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" "$URL/health")
           echo "Health check (direct): $HTTP_STATUS"
           cat /tmp/health.json

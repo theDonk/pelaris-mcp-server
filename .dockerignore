@@ -4,3 +4,6 @@ dist
 *.md
 # Audit/test harness (local emulator only — never ship)
 _audit_*.mjs
+
+# Credentials the deploy workflow writes into the workspace (google-github-actions/auth).
+gha-creds-*.json
