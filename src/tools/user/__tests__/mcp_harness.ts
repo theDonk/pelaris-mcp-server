@@ -87,7 +87,7 @@ export async function captureLogs<T>(fn: () => Promise<T>): Promise<{ value: T; 
   }
 }
 
-/** True when the text holds an en dash or an em dash (Brad's voice rule: none in copy a person reads). */
+/** True when the text holds an en dash or an em dash (the copy rule: none in copy a person reads). */
 export function hasDash(text: string): boolean {
   return text.includes(String.fromCharCode(0x2013)) || text.includes(String.fromCharCode(0x2014));
 }

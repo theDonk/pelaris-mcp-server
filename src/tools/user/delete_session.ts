@@ -4,8 +4,6 @@
  *
  * Deletes planned diary sessions by ID. Completed and Strava-imported
  * sessions cannot be deleted.
- *
- * PEL-237
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

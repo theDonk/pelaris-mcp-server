@@ -2,7 +2,7 @@
  * MCP Tool: get_program_status
  * Scope: training:read
  *
- * PEL-221: Split from manage_program. Read-only program queries that don't need
+ * Split from manage_program. Read-only program queries that don't need
  * destructive approval. Shows current active programs or full program history.
  *
  * Connector rev 2.1 (M2): each program's `status` is the app's own reading of the person's list
@@ -76,7 +76,7 @@ export function registerGetProgramStatus(server: McpServer, deps: ProgramStatusD
         const profileId = claims.profile_id;
 
         if (params.action === "get_current") {
-          // PEL-220: Use profile.active_queues as source of truth
+          // Use profile.active_queues as source of truth
           const { profileData, queueDocs } = await deps.activePrograms(profileId);
 
           if (queueDocs.length === 0) {

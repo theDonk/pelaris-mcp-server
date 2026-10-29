@@ -13,8 +13,6 @@
  * log_session handles the completed transition (target -> actual copy, or
  * actual sets when exercises are provided). This wrapper keeps auth, scope,
  * rate-limit, logging, and scrubbing only.
- *
- * PEL-227
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

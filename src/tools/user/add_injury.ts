@@ -5,7 +5,7 @@
  * Records, updates or resolves an injury on the user's profile. The write is the
  * wayfinder core's `update_athlete` (type "injury") over the coreToolsBridge, the
  * same implementation the in-app coach uses: this tool no longer writes
- * Firestore itself (1.4 B2c, IJ-3b; PEL-1003). Two things followed from the old
+ * Firestore itself (1.4 B2c, IJ-3b). Two things followed from the old
  * direct write: it kept writing `training_context.injury_history = true` after
  * the core stopped (the boolean overwrote the athlete's own words), and it
  * answered an unknown body part by echoing the typed text back, which the
