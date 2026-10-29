@@ -1,6 +1,6 @@
 /**
  * Contract tests for record_injury and update_profile's teamSport over the core
- * bridge (Pelaris 1.4 B2c lane B, B5 gateway slice; IJ-3b, TS-7, PEL-1003).
+ * bridge (Pelaris 1.4 B2c lane B, B5 gateway slice; IJ-3b, TS-7).
  * node:test, no extra dependencies; run after build: node --test dist/...
  *
  * The bridge is stubbed with a local HTTP server (emulator mode: plain fetch, no

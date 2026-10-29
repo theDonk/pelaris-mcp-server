@@ -2,10 +2,10 @@
  * MCP Tool: manage_program (archive only)
  * Scope: training:write
  *
- * PEL-221: Read-only actions (get_current, list_history) moved to get_program_status.
+ * Read-only actions (get_current, list_history) moved to get_program_status.
  * This tool only handles archive, so destructiveHint:true is appropriate.
  *
- * Connector rev 2.1 (22/10/2026, Brad's reuse ruling, BRAD_RETURN #46): archive goes through
+ * Connector rev 2.1: archive goes through
  * Pelaris's own core tool `archive_program` over the core bridge, which asks the app's Remove
  * and nothing else. This file no longer touches the program's documents. The old archive wrote a
  * marker only this server read, never touched the person's active-program list, and left a

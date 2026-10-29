@@ -37,7 +37,7 @@ interface NumberDial { fallback: number; floor: number; ceiling: number }
 export const DIAL_BOUNDS: Readonly<Record<string, NumberDial>> = Object.freeze({
   dcr_per_hour: { fallback: 10, floor: 1, ceiling: 100 },
   connector_use_stamp_minutes: { fallback: 60, floor: 1, ceiling: 1440 },
-  // 10000 since the manager's ruling of 09/10/2026 (wayfinder jit_controls.ts).
+  // 10000, as wayfinder's jit_controls.ts.
   bridge_return_step_timeout_ms: { fallback: 10000, floor: 250, ceiling: 30000 },
 });
 

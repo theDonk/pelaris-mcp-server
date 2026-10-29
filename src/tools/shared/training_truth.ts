@@ -1,6 +1,6 @@
 /**
  * training_truth.ts: the connector's one reader of the program's truth (1.4.1 D2,
- * connector truth, PEL-1211).
+ * connector truth).
  *
  * The program week, phase, schedule and the week's counts are decided in the app's
  * backend, once, and read here over the coreToolsBridge (`get_training_truth`).

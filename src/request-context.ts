@@ -5,7 +5,7 @@
  * ensuring concurrent requests on the same Cloud Run instance don't
  * share or overwrite each other's auth state.
  *
- * PEL-122: Fixed from module-level variable to AsyncLocalStorage.
+ * Uses AsyncLocalStorage, not a module-level variable.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";

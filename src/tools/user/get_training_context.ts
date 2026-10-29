@@ -5,7 +5,7 @@
  * Returns a comprehensive training context snapshot including:
  * profile, active program, recent diary sessions, check-in data.
  *
- * 1.4.1 D2 (connector truth, PEL-1211): each program's week, phase and completion, and
+ * 1.4.1 D2 (connector truth): each program's week, phase and completion, and
  * the week's counts, come from the app's backend (`get_training_truth` over the
  * coreToolsBridge), the same answer the app shows. The "current week" here used to be
  * the highest built week, so a program in week 9 of 24 read as week 12. Existing output
@@ -121,7 +121,7 @@ export function registerGetTrainingContext(
 
         const profileData = profileSnap.data() || {};
 
-        // PEL-220: Use profile.active_queues to determine truly active programs (the truth reads the same list)
+        // Use profile.active_queues to determine truly active programs (the truth reads the same list)
         const activeQueueIds = new Set(
           ((profileData.active_queues || []) as Array<Record<string, unknown>>)
             .filter((q) => q.is_active === true)

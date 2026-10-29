@@ -172,7 +172,7 @@ export function checkWriteRateLimit(userKey: string): string | null {
  * denial-of-wallet surface and is limited well below ordinary writes
  * (Unified Uplift G3 C-3). Returns null if within limit, else an error message.
  *
- * NOT CALLED since 20/10/2026 (connector rev 2.1, Brad's ruling BRAD_RETURN #46): generate_program
+ * NOT CALLED since connector rev 2.1: generate_program
  * builds nothing now, it answers with the Pelaris link. Kept, not deleted, with its bucket, for the
  * future ticket that lets the connector build programs again.
  */

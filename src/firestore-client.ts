@@ -46,7 +46,7 @@ export function profileSubcollection(profileId: string, subcollection: string) {
  * Matches Flutter's training_tab_service.dart approach:
  *   profile.active_queues[].is_active === true -> load those queue docs only.
  *
- * PEL-220 fix: MCP tools were querying the raw queues subcollection and filtering
+ * Fix: MCP tools were querying the raw queues subcollection and filtering
  * by status !== "archived", which returned stale/paused programs.
  */
 export async function getActiveQueueDocuments(profileId: string): Promise<{

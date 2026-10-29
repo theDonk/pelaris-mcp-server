@@ -2,18 +2,16 @@
  * MCP Tool: generate_program (a reply-only tool since connector rev 2.1, 22/10/2026)
  * Scope: training:read or training:write
  *
- * Programs are built in Pelaris, not in a chat (Brad 20/10/2026, BRAD_RETURN #46).
+ * Programs are built in Pelaris, not in a chat.
  * This tool stays listed under its old name so an assistant that is asked for a
  * program explains and hands over a link instead of failing. It writes nothing,
  * starts no job and calls nothing outside this server: it reads the person's
  * profile once and answers with the First Light entry link that opens Pelaris at
  * the right place (`../shared/entry_links.ts`).
  *
- * Why: on 16/10 a long build held open as one request, retried by an assistant
- * whose clock was shorter than the job, produced four programs for one person in
- * ten minutes and left their active-program pointer dangling
- * (`design_docs/release_1_4_2026_10/mcp_generation_rca/DESIGN.md`). The app's own
- * build path is reliable; the connector now hands people to it. The long-build
+ * Why: a long build held open as one request can be retried by an assistant whose
+ * clock is shorter than the job, building duplicates. The app's own build path is
+ * reliable; the connector now hands people to it. The long-build
  * limiter in `middleware/rate-limiter.ts` is kept for the future ticket that lets
  * the connector build again, and is not called from here.
  *

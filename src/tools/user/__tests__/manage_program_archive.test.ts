@@ -1,6 +1,6 @@
 /**
- * manage_program archive goes through Pelaris's core tool `archive_program` over the core bridge (connector rev 2.1,
- * Brad's reuse ruling, BRAD_RETURN #46). node:test, no extra dependencies, no Firestore, no external network.
+ * manage_program archive goes through Pelaris's core tool `archive_program` over the core bridge (connector rev 2.1).
+ * node:test, no extra dependencies, no Firestore, no external network.
  *
  * The bridge is stubbed two ways: a local HTTP server behind the REAL `callCoreBridge` (emulator mode: plain fetch), which
  * proves the wire contract (tool name, profile id from the token only, the optional program id); and an injected

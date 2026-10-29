@@ -97,7 +97,7 @@ export function registerGetSessionDetails(server: McpServer): void {
               return {
                 exerciseName: ex.exercise_name,
                 exerciseId: ex.exercise_id,
-                // PEL-425: AI-authored per-exercise adaptation delta.
+                // AI-authored per-exercise adaptation delta.
                 deltaNote: ex.delta_note ?? null,
                 sets: sets.map((s) => {
                   if (s.type === "strength") {
@@ -168,7 +168,7 @@ export function registerGetSessionDetails(server: McpServer): void {
           isHybrid: d.is_hybrid || false,
           phaseFocus: d.phase_focus || null,
           adaptationApplied: d.adaptation_applied || false,
-          // PEL-425: AI-authored session-level adaptation summary.
+          // AI-authored session-level adaptation summary.
           adaptationNote: d.adaptation_note || null,
           coachNote: d.coach_note || null,
           startedAt: d.started_at?.toDate?.()?.toISOString?.() || d.started_at || null,
@@ -191,7 +191,7 @@ export function registerGetSessionDetails(server: McpServer): void {
             elevationGainMeters: d.imported_actuals.elevationGainMeters ?? null,
             kilojoules: d.imported_actuals.kilojoules ?? null,
             sufferScore: d.imported_actuals.sufferScore ?? null,
-            // PEL-233 Phase 6: per-lap/split breakdown. The unified activity
+            // Per-lap/split breakdown. The unified activity
             // pipeline (buildImportedActuals) writes a canonical ActivitySplit[]
             // here. Sport-agnostic: running/cycling carry pace/HR/cadence/power,
             // swimming carries strokes/strokeType. Sessions without synced lap
