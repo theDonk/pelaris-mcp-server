@@ -4,7 +4,7 @@
  * `consent_page.ts` `normaliseClientName`: Unicode control (Cc) and format (Cf: bidi marks,
  * overrides, isolates, zero-width) characters and line or paragraph separators become spaces,
  * whitespace collapses, the result is trimmed and capped at `maxChars` code points. Null when
- * nothing is left. Reuse audit 29/10/2026: the protocol log used to hand-roll a narrower copy.
+ * nothing is left. The registrar and the protocol log both use it.
  */
 export function normaliseClientString(raw: unknown, maxChars: number): string | null {
   if (typeof raw !== "string") return null;
