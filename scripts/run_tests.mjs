@@ -26,6 +26,7 @@ export const TEST_FILES = [
   "dist/connector/__tests__/return_hook.test.js",
   "dist/connector/__tests__/routes.test.js",
   "dist/connector/__tests__/client_ip_dcr_use.test.js",
+  "dist/connector/__tests__/assistant_lockstep.test.js",
   "dist/tools/shared/__tests__/core_adapter.test.js",
   "dist/tools/shared/__tests__/removal_capture.test.js",
   "dist/tools/user/__tests__/connector_truth.test.js",
@@ -42,7 +43,6 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/resolve_exercise_ids.test.js",
   "dist/tools/user/__tests__/session_modify_mapping.test.js",
   "dist/tools/user/__tests__/swap_exercise_core_input.test.js",
-  "dist/connector/__tests__/assistant_lockstep.test.js",
 ];
 
 /** Script tests (plain .mjs, not compiled). */
