@@ -41,14 +41,24 @@ type IdTokenClient = Awaited<ReturnType<GoogleAuth["getIdTokenClient"]>>;
  * failed creation is forgotten, so the next call retries.
  */
 const idTokenClients = new Map<string, Promise<IdTokenClient>>();
+const ID_TOKEN_CLIENT_TIMEOUT_MS = 10_000;
 
 export function idTokenClientFor(
   targetUrl: string,
   auth: Pick<GoogleAuth, "getIdTokenClient"> = getAuth(),
+  timeoutMs = ID_TOKEN_CLIENT_TIMEOUT_MS,
 ): Promise<IdTokenClient> {
   let client = idTokenClients.get(targetUrl);
   if (!client) {
-    client = auth.getIdTokenClient(targetUrl);
+    // A creation that never settles (a hung metadata server) is rejected and evicted, never cached
+    // forever (security review).
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    client = Promise.race([
+      auth.getIdTokenClient(targetUrl),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("id_token_client_timeout")), timeoutMs);
+      }),
+    ]).finally(() => clearTimeout(timer));
     idTokenClients.set(targetUrl, client);
     client.catch(() => idTokenClients.delete(targetUrl));
   }

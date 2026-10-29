@@ -222,6 +222,12 @@ const emptyUntil = new Map<string, number>();
 const failedUntil = new Map<string, number>();
 /** Profiles whose background stamp call has not landed yet (MCP_FIXES.md §1.6). */
 const stampInFlight = new Set<string>();
+/**
+ * Back-off after a failed BACKGROUND stamp, checked only on the stamp path. A background call can
+ * finish late or be reset while the instance is CPU-throttled between requests; that must never
+ * skip the awaited resume of a rested plan (panel, SRE + pragmatist).
+ */
+const stampFailedUntil = new Map<string, number>();
 
 function cacheUntil(cache: Map<string, number>, profileId: string, untilMs: number, nowMs: number): void {
   if (cache.size >= MAX_CACHE_ENTRIES) {
@@ -262,7 +268,11 @@ export async function runReturnHook(args: {
   if (!mayResume && !connectorStampDue(args.profileData, nowMs, args.stampMinutes)) {
     return "no_work";
   }
-  if (!mayResume && stampInFlight.has(args.profileId)) return "stamp_async";
+  if (!mayResume) {
+    if (stampInFlight.has(args.profileId)) return "stamp_async";
+    const stampBackoff = stampFailedUntil.get(args.profileId);
+    if (stampBackoff != null && stampBackoff > nowMs) return "backoff";
+  }
   const call = callReturnCheck(args.bridge, args.profileId);
   if (!mayResume) {
     // MCP_FIXES.md §1.6: only the presence stamp is due, and the stamp never changes what the
@@ -271,7 +281,10 @@ export async function runReturnHook(args: {
     // the instance is throttled or stops first, the stamp stays due and the next call retries.
     // One background call per profile per instance at a time.
     stampInFlight.add(args.profileId);
-    void call.then((winner) => settle(winner, args, nowMs)).finally(() => stampInFlight.delete(args.profileId));
+    void call
+      .then((winner) => settle(winner, args, nowMs, stampFailedUntil))
+      .catch(() => undefined) // a throw while settling (a broken stdout) must never become an unhandled rejection
+      .finally(() => stampInFlight.delete(args.profileId));
     return "stamp_async";
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -318,6 +331,7 @@ function settle(
   winner: CallOutcome,
   args: { profileId: string; tools: readonly string[]; stampMinutes: number },
   nowMs: number,
+  failureBackoff: Map<string, number> = failedUntil,
 ): "empty" | "resumed" | "failed" {
   if (winner.outcome === "empty") {
     cacheUntil(emptyUntil, args.profileId, nowMs + args.stampMinutes * 60_000, nowMs);
@@ -328,7 +342,7 @@ function settle(
     return "resumed";
   }
   logHook("gateway_return_check_failed", { profile: prefix(args.profileId), tool: args.tools[0], error: winner.error });
-  cacheUntil(failedUntil, args.profileId, nowMs + FAILURE_BACKOFF_MS, nowMs);
+  cacheUntil(failureBackoff, args.profileId, nowMs + FAILURE_BACKOFF_MS, nowMs);
   return "failed";
 }
 
@@ -336,4 +350,5 @@ export function __resetReturnHookCacheForTest(): void {
   emptyUntil.clear();
   failedUntil.clear();
   stampInFlight.clear();
+  stampFailedUntil.clear();
 }

@@ -34,3 +34,17 @@ test("a failed creation is forgotten, so the next call retries", async () => {
   await idTokenClientFor("https://example.test/coreToolsBridge", auth);
   assert.equal(attempts, 2);
 });
+
+test("a creation that never settles is rejected and evicted, so the next call retries", async () => {
+  let attempts = 0;
+  const auth = {
+    getIdTokenClient: () => {
+      attempts++;
+      return attempts === 1 ? new Promise<never>(() => undefined) : Promise.resolve({} as never);
+    },
+  };
+  await assert.rejects(idTokenClientFor("https://example.test/coreToolsBridge", auth, 30), /id_token_client_timeout/);
+  await new Promise((resolve) => setImmediate(resolve));
+  await idTokenClientFor("https://example.test/coreToolsBridge", auth, 30);
+  assert.equal(attempts, 2);
+});

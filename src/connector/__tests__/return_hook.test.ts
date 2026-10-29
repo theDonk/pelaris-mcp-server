@@ -189,6 +189,9 @@ test("stamp only: a background failure still backs off, and never surfaces as an
       return outcome;
     }), "stamp_async");
     assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge: broken, nowMs: t0 + 60_000 }), "backoff");
+    // A failed background stamp never blocks the awaited resume of a rested plan (panel).
+    const resume = fakeBridge(async () => ({ ok: true, result: { resumed_queue_ids: ["q_rest"] } }));
+    assert.equal(await quietly(() => runReturnHook({ ...base, profileData: RESTED, tools: ["get_active_program"], bridge: resume, nowMs: t0 + 61_000 })), "resumed");
     assert.deepEqual(unhandled, []);
   } finally {
     process.off("unhandledRejection", onUnhandled);
