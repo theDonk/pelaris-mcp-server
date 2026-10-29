@@ -4,7 +4,7 @@
  * `functions/src/security/client_ip.ts`.
  *
  * - `gatewayClientIp`: the X-Forwarded-For hop the shared `client_ip_hop`
- *   dial names (`first`, today's key, by default; `right_most` once Brad sets
+ *   dial names (`first`, today's key, by default; `right_most` once an admin sets
  *   it after the hop read), only when it passes `net.isIP`, else `req.ip` when
  *   it does, else null. Used as the DCR limit key.
  * - `forwardedIpHeaders`: what the `/token` and `/revoke` proxies add for the

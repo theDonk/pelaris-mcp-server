@@ -1,7 +1,7 @@
 /**
  * Dual-strategy authentication middleware for Pelaris MCP server.
  *
- * Strategy 1 (primary): OAuth 2.0 JWT tokens issued by the PEL-67 OAuth server.
+ * Strategy 1 (primary): OAuth 2.0 JWT tokens issued by the Pelaris OAuth server.
  * Strategy 2 (fallback): Static bearer token for admin tools.
  */
 
@@ -23,7 +23,7 @@ export interface McpTokenClaims {
   scope: string;
   platform: string;
   profile_id: string;
-  client_id?: string; // PEL-102: added for connected_apps tracking (optional for backward compat)
+  client_id?: string; // for connected_apps tracking (optional for backward compat)
   aud?: string | string[]; // RFC 8707 audience binding (optional during rollout)
   exp: number;
   iat: number;
@@ -242,7 +242,7 @@ export async function verifyBearerToken(
           profileData: access.profileData,
           assistantClass: access.assistantClass,
         };
-        // PEL-102: Fire-and-forget last_used_at update for connected_apps tracking.
+        // Fire-and-forget last_used_at update for connected_apps tracking.
         // Non-blocking to avoid adding latency to MCP tool calls. B2a C6: only
         // once ownership is confirmed (nothing after a failed or fail-open
         // check touches the profile).
@@ -299,7 +299,7 @@ export function hasScope(scopeString: string, requiredScope: string): boolean {
   return scopeString.split(/\s+/).includes(requiredScope);
 }
 
-// ─── last_used_at tracking (PEL-102) ─────────────────────────────────────────
+// ─── last_used_at tracking ─────────────────────────────────────────────────────
 
 // Debounce interval: only update last_used_at once per 5 minutes per client.
 const LAST_USED_DEBOUNCE_MS = 5 * 60 * 1000;

@@ -8,7 +8,7 @@
  * archived programs, foreign-imported sessions, or guessed IDs.
  *
  * These helpers add defence-in-depth using the existing `active_queues`
- * source-of-truth pattern (PEL-220 / `firestore-client.ts:getActiveQueueDocuments`).
+ * source-of-truth pattern (`firestore-client.ts:getActiveQueueDocuments`).
  *
  * Soft-launch: env var `OWNERSHIP_VERIFICATION_LOG_ONLY=true` downgrades
  * throws to console.warn so the first 24h post-deploy can fix any unforeseen

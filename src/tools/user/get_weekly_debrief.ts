@@ -7,7 +7,7 @@
  * the counts are the app's "Program X of Y plus bonus", both read from the app's backend
  * (`get_training_truth` over the coreToolsBridge).
  *
- * 1.4.1 D2 (connector truth, PEL-1211). Before this the tool read the stored debrief
+ * 1.4.1 D2 (connector truth). Before this the tool read the stored debrief
  * itself and quoted its all-origins "planned" figure, so the metrics said "5 of 21"
  * while the debrief's own text said 13, and it listed existing benchmarks as "PRs"
  * beside "no new PRs". Now `sessionsCompleted` and `sessionsPlanned` are the program

@@ -1,5 +1,5 @@
 /**
- * Connector truth (1.4.1 D2, PEL-1211). node:test, no network, no Firestore: the program tools take their reads as
+ * Connector truth (1.4.1 D2). node:test, no network, no Firestore: the program tools take their reads as
  * injected dependencies and run behind a real McpServer and client over the SDK's in-memory transport.
  *
  * The 24 Oct ChatGPT QA session: "week 12" beside "week 1", "5 of 21" beside a debrief that said 13, `pending_deferred`

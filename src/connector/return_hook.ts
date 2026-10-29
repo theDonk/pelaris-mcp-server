@@ -2,9 +2,7 @@
  * The return hook before a DIRECT tool (Pelaris 1.4 B2a lane C, C6 h; B1R
  * `return_check` contract; panel P1-04, P2-5, P5-4).
  *
- * CS4 call site of FL-2 C4.5/C4.6 via B1R return_check, Brad-approved
- * 08/10/2026 (HANDOFF §2; DECISIONS 18), built by B1R 09/10/2026; B2a adds no
- * CS4 logic.
+ * The call site of wayfinder's return_check; this gateway adds no plan logic of its own.
  *
  * A plan rested by the 21-day rule comes back on any sign of return. Tools
  * that go through wayfinder's `coreToolsBridge` already get B1R's return step

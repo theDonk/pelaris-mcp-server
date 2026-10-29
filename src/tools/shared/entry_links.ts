@@ -1,8 +1,7 @@
 /**
  * First Light's entry links, the two the connector hands to an assistant.
  *
- * Programs are built in Pelaris, not in a chat (connector rev 2.1, Brad
- * 20/10/2026, BRAD_RETURN #46). The connector therefore answers "build me a
+ * Programs are built in Pelaris, not in a chat (connector rev 2.1). The connector therefore answers "build me a
  * program" with a link that opens Pelaris at the right place. The tokens are
  * the route tokens of wayfinder's `config/entry_tokens.json` (the closed
  * list; this repo cannot import it, so the two strings live here, once):
