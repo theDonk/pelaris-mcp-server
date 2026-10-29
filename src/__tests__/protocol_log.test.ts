@@ -1,5 +1,5 @@
 /**
- * Protocol-level request log (MCP_FIXES.md §1.4 step 1b, node:test): the description is
+ * Protocol-level request log (node:test): the description is
  * allow-list only, mirrors the SDK's version negotiation, caps and cleans client-controlled
  * strings, and the writer never throws into the request path.
  */
@@ -62,16 +62,16 @@ test("client-controlled strings are capped and stripped of control characters", 
   assert.equal(d.accept, "a,b");
 });
 
-test("security round 1 F1: a huge batch logs at most 10 method names and keeps the true count", () => {
+test("a huge batch logs at most 10 method names and keeps the true count", () => {
   const batch = Array.from({ length: 5000 }, () => ({ jsonrpc: "2.0", method: "tools/list" }));
   const d = describe(batch);
   assert.equal(d.rpcMethods.length, 10);
   assert.equal(d.rpcMessageCount, 5000);
 });
 
-test("security round 1 F2: only spec method names are logged verbatim; free text becomes (other)", () => {
+test("only spec method names are logged verbatim; free text becomes (other)", () => {
   const d = describe([
-    { jsonrpc: "2.0", id: 1, method: "brad@pelaris.io" },
+    { jsonrpc: "2.0", id: 1, method: "someone@example.com" },
     { jsonrpc: "2.0", id: 2, method: "tools/call" },
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { jsonrpc: "2.0", id: 3, method: "server/discover" },

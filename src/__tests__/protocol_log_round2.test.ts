@@ -1,7 +1,7 @@
 /**
- * Protocol-level request log, security review round 2 (node:test): F1 one line on finish OR
- * close with `completed`, F3 the exact spec method set (with an SDK lockstep check), F4
- * clientInfo redaction and the wider character strip, F6 the shared request id.
+ * Protocol-level request log (node:test): one line on finish OR close with `completed`, the
+ * exact spec method set (with an SDK lockstep check), clientInfo redaction and the character
+ * strip, and the shared request id.
  * Synthetic values only.
  */
 import { test } from "node:test";
@@ -20,12 +20,12 @@ const describe = (body: unknown, headers: Record<string, unknown> = {}) =>
 
 const ch = (...codes: number[]) => String.fromCharCode(...codes);
 
-// ─── F3 ───────────────────────────────────────────────────────────────────────
+// ─── Method names ─────────────────────────────────────────────────────────────
 
-test("F3: the method set is exact; unknown names under a known prefix and case variants are (other)", () => {
+test("the method set is exact; unknown names under a known prefix and case variants are (other)", () => {
   const d = describe([
     { jsonrpc: "2.0", method: "notifications/johnsmith" },
-    { jsonrpc: "2.0", id: 1, method: "tools/brad_pelaris_io" },
+    { jsonrpc: "2.0", id: 1, method: "tools/someone_example_com" },
     { jsonrpc: "2.0", id: 2, method: "Tools/Call" },
     { jsonrpc: "2.0", id: 3, method: "resources/templates/list" },
     { jsonrpc: "2.0", method: "notifications/elicitation/complete" },
@@ -34,7 +34,7 @@ test("F3: the method set is exact; unknown names under a known prefix and case v
   assert.ok(!JSON.stringify(d).includes("johnsmith"));
 });
 
-test("F3 lockstep: MCP_SPEC_METHODS is exactly the SDK's method unions plus the 2026-07-28 names", () => {
+test("lockstep: MCP_SPEC_METHODS is exactly the SDK's method unions plus the 2026-07-28 names", () => {
   type Union = { options: { shape: { method: { value: string } } }[] };
   const types = sdkTypes as unknown as Record<string, Union>;
   const sdk = new Set<string>();
@@ -48,22 +48,22 @@ test("F3 lockstep: MCP_SPEC_METHODS is exactly the SDK's method unions plus the 
   assert.deepEqual(extra, ["server/discover", "subscriptions/listen"], "only the 2026-07-28 names may sit outside the SDK");
 });
 
-// ─── F4 ───────────────────────────────────────────────────────────────────────
+// ─── clientInfo ───────────────────────────────────────────────────────────────
 
-test("F4: clientInfo holding an @ (full-width too) is redacted whole", () => {
+test("clientInfo holding an @ (full-width too) is redacted whole", () => {
   const init = (name: unknown, version: unknown) =>
     describe({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", clientInfo: { name, version } } });
-  const a = init("brad@pelaris.io", "1.0");
+  const a = init("someone@example.com", "1.0");
   assert.equal(a.clientName, REDACTED);
   assert.equal(a.clientVersion, "1.0");
   const b = init("Gemini", "user" + ch(0xff20) + "example.com");
   assert.equal(b.clientName, "Gemini");
   assert.equal(b.clientVersion, REDACTED);
-  assert.ok(!JSON.stringify([a, b]).includes("pelaris.io"));
+  assert.ok(!JSON.stringify([a, b]).includes("someone@"));
   assert.ok(!JSON.stringify([a, b]).includes("example.com"));
 });
 
-test("F4: C1 controls, line/paragraph separators and bidi marks, overrides and isolates are stripped", () => {
+test("C1 controls, line/paragraph separators and bidi marks, overrides and isolates are stripped", () => {
   const nasty =
     "Go" + ch(0x85) + "og" + ch(0x9b) + "le" + ch(0x2028) + ch(0x2029) + ch(0x202e) + "x" +
     ch(0x202a) + ch(0x2066) + ch(0x2069) + ch(0x200f) + ch(0x061c);
@@ -79,7 +79,7 @@ test("F4: C1 controls, line/paragraph separators and bidi marks, overrides and i
   assert.equal(onlyMarks.clientName, undefined, "nothing left after the strip logs nothing");
 });
 
-// ─── F1 + F6, through a real Express app mounted as index.ts mounts it ─────────
+// ─── Through a real Express app mounted as index.ts mounts it ─────────────────
 
 interface Captured { lines: Record<string, unknown>[]; restore: () => void }
 
@@ -128,7 +128,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 const post = (base: string, body: unknown, signal?: AbortSignal) =>
   fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
 
-test("F1: a finished request writes exactly one line, completed: true", async () => {
+test("a finished request writes exactly one line, completed: true", async () => {
   const cap = captureStdout();
   try {
     await withApp((app) => app.post("/mcp", (_req, res) => { res.status(202).end(); }), async (base) => {
@@ -146,7 +146,7 @@ test("F1: a finished request writes exactly one line, completed: true", async ()
   assert.deepEqual(lines[0].rpcMethods, ["notifications/initialized"]);
 });
 
-test("F1: a request the client abandons before any reply still writes exactly one line, completed: false", async () => {
+test("a request the client abandons before any reply still writes exactly one line, completed: false", async () => {
   const cap = captureStdout();
   let handlerSawClose!: () => void;
   const closed = new Promise<void>((resolve) => { handlerSawClose = resolve; });
@@ -169,7 +169,7 @@ test("F1: a request the client abandons before any reply still writes exactly on
   assert.deepEqual(lines[0].rpcMethods, ["tools/call"]);
 });
 
-test("F6: the handler's id is the middleware's, and lines written while serving carry it as mcpRequestId", async () => {
+test("the handler's id is the middleware's, and lines written while serving carry it as mcpRequestId", async () => {
   const cap = captureStdout();
   let handlerId = "";
   try {
@@ -195,7 +195,7 @@ test("F6: the handler's id is the middleware's, and lines written while serving 
   assert.equal(tool?.mcpRequestId, handlerId, "and joins the request's mcp_request line");
 });
 
-test("F6: outside a request, or on a line already keyed by the request id, no mcpRequestId is added", () => {
+test("outside a request, or on a line already keyed by the request id, no mcpRequestId is added", () => {
   const cap = captureStdout();
   try {
     logToolCall({ requestId: "outside", tool: "list_goals", latencyMs: 1, success: true });
