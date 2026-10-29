@@ -275,10 +275,12 @@ export async function runReturnHook(args: {
   }
   const call = callReturnCheck(args.bridge, args.profileId);
   if (!mayResume) {
-    // MCP_FIXES.md §1.6: only the presence stamp is due, and the stamp never changes what the
-    // tool reads (no plan can resume: the vendored predicate says so), so the tool does not wait
-    // for it. The empty answer is still cached and a failure still backs off, when it lands. If
-    // the instance is throttled or stops first, the stamp stays due and the next call retries.
+    // MCP_FIXES.md §1.6: only the presence stamp is due and no rested plan can resume (the
+    // vendored predicate says so), so the tool does not wait. The empty answer is still cached and
+    // a failure backs off only this path, when it lands. Two accepted residuals (§1.6): if the
+    // instance is throttled or stops first, the stamp stays due and the next call retries; and a
+    // stamp that writes widens wayfinder's scope to resting_and_stale, so an ACTIVE plan with
+    // Profile Resume evidence may shift on the bridge after this tool read pre-shift dates once.
     // One background call per profile per instance at a time.
     stampInFlight.add(args.profileId);
     void call
