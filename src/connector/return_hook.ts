@@ -167,9 +167,9 @@ export function localDayKeyOf(atMs: number, profile: Raw | null | undefined): st
 
 /**
  * Vendored `connectorStampDue` (wayfinder `services/return_signals.ts`): absent, unreadable,
- * older than the dial, or on an earlier LOCAL day than now (wayfinder d7e8d1c2, 28/10/2026: the
- * stamp writes the day's `connector_use` event, so a use just after local midnight records its
- * own day). The shared case table pins the local-day rows on both sides.
+ * older than the dial, or on an earlier LOCAL day than now (the stamp writes the day's
+ * `connector_use` event, so a use just after local midnight records its own day). The shared
+ * case table pins the local-day rows on both sides.
  */
 export function connectorStampDue(profile: Raw | null | undefined, nowMs: number, stampMinutes: number): boolean {
   const lastMs = timeMsOf(profile?.["last_connector_use_at"]);
