@@ -10,6 +10,7 @@ import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context
 // Pelaris 1.4 B2a lane C, C6: DCR guard, client address, return hook, connector_use.
 import { DEFAULT_OAUTH_CF_BASE, mountConnectorRoutes, runConnectorReturnStep } from "./connector/routes.js";
 import { runWithConnectorFacts } from "./connector/connector_use.js";
+import { serverInfo } from "./server_info.js";
 
 // Single source of truth for version — reads from package.json
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -192,10 +193,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     // become an unhandled rejection that ends the process.
     await runConnectorReturnStep(req);
 
-    const server = new McpServer({
-      name: "pelaris-firebase-mcp",
-      version: VERSION,
-    }, {
+    const server = new McpServer(serverInfo(VERSION), {
       // Server-level framing the client reads. Establishes Pelaris as a
       // fitness/wellness coaching tool (general information, NOT medical advice)
       // and discloses AI-generated output — connector-cert requirement (no
