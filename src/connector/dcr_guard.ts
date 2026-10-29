@@ -36,8 +36,17 @@ export function normaliseClientName(raw: unknown): string | null {
   return Array.from(cleaned).slice(0, CLIENT_NAME_MAX_CHARS).join("").trim();
 }
 
-/** C9's mapped assistant hosts (wayfinder `oauth_handback.ts` HOST_LABELS keys). */
-export const MAPPED_ASSISTANT_HOSTS: ReadonlySet<string> = new Set(["chat.openai.com", "chatgpt.com", "claude.ai", "claude.com"]);
+/**
+ * C9's assistant hosts (wayfinder `oauth_handback.ts` ASSISTANT_HOSTS: HOST_LABELS keys, the
+ * PATH_SCOPED_LABELS keys and ALERT_ONLY_ASSISTANT_HOSTS; PEL-1282). A refused registration that
+ * names one raises the daily alert. `anysphere.cursor-mcp` is Cursor's `cursor://` callback host,
+ * the first URI in its DCR array and so the one a refusal reports. Drift check 4 compares the two
+ * repos; `assistant_lockstep.test.ts` pins the literal on both sides.
+ */
+export const MAPPED_ASSISTANT_HOSTS: ReadonlySet<string> = new Set([
+  "anysphere.cursor-mcp", "callback.mistral.ai", "chat.openai.com", "chatgpt.com", "claude.ai", "claude.com",
+  "grok.com", "oauth-redirect.googleusercontent.com", "www.cursor.com",
+]);
 
 export type DcrRefusedReason = RedirectRefusal | "too_many" | "missing";
 
@@ -110,7 +119,8 @@ export async function raiseConnectorDcrRefusedAlertOnce(
         registrar: line.registrar,
         reason: line.reason,
         scheme: line.scheme,
-        note: "A client registration naming ChatGPT or Claude was refused by the redirect policy. Anyone can " +
+        note: "A client registration naming a mapped AI assistant host (C9's HOST_LABELS) was refused by the " +
+          "redirect policy. Anyone can " +
           "send a registration, so this alone is never a reason to list a scheme. List one in " +
           "system/oauth_redirect_policy.custom_schemes only after the assistant's own published docs name it " +
           "and many refusals share it. Check dcr_refused lines for both registrars.",
