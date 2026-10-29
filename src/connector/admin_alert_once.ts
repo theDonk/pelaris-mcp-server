@@ -6,8 +6,7 @@
  * Each instance also remembers the day it raised, so a busy instance writes at most once a day.
  * Never throws.
  *
- * `dcr_guard.ts` can move onto this helper
- * once its open PRs (#10, #11) have merged; it is left alone here to keep those PRs conflict-free.
+ * `dcr_guard.ts` can move onto this helper in a later change.
  */
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 

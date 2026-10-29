@@ -1,5 +1,5 @@
 /**
- * The connector latency guardrail (MCP_FIXES.md 1.6, node:test): a tools/call over 5 s raises one
+ * The connector latency alert (node:test): a tools/call slower than the dial raises one
  * `connector_latency_slow` admin alert a day, with closed details naming the slow step. A fake
  * Firestore; no network.
  */
@@ -44,7 +44,7 @@ beforeEach(() => {
   __resetGatewayDialsForTest();
 });
 
-const slow = { rpcMethods: ["tools/call"], latencyMs: 7970, steps: { auth: 40, rate_limit: 30, return_check: 7300, tool: 666 }, clientClass: "claude" };
+const slow = { rpcMethods: ["tools/call"], latencyMs: 8000, steps: { auth: 50, rate_limit: 20, return_check: 7000, tool: 900 }, clientClass: "claude" };
 const day = new Date("2026-10-29T04:40:16Z");
 
 test("only a tools/call past the dial (default 5000 ms) is slow", () => {
@@ -65,8 +65,8 @@ test("a slow call raises one alert a day, with the step latencies and a closed c
   assert.equal(created[0].data.category, "connector_latency_slow");
   assert.equal(created[0].data.severity, "warn");
   const details = created[0].data.details as Record<string, unknown>;
-  assert.equal(details.latency_ms, 7970);
-  assert.deepEqual(details.step_latency_ms, { auth: 40, rate_limit: 30, return_check: 7300, tool: 666 });
+  assert.equal(details.latency_ms, 8000);
+  assert.deepEqual(details.step_latency_ms, { auth: 50, rate_limit: 20, return_check: 7000, tool: 900 });
   assert.equal(details.client_class, "claude");
   assert.equal(await noteMcpRequestTiming(slow, new Date("2026-10-30T00:00:01Z")), true, "a new UTC day raises again");
 });
