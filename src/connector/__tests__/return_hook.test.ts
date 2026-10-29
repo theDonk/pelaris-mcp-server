@@ -160,9 +160,9 @@ test("a due stamp calls return_check (its one writer stamps); the gateway writes
   assert.equal(bridge.calls.length, 1);
 });
 
-// ── MCP_FIXES.md §1.6: only a possible resume is awaited ─────────────────────
+// ── Only a possible resume is awaited ────────────────────────────────────────
 
-test("stamp only (running plan, stamp due): the tool does not wait, even for a cold bridge", async () => {
+test("stamp only (running plan, stamp due): the tool does not wait, even for a slow bridge", async () => {
   const slow = fakeBridge(() => new Promise((r) => setTimeout(() => r({ ok: true, result: { resumed_queue_ids: [] } }), 300)));
   const stale = { ...RUNNING, last_connector_use_at: Date.now() - 2 * 3600_000 };
   const t0 = Date.now();
@@ -189,7 +189,7 @@ test("stamp only: a background failure still backs off, and never surfaces as an
       return outcome;
     }), "stamp_async");
     assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge: broken, nowMs: t0 + 60_000 }), "backoff");
-    // A failed background stamp never blocks the awaited resume of a rested plan (panel).
+    // A failed background stamp never blocks the awaited resume of a rested plan.
     const resume = fakeBridge(async () => ({ ok: true, result: { resumed_queue_ids: ["q_rest"] } }));
     assert.equal(await quietly(() => runReturnHook({ ...base, profileData: RESTED, tools: ["get_active_program"], bridge: resume, nowMs: t0 + 61_000 })), "resumed");
     assert.deepEqual(unhandled, []);
@@ -198,7 +198,7 @@ test("stamp only: a background failure still backs off, and never surfaces as an
   }
 });
 
-test("a possible resume is still awaited before the tool reads (the B1R guarantee)", async () => {
+test("a possible resume is still awaited before the tool reads", async () => {
   const slowResume = fakeBridge(() => new Promise((r) => setTimeout(() => r({ ok: true, result: { resumed_queue_ids: ["q_rest"] } }), 120)));
   const started = Date.now();
   const outcome = await quietly(() => runReturnHook({ ...base, timeoutMs: 2000, profileData: RESTED, tools: ["get_active_program"], bridge: slowResume }));

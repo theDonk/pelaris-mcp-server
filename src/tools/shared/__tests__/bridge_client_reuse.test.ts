@@ -1,5 +1,5 @@
 /**
- * The bridge client reuses one ID-token client per target (MCP_FIXES.md §1.6, node:test), so the
+ * The bridge client reuses one ID-token client per target (node:test), so the
  * return check and the tool's own bridge call share a cached token. No network.
  */
 import { test, beforeEach } from "node:test";

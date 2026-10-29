@@ -35,7 +35,7 @@ function getAuth(): GoogleAuth {
 type IdTokenClient = Awaited<ReturnType<GoogleAuth["getIdTokenClient"]>>;
 
 /**
- * One ID-token client per target, reused for the life of the instance (MCP_FIXES.md §1.6). The
+ * One ID-token client per target, reused for the life of the instance. The
  * client caches its ID token until shortly before expiry, so the return check and the tool's own
  * bridge call share one token instead of each minting a fresh one from the metadata server. A
  * failed creation is forgotten, so the next call retries.
@@ -51,7 +51,7 @@ export function idTokenClientFor(
   let client = idTokenClients.get(targetUrl);
   if (!client) {
     // A creation that never settles (a hung metadata server) is rejected and evicted, never cached
-    // forever (security review).
+    // forever.
     let timer: ReturnType<typeof setTimeout> | undefined;
     client = Promise.race([
       auth.getIdTokenClient(targetUrl),

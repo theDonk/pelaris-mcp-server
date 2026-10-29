@@ -220,12 +220,12 @@ const MAX_CACHE_ENTRIES = 5000;
 export const FAILURE_BACKOFF_MS = 5 * 60_000;
 const emptyUntil = new Map<string, number>();
 const failedUntil = new Map<string, number>();
-/** Profiles whose background stamp call has not landed yet (MCP_FIXES.md §1.6). */
+/** Profiles whose background stamp call has not landed yet. */
 const stampInFlight = new Set<string>();
 /**
  * Back-off after a failed BACKGROUND stamp, checked only on the stamp path. A background call can
- * finish late or be reset while the instance is CPU-throttled between requests; that must never
- * skip the awaited resume of a rested plan (panel, SRE + pragmatist).
+ * finish late or be reset between requests; that must never skip the awaited resume of a rested
+ * plan.
  */
 const stampFailedUntil = new Map<string, number>();
 
@@ -275,12 +275,9 @@ export async function runReturnHook(args: {
   }
   const call = callReturnCheck(args.bridge, args.profileId);
   if (!mayResume) {
-    // MCP_FIXES.md §1.6: only the presence stamp is due and no rested plan can resume (the
-    // vendored predicate says so), so the tool does not wait. The empty answer is still cached and
-    // a failure backs off only this path, when it lands. Two accepted residuals (§1.6): if the
-    // instance is throttled or stops first, the stamp stays due and the next call retries; and a
-    // stamp that writes widens wayfinder's scope to resting_and_stale, so an ACTIVE plan with
-    // Profile Resume evidence may shift on the bridge after this tool read pre-shift dates once.
+    // Only the presence stamp is due and no rested plan can resume (the vendored predicate says
+    // so), so the tool does not wait. The empty answer is still cached and a failure backs off
+    // only this path, when it lands; a stamp that never lands stays due and the next call retries.
     // One background call per profile per instance at a time.
     stampInFlight.add(args.profileId);
     void call
