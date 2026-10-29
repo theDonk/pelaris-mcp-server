@@ -71,9 +71,10 @@ test("F4: C1 controls, line/paragraph separators and bidi marks, overrides and i
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: nasty, version: ch(0x2067) + "2.0" } } },
     { accept: "application/json" + ch(0x2028) + "text/html" },
   );
-  assert.equal(d.clientName, "Googlex");
+  // The shared cleaner (src/client_string.ts) turns each one into a space and collapses them.
+  assert.equal(d.clientName, "Go og le x");
   assert.equal(d.clientVersion, "2.0");
-  assert.equal(d.accept, "application/jsontext/html");
+  assert.equal(d.accept, "application/json text/html");
   const onlyMarks = describe({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: ch(0x202e, 0x2066) } } });
   assert.equal(onlyMarks.clientName, undefined, "nothing left after the strip logs nothing");
 });

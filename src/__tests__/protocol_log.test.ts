@@ -86,7 +86,7 @@ test("logMcpRequest never throws, even when stdout fails", () => {
     throw new Error("stdout broken");
   };
   try {
-    assert.doesNotThrow(() => logMcpRequest({ requestId: "r", httpMethod: "POST", status: 200, completed: true, durationMs: 1 }));
+    assert.doesNotThrow(() => logMcpRequest({ requestId: "r", httpMethod: "POST", status: 200, completed: true, latencyMs: 1 }));
   } finally {
     process.stdout.write = original;
   }

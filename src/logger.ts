@@ -8,6 +8,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "crypto";
 
+import { normaliseClientString } from "./client_string.js";
 import { noteConnectorToolSuccess } from "./connector/connector_use.js";
 
 export interface LogEntry {
@@ -36,14 +37,32 @@ export function generateRequestId(): string {
  * while serving it (each tool's `tool_call`, the handler's error line) carries `mcpRequestId`
  * and joins the request's `mcp_request` line.
  */
-const mcpRequestIdStore = new AsyncLocalStorage<string>();
+/**
+ * Where the time of one /mcp request goes (MCP_FIXES.md §1.6): milliseconds per step, written on
+ * the request's `mcp_request` line as `stepLatencyMs`. `tool` sums the `latencyMs` of every
+ * `tool_call` logged while serving the request.
+ */
+export interface McpStepLatencies {
+  auth?: number;
+  rate_limit?: number;
+  return_check?: number;
+  tool?: number;
+}
 
-export function runWithMcpRequestId<T>(mcpRequestId: string, fn: () => T): T {
-  return mcpRequestIdStore.run(mcpRequestId, fn);
+const mcpRequestStore = new AsyncLocalStorage<{ id: string; steps?: McpStepLatencies }>();
+
+export function runWithMcpRequestId<T>(mcpRequestId: string, fn: () => T, steps?: McpStepLatencies): T {
+  return mcpRequestStore.run({ id: mcpRequestId, steps }, fn);
 }
 
 export function currentMcpRequestId(): string | undefined {
-  return mcpRequestIdStore.getStore();
+  return mcpRequestStore.getStore()?.id;
+}
+
+/** Add `ms` to a step of the request being served (no-op outside one). */
+export function addStepLatency(step: keyof McpStepLatencies, ms: number, steps = mcpRequestStore.getStore()?.steps): void {
+  if (!steps || !Number.isFinite(ms) || ms < 0) return;
+  steps[step] = (steps[step] ?? 0) + Math.round(ms);
 }
 
 /**
@@ -89,6 +108,7 @@ export function logToolCall(params: {
     error: params.error,
     ...(params.extras ?? {}),
   });
+  addStepLatency("tool", params.latencyMs);
   // B2a C6 (d), FL-9 1.6: presence through ChatGPT or Claude. Its own closed
   // line (tool_call stays pseudonym-only); only under OAuth facts the
   // ownership check allowed, never for admin auth.
@@ -117,19 +137,9 @@ export function logServer(message: string, extra?: Record<string, unknown>): voi
 
 const MAX_FIELD = 120;
 
-/**
- * Characters that are never logged from a client-controlled string: C0 and C1 controls, DEL,
- * the Unicode line/paragraph separators (they split a line in some log viewers), and the bidi
- * formatting characters (LRM/RLM/ALM, embeddings/overrides U+202A-202E, isolates U+2066-2069),
- * which can make a log line read differently from what it holds (security round 2, F4).
- */
-// eslint-disable-next-line no-control-regex
-const UNLOGGABLE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;
-
 function cleanField(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length === 0) return undefined;
-  const cleaned = value.replace(UNLOGGABLE_CHARS, "").slice(0, MAX_FIELD);
-  return cleaned.length > 0 ? cleaned : undefined;
+  // The one client-string cleaner (src/client_string.ts), capped at 120 for the log.
+  return normaliseClientString(value, MAX_FIELD) ?? undefined;
 }
 
 /**
@@ -269,8 +279,11 @@ export function logMcpRequest(params: {
   status: number;
   /** `res.writableFinished`: false when the client went away before the reply was sent (F1). */
   completed: boolean;
-  durationMs: number;
-  clientClass?: string;
+  /** The whole request, ms (the existing `latencyMs` key; was `durationMs` before 29/10/2026). */
+  latencyMs: number;
+  /** The token's assistant class (the existing `client_class` key; was `clientClass`). */
+  client_class?: string;
+  stepLatencyMs?: McpStepLatencies;
   description?: McpRequestDescription;
 }): void {
   try {
@@ -282,8 +295,9 @@ export function logMcpRequest(params: {
       httpMethod: params.httpMethod,
       status: params.status,
       completed: params.completed,
-      durationMs: params.durationMs,
-      ...(params.clientClass ? { clientClass: params.clientClass } : {}),
+      latencyMs: params.latencyMs,
+      ...(params.client_class ? { client_class: params.client_class } : {}),
+      ...(params.stepLatencyMs && Object.keys(params.stepLatencyMs).length > 0 ? { stepLatencyMs: params.stepLatencyMs } : {}),
       ...(params.description ?? {}),
     });
   } catch {
