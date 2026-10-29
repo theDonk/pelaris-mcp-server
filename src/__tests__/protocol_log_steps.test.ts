@@ -1,7 +1,7 @@
 /**
- * Where a /mcp request's time goes (MCP_FIXES.md §1.6, node:test): the `mcp_request` line carries
+ * Where a /mcp request's time goes (node:test): the `mcp_request` line carries
  * `latencyMs` (the existing key) and `stepLatencyMs` for auth, rate limit, return check and tool,
- * through a real Express app mounted as index.ts mounts it. Plus the reuse audit: one
+ * through a real Express app mounted as index.ts mounts it. Plus: one
  * client-string cleaner for the registrar and the log. Synthetic values only.
  */
 import { test } from "node:test";
@@ -121,7 +121,7 @@ test("a step that throws or rejects reaches Express's error handler, never hangs
   });
 });
 
-test("reuse audit: one client-string cleaner for the registrar (64) and the protocol log (120)", () => {
+test("one client-string cleaner for the registrar (64) and the protocol log (120)", () => {
   const raw = "Pel" + String.fromCharCode(0x202e) + "aris" + String.fromCharCode(0x2028) + "x".repeat(300);
   assert.equal(normaliseClientName(raw), normaliseClientString(raw, 64));
   const d = describeMcpRequest(

@@ -31,14 +31,14 @@ export function generateRequestId(): string {
 }
 
 /**
- * The id of the /mcp HTTP request being served (security round 2, F6). The protocol-log
+ * The id of the /mcp HTTP request being served. The protocol-log
  * middleware mints it and puts it on `res.locals.mcpRequestId`; the /mcp handler reuses it as
  * its own `requestId` and runs the request inside `runWithMcpRequestId`, so every line written
  * while serving it (each tool's `tool_call`, the handler's error line) carries `mcpRequestId`
  * and joins the request's `mcp_request` line.
  */
 /**
- * Where the time of one /mcp request goes (MCP_FIXES.md §1.6): milliseconds per step, written on
+ * Where the time of one /mcp request goes: milliseconds per step, written on
  * the request's `mcp_request` line as `stepLatencyMs`. `tool` sums the `latencyMs` of every
  * `tool_call` logged while serving the request.
  */
@@ -126,10 +126,9 @@ export function logServer(message: string, extra?: Record<string, unknown>): voi
   });
 }
 
-// ─── Protocol-level request log (MCP_FIXES.md §1.4 step 1b) ─────────────────────────
+// ─── Protocol-level request log ──────────────────────────────────────────────────────
 //
-// One line per HTTP request to /mcp, so a client that misbehaves (Gemini, 28/10/2026) can be
-// diagnosed from evidence: which JSON-RPC methods it sent, which protocol version it asked
+// One line per HTTP request to /mcp, so a client's behaviour can be diagnosed from evidence: which JSON-RPC methods it sent, which protocol version it asked
 // for, which one we answered, and how the transport headers looked. ALLOW-LIST ONLY: never
 // arguments, results, tokens, the Authorization header, emails, uids or profile ids. Every
 // string is length-capped and stripped of control characters, because clientInfo and headers
@@ -144,7 +143,7 @@ function cleanField(value: unknown): string | undefined {
 
 /**
  * `clientInfo` is written by the client and arrives before authentication, so it is logged
- * even on a 401 (security round 2, F4). A value that holds an "@" (an email, a handle) after
+ * even on a 401. A value that holds an "@" (an email, a handle) after
  * NFKC folding (so a full-width at sign counts too) is replaced whole, never logged.
  */
 export const REDACTED = "(redacted)";
@@ -160,7 +159,7 @@ function headerValue(headers: Record<string, unknown>, name: string): string | u
   return cleanField(Array.isArray(raw) ? raw.join(",") : raw);
 }
 
-/** At most this many method names per line; `rpcMessageCount` keeps the true size (security F1). */
+/** At most this many method names per line; `rpcMessageCount` keeps the true size. */
 const MAX_LOGGED_METHODS = 10;
 
 /**
@@ -169,7 +168,7 @@ const MAX_LOGGED_METHODS = 10;
  * `ServerRequest` and `ServerNotification` unions; a lockstep test fails if the SDK grows one
  * this set lacks), plus the two 2026-07-28 methods a newer client may probe with. Anything else
  * is "(other)", so a client can't write free text into the log through `method`, not even under
- * a known prefix such as `notifications/<name>` (security round 2, F3).
+ * a known prefix such as `notifications/<name>`.
  */
 export const MCP_SPEC_METHODS: ReadonlySet<string> = new Set([
   // Lifecycle and utilities
@@ -208,7 +207,7 @@ export const MCP_SPEC_METHODS: ReadonlySet<string> = new Set([
   "notifications/prompts/list_changed",
   "notifications/tasks/status",
   "notifications/elicitation/complete",
-  // 2026-07-28 (MCP_FIXES.md §1.3b); not in the v1 SDK
+  // 2026-07-28 spec; not in the v1 SDK
   "server/discover",
   "subscriptions/listen",
 ]);
@@ -277,11 +276,11 @@ export function logMcpRequest(params: {
   requestId: string;
   httpMethod: string;
   status: number;
-  /** `res.writableFinished`: false when the client went away before the reply was sent (F1). */
+  /** `res.writableFinished`: false when the client went away before the reply was sent. */
   completed: boolean;
-  /** The whole request, ms (the existing `latencyMs` key; was `durationMs` before 29/10/2026). */
+  /** The whole request, ms (the shared `latencyMs` key). */
   latencyMs: number;
-  /** The token's assistant class (the existing `client_class` key; was `clientClass`). */
+  /** The token's assistant class (the shared `client_class` key). */
   client_class?: string;
   stepLatencyMs?: McpStepLatencies;
   description?: McpRequestDescription;

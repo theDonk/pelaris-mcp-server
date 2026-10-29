@@ -1,18 +1,16 @@
 /**
- * Protocol-level request log middleware for /mcp (MCP_FIXES.md §1.4 step 1b).
+ * Protocol-level request log middleware for /mcp.
  *
  * One allow-listed `mcp_request` line per HTTP request to /mcp, so 401s and the GET/DELETE
  * 405s are seen too. Mounted after `express.json()`: a body express.json rejects (malformed
- * JSON, 400) never reaches it, so that request writes no line (security round 2, F2; see
- * MCP_FIXES.md §1).
+ * JSON, 400) never reaches it, so that request writes no line.
  *
  * The line is written exactly once, when the response finishes OR the connection closes,
- * whichever comes first (security round 2, F1). A client that hangs up before we reply (very
- * likely what Gemini's stall looks like from our side) still writes a line, with
+ * whichever comes first. A client that hangs up before we reply still writes a line, with
  * `completed: false`.
  *
  * The request id is minted here and shared through `res.locals.mcpRequestId`, so the /mcp
- * handler's lines join this one (F6). Describing the request or writing the line can never
+ * handler's lines join this one. Describing the request or writing the line can never
  * fail the request: every step is guarded.
  */
 import type { NextFunction, Request, Response } from "express";
@@ -31,7 +29,7 @@ import {
 /** The `res.locals` key the /mcp handler reads the shared request id from. */
 export const MCP_REQUEST_ID_LOCAL = "mcpRequestId";
 
-/** The `res.locals` key holding this request's step latencies (MCP_FIXES.md §1.6). */
+/** The `res.locals` key holding this request's step latencies. */
 export const MCP_STEPS_LOCAL = "mcpSteps";
 
 export function mcpProtocolLog(req: Request, res: Response, next: NextFunction): void {

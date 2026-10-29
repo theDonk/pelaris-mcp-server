@@ -79,7 +79,7 @@ const app = express();
 app.use(corsMiddleware);
 app.use(express.json());
 
-// Protocol-level request log (MCP_FIXES.md §1.4 step 1b): one allow-listed line per /mcp
+// Protocol-level request log: one allow-listed line per /mcp
 // request, written once on finish or close, so 401s, 405s and aborted requests are seen too.
 app.use("/mcp", mcpProtocolLog);
 
@@ -179,7 +179,7 @@ app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
 
 // MCP endpoint — stateless mode (fresh server per request)
 app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", rateLimiter), async (req: McpAuthenticatedRequest, res) => {
-  // F6: the protocol-log middleware's id, so this request's lines join its mcp_request line.
+  // The protocol-log middleware's id, so this request's lines join its mcp_request line.
   const requestId = mcpRequestIdFor(res);
   const authContext = req.mcpAuth || null;
 
