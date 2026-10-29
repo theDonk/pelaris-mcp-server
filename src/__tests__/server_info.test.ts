@@ -1,5 +1,5 @@
 /**
- * The serverInfo a client sees (MCP_FIXES.md §2, node:test): through a REAL MCP client over the
+ * The serverInfo a client sees (node:test): through a REAL MCP client over the
  * SDK's in-memory transport, `initialize` answers name and title "Pelaris", never the internal
  * package name, and the /mcp handler builds its server from `serverInfo`.
  */
