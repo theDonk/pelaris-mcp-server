@@ -62,14 +62,14 @@ test("client-controlled strings are capped and stripped of control characters", 
   assert.equal(d.accept, "a,b");
 });
 
-test("security F1: a huge batch logs at most 10 method names and keeps the true count", () => {
+test("security round 1 F1: a huge batch logs at most 10 method names and keeps the true count", () => {
   const batch = Array.from({ length: 5000 }, () => ({ jsonrpc: "2.0", method: "tools/list" }));
   const d = describe(batch);
   assert.equal(d.rpcMethods.length, 10);
   assert.equal(d.rpcMessageCount, 5000);
 });
 
-test("security F2: only spec method names are logged verbatim; free text becomes (other)", () => {
+test("security round 1 F2: only spec method names are logged verbatim; free text becomes (other)", () => {
   const d = describe([
     { jsonrpc: "2.0", id: 1, method: "brad@pelaris.io" },
     { jsonrpc: "2.0", id: 2, method: "tools/call" },
@@ -86,7 +86,7 @@ test("logMcpRequest never throws, even when stdout fails", () => {
     throw new Error("stdout broken");
   };
   try {
-    assert.doesNotThrow(() => logMcpRequest({ requestId: "r", httpMethod: "POST", status: 200, durationMs: 1 }));
+    assert.doesNotThrow(() => logMcpRequest({ requestId: "r", httpMethod: "POST", status: 200, completed: true, durationMs: 1 }));
   } finally {
     process.stdout.write = original;
   }
