@@ -208,7 +208,9 @@ export type ReturnHookOutcome =
   | "empty"
   | "resumed"
   | "failed"
-  | "timed_out";
+  | "timed_out"
+  /** Only the presence stamp was due: return_check runs in the background, the tool does not wait. */
+  | "stamp_async";
 
 export type BridgeCall = (tool: string, profileId: string, input: Record<string, unknown>) =>
   Promise<{ ok: boolean; result?: unknown; error?: string }>;
@@ -218,6 +220,8 @@ const MAX_CACHE_ENTRIES = 5000;
 export const FAILURE_BACKOFF_MS = 5 * 60_000;
 const emptyUntil = new Map<string, number>();
 const failedUntil = new Map<string, number>();
+/** Profiles whose background stamp call has not landed yet (MCP_FIXES.md §1.6). */
+const stampInFlight = new Set<string>();
 
 function cacheUntil(cache: Map<string, number>, profileId: string, untilMs: number, nowMs: number): void {
   if (cache.size >= MAX_CACHE_ENTRIES) {
@@ -254,26 +258,26 @@ export async function runReturnHook(args: {
   if (cachedUntil != null && cachedUntil > nowMs) return "cached_empty";
   const backoffUntil = failedUntil.get(args.profileId);
   if (backoffUntil != null && backoffUntil > nowMs) return "backoff";
-  if (!mayHaveReturnWorkResting(args.profileData) && !connectorStampDue(args.profileData, nowMs, args.stampMinutes)) {
+  const mayResume = mayHaveReturnWorkResting(args.profileData);
+  if (!mayResume && !connectorStampDue(args.profileData, nowMs, args.stampMinutes)) {
     return "no_work";
+  }
+  if (!mayResume && stampInFlight.has(args.profileId)) return "stamp_async";
+  const call = callReturnCheck(args.bridge, args.profileId);
+  if (!mayResume) {
+    // MCP_FIXES.md §1.6: only the presence stamp is due, and the stamp never changes what the
+    // tool reads (no plan can resume: the vendored predicate says so), so the tool does not wait
+    // for it. The empty answer is still cached and a failure still backs off, when it lands. If
+    // the instance is throttled or stops first, the stamp stays due and the next call retries.
+    // One background call per profile per instance at a time.
+    stampInFlight.add(args.profileId);
+    void call.then((winner) => settle(winner, args, nowMs)).finally(() => stampInFlight.delete(args.profileId));
+    return "stamp_async";
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timed_out">((resolve) => {
     timer = setTimeout(() => resolve("timed_out"), args.timeoutMs);
   });
-  // B2a fix pass (CR-10): `.then(onOk).catch(onErr)`, not `.then(onOk, onErr)`. The two-argument form
-  // does not catch a throw inside onOk, so a malformed reply (a null body: `envelope.ok` throws) made
-  // `call` reject, and a rejection that lands after the timeout won the race had no handler at all.
-  // The error text is a closed code: never the reply's or the error's own words.
-  const call = Promise.resolve().then(() => args.bridge("return_check", args.profileId, {})).then(
-    (envelope) => {
-      if (envelope == null || typeof envelope !== "object") return { outcome: "failed" as const, error: "malformed_reply" };
-      if (!envelope.ok) return { outcome: "failed" as const, error: String(envelope.error ?? "not_ok").slice(0, 64) };
-      const resumed = (envelope.result as { resumed_queue_ids?: unknown } | undefined)?.resumed_queue_ids;
-      const count = Array.isArray(resumed) ? resumed.length : 0;
-      return { outcome: count > 0 ? "resumed" as const : "empty" as const, count };
-    },
-  ).catch((error: unknown) => ({ outcome: "failed" as const, error: (error instanceof Error ? error.message : String(error)).slice(0, 64) }));
   const winner = await Promise.race([call, timeout]);
   if (timer) clearTimeout(timer);
   if (winner === "timed_out") {
@@ -284,6 +288,37 @@ export async function runReturnHook(args: {
     cacheUntil(failedUntil, args.profileId, nowMs + FAILURE_BACKOFF_MS, nowMs);
     return "timed_out";
   }
+  return settle(winner, args, nowMs);
+}
+
+type CallOutcome =
+  | { outcome: "failed"; error: string }
+  | { outcome: "empty"; count: number }
+  | { outcome: "resumed"; count: number };
+
+/** One `return_check` bridge call. Never rejects. */
+function callReturnCheck(bridge: BridgeCall, profileId: string): Promise<CallOutcome> {
+  // B2a fix pass (CR-10): `.then(onOk).catch(onErr)`, not `.then(onOk, onErr)`. The two-argument form
+  // does not catch a throw inside onOk, so a malformed reply (a null body: `envelope.ok` throws) made
+  // `call` reject, and a rejection that lands after the timeout won the race had no handler at all.
+  // The error text is a closed code: never the reply's or the error's own words.
+  return Promise.resolve().then(() => bridge("return_check", profileId, {})).then(
+    (envelope) => {
+      if (envelope == null || typeof envelope !== "object") return { outcome: "failed" as const, error: "malformed_reply" };
+      if (!envelope.ok) return { outcome: "failed" as const, error: String(envelope.error ?? "not_ok").slice(0, 64) };
+      const resumed = (envelope.result as { resumed_queue_ids?: unknown } | undefined)?.resumed_queue_ids;
+      const count = Array.isArray(resumed) ? resumed.length : 0;
+      return { outcome: count > 0 ? "resumed" as const : "empty" as const, count };
+    },
+  ).catch((error: unknown) => ({ outcome: "failed" as const, error: (error instanceof Error ? error.message : String(error)).slice(0, 64) }));
+}
+
+/** Cache an empty answer, log a resume, back off after a failure. */
+function settle(
+  winner: CallOutcome,
+  args: { profileId: string; tools: readonly string[]; stampMinutes: number },
+  nowMs: number,
+): "empty" | "resumed" | "failed" {
   if (winner.outcome === "empty") {
     cacheUntil(emptyUntil, args.profileId, nowMs + args.stampMinutes * 60_000, nowMs);
     return "empty";
@@ -300,4 +335,5 @@ export async function runReturnHook(args: {
 export function __resetReturnHookCacheForTest(): void {
   emptyUntil.clear();
   failedUntil.clear();
+  stampInFlight.clear();
 }

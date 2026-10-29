@@ -32,6 +32,33 @@ function getAuth(): GoogleAuth {
   return _auth;
 }
 
+type IdTokenClient = Awaited<ReturnType<GoogleAuth["getIdTokenClient"]>>;
+
+/**
+ * One ID-token client per target, reused for the life of the instance (MCP_FIXES.md §1.6). The
+ * client caches its ID token until shortly before expiry, so the return check and the tool's own
+ * bridge call share one token instead of each minting a fresh one from the metadata server. A
+ * failed creation is forgotten, so the next call retries.
+ */
+const idTokenClients = new Map<string, Promise<IdTokenClient>>();
+
+export function idTokenClientFor(
+  targetUrl: string,
+  auth: Pick<GoogleAuth, "getIdTokenClient"> = getAuth(),
+): Promise<IdTokenClient> {
+  let client = idTokenClients.get(targetUrl);
+  if (!client) {
+    client = auth.getIdTokenClient(targetUrl);
+    idTokenClients.set(targetUrl, client);
+    client.catch(() => idTokenClients.delete(targetUrl));
+  }
+  return client;
+}
+
+export function __resetIdTokenClientsForTest(): void {
+  idTokenClients.clear();
+}
+
 function isEmulator(): boolean {
   return !!process.env.FIRESTORE_EMULATOR_HOST;
 }
@@ -72,7 +99,7 @@ export async function callCoreBridge(
     return (await resp.json()) as BridgeResult;
   }
 
-  const client = await getAuth().getIdTokenClient(targetUrl);
+  const client = await idTokenClientFor(targetUrl);
   const response = await client.request({
     url: targetUrl,
     method: "POST",
