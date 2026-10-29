@@ -1,8 +1,7 @@
 name: PR checks
 
-# MCP_FIXES.md section 4.2 (29/10/2026): deploy.yml ran tsc and the tests only on a push to main, after the merge,
-# so a broken test blocked a deploy instead of a PR. This runs the same steps on every PR, with no credentials and
-# no deploy. The contract drift job compares this repo's vendored wayfinder rules with wayfinder itself.
+# Runs on every PR, with no deploy: the same type check, build and tests as deploy.yml, a workflow audit, and the
+# cross-repo contract check against the wayfinder repository's rules.
 on:
   pull_request:
     branches: [main]
@@ -19,8 +18,10 @@ jobs:
     name: Type check, build, test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -30,29 +31,54 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  # The wayfinder half of the cross-repo contract (wayfinder tools/check_gateway_contract_drift.mjs), against the
-  # wayfinder branch of the SAME NAME when one exists (a lockstep pair), else wayfinder main. wayfinder is private:
-  # skipped with a visible warning until Brad adds WAYFINDER_READONLY_TOKEN (fine-grained, contents:read on
-  # theDonk/wayfinder), the same secret name pelaris-admin's CI uses.
+  workflow-lint:
+    name: Workflow lint (zizmor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: pipx run zizmor==1.30.1 --offline --persona auditor --config .github/zizmor.yml .github/workflows
+
+  # The wayfinder half of the cross-repo contract (wayfinder's tools/check_gateway_contract_drift.mjs), against the
+  # wayfinder branch of the same name when one exists (a lockstep pair), else wayfinder main. Read-only, sparse, with
+  # the token passed to actions/checkout only. Skipped with a visible warning until WAYFINDER_READONLY_TOKEN is set.
   wayfinder-contract-drift:
     name: Wayfinder contract drift
     runs-on: ubuntu-latest
-    env:
-      WAYFINDER_TOKEN: ${{ secrets.WAYFINDER_READONLY_TOKEN }}
-      HEAD_REF: ${{ github.head_ref }}
     steps:
-      - uses: actions/checkout@v4
-      - if: env.WAYFINDER_TOKEN == ''
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: gate
+        env:
+          HAS_TOKEN: ${{ secrets.WAYFINDER_READONLY_TOKEN != '' }}
+        run: echo "has_token=$HAS_TOKEN" >> "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.has_token != 'true'
         run: echo "::warning::WAYFINDER_READONLY_TOKEN is not set; the wayfinder contract drift check did not run."
-      - if: env.WAYFINDER_TOKEN != ''
-        name: Check out the paired wayfinder branch (read-only, sparse)
-        run: |
-          set -euo pipefail
-          url="https://x-access-token:${WAYFINDER_TOKEN}@github.com/theDonk/wayfinder.git"
-          ref=main
-          if [ -n "${HEAD_REF:-}" ] && git ls-remote --exit-code --heads "$url" "$HEAD_REF" >/dev/null 2>&1; then ref="$HEAD_REF"; fi
-          echo "Wayfinder ref: $ref"
-          git clone --depth 1 --filter=blob:none --sparse --branch "$ref" "$url" "$RUNNER_TEMP/wayfinder"
-          git -C "$RUNNER_TEMP/wayfinder" sparse-checkout set tools functions/src
-      - if: env.WAYFINDER_TOKEN != ''
-        run: node "$RUNNER_TEMP/wayfinder/tools/check_gateway_contract_drift.mjs" "$GITHUB_WORKSPACE"
+      - id: paired
+        if: steps.gate.outputs.has_token == 'true'
+        continue-on-error: true
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: theDonk/wayfinder
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.WAYFINDER_READONLY_TOKEN }}
+          path: wayfinder
+          sparse-checkout: |
+            tools
+            functions/src
+          persist-credentials: false
+      - if: steps.gate.outputs.has_token == 'true' && steps.paired.outcome != 'success'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: theDonk/wayfinder
+          ref: main
+          token: ${{ secrets.WAYFINDER_READONLY_TOKEN }}
+          path: wayfinder
+          sparse-checkout: |
+            tools
+            functions/src
+          persist-credentials: false
+      - if: steps.gate.outputs.has_token == 'true'
+        run: node wayfinder/tools/check_gateway_contract_drift.mjs "$GITHUB_WORKSPACE"

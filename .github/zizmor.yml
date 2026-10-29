@@ -1,0 +1,29 @@
+# zizmor configuration. zizmor is the standard GitHub Actions auditor; the workflow-lint job in ci.yml runs it,
+# pinned:
+#
+#   zizmor --persona auditor --offline .github/workflows
+#
+#   - `template-injection` at the auditor persona (the strictest): any `${{ github.event.* }}`, `head_ref` or step
+#     output expanded inside a `run:` or script is a finding. Event text reaches the shell through `env`.
+#   - `unpinned-uses`: every action is pinned to a full commit hash.
+#   - `artipacked`: every checkout sets `persist-credentials: false`.
+#   - the remaining audits are off by id, as in the sibling repos' configuration.
+rules:
+  template-injection:
+    disable: false
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin
+  artipacked:
+    disable: false
+  excessive-permissions:
+    disable: true
+  secrets-outside-env:
+    disable: true
+  undocumented-permissions:
+    disable: true
+  concurrency-limits:
+    disable: true
+  anonymous-definition:
+    disable: true
