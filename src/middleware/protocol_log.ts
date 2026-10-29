@@ -64,7 +64,7 @@ export function mcpProtocolLog(req: Request, res: Response, next: NextFunction):
         stepLatencyMs: steps,
         description,
       });
-      // MCP_FIXES.md 1.6: one admin alert a day for a tool call past the SLO's 5 s (never throws).
+      // One admin alert a day for a tool call slower than the connector_slow_call_alert_ms dial (never throws).
       void noteMcpRequestTiming({ rpcMethods: description?.rpcMethods, latencyMs, steps, clientClass });
     } catch {
       // Observability only.

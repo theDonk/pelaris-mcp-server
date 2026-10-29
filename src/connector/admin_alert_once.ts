@@ -6,7 +6,7 @@
  * Each instance also remembers the day it raised, so a busy instance writes at most once a day.
  * Never throws.
  *
- * MCP_FIXES.md 1.6 (connector latency, 29/10/2026). `dcr_guard.ts` can move onto this helper
+ * `dcr_guard.ts` can move onto this helper
  * once its open PRs (#10, #11) have merged; it is left alone here to keep those PRs conflict-free.
  */
 import { Timestamp, type Firestore } from "firebase-admin/firestore";

@@ -7,9 +7,9 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { __resetAdminAlertOnceForTest, adminAlertDocId } from "../admin_alert_once.js";
+import { __resetGatewayDialsForTest, __setGatewayDialsFetcherForTest, loadGatewayDials } from "../dials.js";
 import {
   CONNECTOR_LATENCY_SLOW_CATEGORY,
-  SLOW_TOOL_CALL_MS,
   __setLatencyAlertFirestoreForTest,
   isSlowToolCall,
   latencyAlertDetails,
@@ -39,13 +39,15 @@ function fakeDb(existing = new Set<string>()) {
   return { db: db as never, created };
 }
 
-beforeEach(() => __resetAdminAlertOnceForTest());
+beforeEach(() => {
+  __resetAdminAlertOnceForTest();
+  __resetGatewayDialsForTest();
+});
 
 const slow = { rpcMethods: ["tools/call"], latencyMs: 7970, steps: { auth: 40, rate_limit: 30, return_check: 7300, tool: 666 }, clientClass: "claude" };
 const day = new Date("2026-10-29T04:40:16Z");
 
-test("only a tools/call past 5 s is slow", () => {
-  assert.equal(SLOW_TOOL_CALL_MS, 5000);
+test("only a tools/call past the dial (default 5000 ms) is slow", () => {
   assert.equal(isSlowToolCall(slow), true);
   assert.equal(isSlowToolCall({ ...slow, latencyMs: 5000 }), false);
   assert.equal(isSlowToolCall({ ...slow, rpcMethods: ["tools/list"] }), false);
@@ -87,9 +89,22 @@ test("a fast call or a non-tool request writes nothing; a broken Firestore never
 });
 
 test("details are closed: an unknown class reads unknown, missing steps read null, no ids or strings from the client", () => {
-  const details = latencyAlertDetails({ rpcMethods: ["tools/call"], latencyMs: 6000.4, steps: { tool: 5900 }, clientClass: "brad@pelaris.io" });
+  const details = latencyAlertDetails({ rpcMethods: ["tools/call"], latencyMs: 6000.4, steps: { tool: 5900 }, clientClass: "user@example.test" }, 5000);
   assert.equal(details.client_class, "unknown");
   assert.deepEqual(details.step_latency_ms, { auth: null, rate_limit: null, return_check: null, tool: 5900 });
   assert.equal(details.latency_ms, 6000);
   assert.ok(!JSON.stringify(details).includes("@"));
+});
+
+test("the threshold is the connector_slow_call_alert_ms dial, clamped to its bounds", async () => {
+  const { db, created } = fakeDb();
+  __setLatencyAlertFirestoreForTest(async () => db);
+  __setGatewayDialsFetcherForTest(async (path) => (path === "system_config/jit_controls" ? { connector_slow_call_alert_ms: 10_000 } : null));
+  await loadGatewayDials();
+  assert.equal(await noteMcpRequestTiming({ ...slow, latencyMs: 7000 }, day), false, "under a 10 s dial");
+  assert.equal(await noteMcpRequestTiming({ ...slow, latencyMs: 12_000 }, day), true);
+  assert.equal((created[0].data.details as Record<string, unknown>).threshold_ms, 10_000);
+  __setGatewayDialsFetcherForTest(async () => ({ connector_slow_call_alert_ms: 1 }));
+  await loadGatewayDials();
+  assert.equal(isSlowToolCall({ ...slow, latencyMs: 900 }), false, "clamped to the 1000 ms floor");
 });

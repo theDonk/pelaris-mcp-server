@@ -9,7 +9,8 @@
  *   - `system/oauth_redirect_policy.custom_schemes` (C1, `redirect_policy.ts`);
  *   - `system_config/jit_controls` (B1R, `services/jit_controls.ts`):
  *     `connector_use_stamp_minutes` 60 (1 to 1440),
- *     `bridge_return_step_timeout_ms` 10000 (250 to 30000).
+ *     `bridge_return_step_timeout_ms` 10000 (250 to 30000),
+ *     `connector_slow_call_alert_ms` 5000 (1000 to 30000).
  * Read at most once a minute; a failed read keeps the last good value, else
  * the defaults. Never throws. Bounds are checked against wayfinder by
  * `tools/check_gateway_contract_drift.mjs` there.
@@ -29,6 +30,8 @@ export interface GatewayDials {
   createLimitMode: CreateLimitMode;
   connectorUseStampMinutes: number;
   bridgeReturnStepTimeoutMs: number;
+  /** A tools/call slower than this raises the day's connector_latency_slow alert. */
+  connectorSlowCallAlertMs: number;
   redirectPolicy: RedirectPolicy;
 }
 
@@ -39,6 +42,7 @@ export const DIAL_BOUNDS: Readonly<Record<string, NumberDial>> = Object.freeze({
   connector_use_stamp_minutes: { fallback: 60, floor: 1, ceiling: 1440 },
   // 10000 since the manager's ruling of 09/10/2026 (wayfinder jit_controls.ts).
   bridge_return_step_timeout_ms: { fallback: 10000, floor: 250, ceiling: 30000 },
+  connector_slow_call_alert_ms: { fallback: 5000, floor: 1000, ceiling: 30000 },
 });
 
 export const DEFAULT_GATEWAY_DIALS: GatewayDials = Object.freeze({
@@ -47,6 +51,7 @@ export const DEFAULT_GATEWAY_DIALS: GatewayDials = Object.freeze({
   createLimitMode: "log_only",
   connectorUseStampMinutes: DIAL_BOUNDS.connector_use_stamp_minutes.fallback,
   bridgeReturnStepTimeoutMs: DIAL_BOUNDS.bridge_return_step_timeout_ms.fallback,
+  connectorSlowCallAlertMs: DIAL_BOUNDS.connector_slow_call_alert_ms.fallback,
   redirectPolicy: DEFAULT_REDIRECT_POLICY,
 } as GatewayDials);
 
@@ -70,6 +75,7 @@ export function parseGatewayDials(docs: {
     createLimitMode: mode === "enforce" ? "enforce" : "log_only",
     connectorUseStampMinutes: numberDial(docs.jit, "connector_use_stamp_minutes"),
     bridgeReturnStepTimeoutMs: numberDial(docs.jit, "bridge_return_step_timeout_ms"),
+    connectorSlowCallAlertMs: numberDial(docs.jit, "connector_slow_call_alert_ms"),
     redirectPolicy: parseRedirectPolicy(docs.redirect).policy,
   };
 }
