@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 export const TEST_FILES = [
+  "dist/__tests__/protocol_log.test.js",
+  "dist/__tests__/protocol_log_round2.test.js",
   "dist/connector/__tests__/redirect_policy.test.js",
   "dist/connector/__tests__/dials.test.js",
   "dist/connector/__tests__/token_access.test.js",

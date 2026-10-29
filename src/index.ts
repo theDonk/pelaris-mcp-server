@@ -5,7 +5,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { verifyBearerToken, type McpAuthenticatedRequest } from "./auth.js";
 import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
-import { logServer, generateRequestId } from "./logger.js";
+import { mcpProtocolLog, mcpRequestIdFor } from "./middleware/protocol_log.js";
+import { logServer, runWithMcpRequestId } from "./logger.js";
 import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
 // Pelaris 1.4 B2a lane C, C6: DCR guard, client address, return hook, connector_use.
 import { DEFAULT_OAUTH_CF_BASE, mountConnectorRoutes, runConnectorReturnStep } from "./connector/routes.js";
@@ -77,6 +78,10 @@ const app = express();
 // CORS before body parsing so OPTIONS preflights short-circuit cleanly.
 app.use(corsMiddleware);
 app.use(express.json());
+
+// Protocol-level request log (MCP_FIXES.md §1.4 step 1b): one allow-listed line per /mcp
+// request, written once on finish or close, so 401s, 405s and aborted requests are seen too.
+app.use("/mcp", mcpProtocolLog);
 
 // Health check (no auth)
 app.get("/health", (_req, res) => {
@@ -174,7 +179,8 @@ app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
 
 // MCP endpoint — stateless mode (fresh server per request)
 app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedRequest, res) => {
-  const requestId = generateRequestId();
+  // F6: the protocol-log middleware's id, so this request's lines join its mcp_request line.
+  const requestId = mcpRequestIdFor(res);
   const authContext = req.mcpAuth || null;
 
   // B2a C6 (d), (h): the connector facts for logToolCall (FL-9 1.6); the return check itself
@@ -185,7 +191,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     null;
 
   // PEL-122: Use AsyncLocalStorage for concurrency-safe per-request auth context
-  await runWithConnectorFacts(connectorFacts, () => runWithAuth(authContext, async () => {
+  await runWithMcpRequestId(requestId, () => runWithConnectorFacts(connectorFacts, () => runWithAuth(authContext, async () => {
   try {
     // B2a C6 (h), CR-10: B1R's return check before a direct tool. It never throws and is
     // awaited here, inside the handler's try, so a malformed bridge reply can never
@@ -321,7 +327,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
       res.status(500).json({ error: "Internal server error" });
     }
   }
-  })); // end runWithAuth, runWithConnectorFacts
+  }))); // end runWithAuth, runWithConnectorFacts, runWithMcpRequestId
 });
 
 // Handle GET and DELETE on /mcp (required by Streamable HTTP spec)
