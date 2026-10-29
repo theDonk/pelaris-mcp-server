@@ -1,5 +1,5 @@
 /**
- * Programs are built in Pelaris, not in the chat (connector rev 2.1, M3, Brad 20/10/2026, BRAD_RETURN #46): nothing the
+ * Programs are built in Pelaris, not in the chat (connector rev 2.1): nothing the
  * assistant reads may still promise a program built in the conversation. node:test, no Firestore.
  *
  * The server instruction (src/index.ts) is the one that matters most: B2a's FL-3 line told the assistant to "offer to
@@ -97,5 +97,5 @@ test("README, server.json and package.json: the new words and one version", () =
 test("the long-build limiter is kept for the future ticket, with its note", () => {
   const limiter = read("src/middleware/rate-limiter.ts");
   assert.match(limiter, /export function checkGenerationRateLimit/);
-  assert.match(limiter, /NOT CALLED since 20\/10\/2026/);
+  assert.match(limiter, /NOT CALLED since connector rev 2.1/);
 });

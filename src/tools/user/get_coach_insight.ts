@@ -5,7 +5,7 @@
  * Reads profile + recent activity to generate a contextual coaching insight.
  * Does NOT call AI — it computes insights from data patterns.
  *
- * 1.4.1 D2 (connector truth, PEL-1211): the week's session counts come from the app's
+ * 1.4.1 D2 (connector truth): the week's session counts come from the app's
  * backend (`get_training_truth` over the coreToolsBridge), the one "Program X of Y plus
  * bonus" the app's debrief shows, instead of a count of the last 7 days of diary rows
  * against a guessed weekly target. The trailing-window volume comparison stays, but now
