@@ -19,6 +19,7 @@ import type { NextFunction, Request, Response } from "express";
 import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
 
 import type { McpAuthenticatedRequest } from "../auth.js";
+import { noteMcpRequestTiming } from "../connector/latency_alert.js";
 import {
   describeMcpRequest,
   generateRequestId,
@@ -51,16 +52,20 @@ export function mcpProtocolLog(req: Request, res: Response, next: NextFunction):
     try {
       if (written) return;
       written = true;
+      const latencyMs = Date.now() - started;
+      const clientClass = (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined;
       logMcpRequest({
         requestId,
         httpMethod: req.method,
         status: res.statusCode,
         completed: res.writableFinished,
-        latencyMs: Date.now() - started,
-        client_class: (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined,
+        latencyMs,
+        client_class: clientClass,
         stepLatencyMs: steps,
         description,
       });
+      // MCP_FIXES.md 1.6: one admin alert a day for a tool call past the SLO's 5 s (never throws).
+      void noteMcpRequestTiming({ rpcMethods: description?.rpcMethods, latencyMs, steps, clientClass });
     } catch {
       // Observability only.
     }

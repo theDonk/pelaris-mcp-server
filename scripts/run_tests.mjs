@@ -29,6 +29,7 @@ export const TEST_FILES = [
   "dist/connector/__tests__/return_hook.test.js",
   "dist/connector/__tests__/routes.test.js",
   "dist/connector/__tests__/client_ip_dcr_use.test.js",
+  "dist/connector/__tests__/latency_alert.test.js",
   "dist/tools/shared/__tests__/core_adapter.test.js",
   "dist/tools/shared/__tests__/removal_capture.test.js",
   "dist/tools/user/__tests__/connector_truth.test.js",
