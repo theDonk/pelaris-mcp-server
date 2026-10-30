@@ -545,6 +545,55 @@
       "now_ms": 1792476000000,
       "stamp_minutes": 60,
       "connector_stamp_due": true
+    },
+    {
+      "name": "local day (28/10/2026 rule): 30 minutes ago but before local midnight in Australia/Sydney",
+      "profile": {
+        "timezone": "Australia/Sydney",
+        "last_connector_use_at": 1792586400000
+      },
+      "now_ms": 1792588200000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "local day: 30 minutes ago, across UTC midnight but the same Australia/Sydney day",
+      "profile": {
+        "timezone": "Australia/Sydney",
+        "last_connector_use_at": 1792539600000
+      },
+      "now_ms": 1792541400000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": false
+    },
+    {
+      "name": "local day: no timezone falls back to UTC, 30 minutes ago across UTC midnight",
+      "profile": {
+        "last_connector_use_at": 1792539600000
+      },
+      "now_ms": 1792541400000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
+    },
+    {
+      "name": "local day: an unknown timezone falls back to UTC, same UTC day",
+      "profile": {
+        "timezone": "Mars/Olympus_Mons",
+        "last_connector_use_at": 1792586400000
+      },
+      "now_ms": 1792588200000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": false
+    },
+    {
+      "name": "local day: America/Los_Angeles, 30 minutes ago across its local midnight",
+      "profile": {
+        "timezone": "America/Los_Angeles",
+        "last_connector_use_at": 1792564800000
+      },
+      "now_ms": 1792566600000,
+      "stamp_minutes": 60,
+      "connector_stamp_due": true
     }
   ],
   "has_plan": [

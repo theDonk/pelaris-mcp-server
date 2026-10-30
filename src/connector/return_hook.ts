@@ -32,7 +32,7 @@
  */
 
 /** Canonical SHA-256 of `test_fixtures/gateway_return_predicate_cases.json` (equal to wayfinder's). */
-export const GATEWAY_RETURN_PREDICATE_CASES_SHA256 = "3a43f340893e46f947af6a5e6f97f3bd28c16910eb05c2ae2d8fee2a216304ac";
+export const GATEWAY_RETURN_PREDICATE_CASES_SHA256 = "2f5d8d43ad09cc7a450125307bc9cbe5517213c8932e324c1a30623336d46002";
 
 type Raw = Readonly<Record<string, unknown>>;
 
@@ -144,10 +144,37 @@ export function timeMsOf(value: unknown): number | null {
   return null;
 }
 
-/** Vendored `connectorStampDue`: absent, unreadable, or older than the dial. */
+/**
+ * Vendored `localDayKeyOf` (wayfinder `services/plan_shift.ts`, through `describeUserLocalMoment`
+ * and `resolveProfileTimezone` in `utils/user_local_time.ts`): the person's local YYYY-MM-DD of an
+ * instant, in their stored IANA `timezone`; UTC when absent, blank or unknown to the runtime.
+ */
+export function localDayKeyOf(atMs: number, profile: Raw | null | undefined): string {
+  const raw = profile?.["timezone"];
+  const zone = typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : "UTC";
+  const format = (timeZone: string): string => {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date(atMs));
+    const get = (type: Intl.DateTimeFormatPartTypes): string => parts.find((p) => p.type === type)?.value ?? "";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  };
+  try {
+    return format(zone);
+  } catch {
+    return format("UTC");
+  }
+}
+
+/**
+ * Vendored `connectorStampDue` (wayfinder `services/return_signals.ts`): absent, unreadable,
+ * older than the dial, or on an earlier LOCAL day than now (the stamp writes the day's
+ * `connector_use` event, so a use just after local midnight records its own day). The shared
+ * case table pins the local-day rows on both sides.
+ */
 export function connectorStampDue(profile: Raw | null | undefined, nowMs: number, stampMinutes: number): boolean {
   const lastMs = timeMsOf(profile?.["last_connector_use_at"]);
-  return lastMs == null || nowMs - lastMs >= stampMinutes * 60_000;
+  if (lastMs == null || nowMs - lastMs >= stampMinutes * 60_000) return true;
+  return localDayKeyOf(lastMs, profile) !== localDayKeyOf(nowMs, profile);
 }
 
 // ── Which calls get the hook ────────────────────────────────────────────────
