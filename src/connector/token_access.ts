@@ -36,7 +36,12 @@ export function profileOwnershipVerdict(
   return profileId === uid && ownerUnset ? "owned" : "not_owner";
 }
 
-export const ASSISTANT_CLASSES = ["chatgpt", "claude", "other"] as const;
+/**
+ * The closed `assistant_class` set (wayfinder `connector_account.ts`; PEL-1282 adds grok, gemini,
+ * mistral, cursor). A stored class outside it reads as null (`connector_use` logs "unknown"), so
+ * either repo can deploy first. Drift check 4b and `assistant_lockstep.test.ts` pin it.
+ */
+export const ASSISTANT_CLASSES = ["chatgpt", "claude", "grok", "gemini", "mistral", "cursor", "other"] as const;
 export type AssistantClass = typeof ASSISTANT_CLASSES[number];
 
 export type TokenDenyReason =

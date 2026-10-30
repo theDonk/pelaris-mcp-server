@@ -32,6 +32,43 @@ function getAuth(): GoogleAuth {
   return _auth;
 }
 
+type IdTokenClient = Awaited<ReturnType<GoogleAuth["getIdTokenClient"]>>;
+
+/**
+ * One ID-token client per target, reused for the life of the instance. The
+ * client caches its ID token until shortly before expiry, so the return check and the tool's own
+ * bridge call share one token instead of each minting a fresh one from the metadata server. A
+ * failed creation is forgotten, so the next call retries.
+ */
+const idTokenClients = new Map<string, Promise<IdTokenClient>>();
+const ID_TOKEN_CLIENT_TIMEOUT_MS = 10_000;
+
+export function idTokenClientFor(
+  targetUrl: string,
+  auth: Pick<GoogleAuth, "getIdTokenClient"> = getAuth(),
+  timeoutMs = ID_TOKEN_CLIENT_TIMEOUT_MS,
+): Promise<IdTokenClient> {
+  let client = idTokenClients.get(targetUrl);
+  if (!client) {
+    // A creation that never settles (a hung metadata server) is rejected and evicted, never cached
+    // forever.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    client = Promise.race([
+      auth.getIdTokenClient(targetUrl),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("id_token_client_timeout")), timeoutMs);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    idTokenClients.set(targetUrl, client);
+    client.catch(() => idTokenClients.delete(targetUrl));
+  }
+  return client;
+}
+
+export function __resetIdTokenClientsForTest(): void {
+  idTokenClients.clear();
+}
+
 function isEmulator(): boolean {
   return !!process.env.FIRESTORE_EMULATOR_HOST;
 }
@@ -72,7 +109,7 @@ export async function callCoreBridge(
     return (await resp.json()) as BridgeResult;
   }
 
-  const client = await getAuth().getIdTokenClient(targetUrl);
+  const client = await idTokenClientFor(targetUrl);
   const response = await client.request({
     url: targetUrl,
     method: "POST",
