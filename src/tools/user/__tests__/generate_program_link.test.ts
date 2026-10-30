@@ -1,5 +1,5 @@
 /**
- * generate_program is a reply-only tool (connector rev 2.1, Brad 20/10/2026, BRAD_RETURN #46): it writes nothing,
+ * generate_program is a reply-only tool (connector rev 2.1): it writes nothing,
  * builds nothing, and answers with First Light's entry link. node:test, no extra dependencies, no Firestore, no
  * network: the profile read is injected, and the tool runs behind a real McpServer and a real client over the
  * SDK's in-memory transport, so these tests see what an assistant sees (including a stale client's old arguments).

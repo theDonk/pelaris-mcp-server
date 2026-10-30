@@ -4,7 +4,7 @@
  *
  * Returns the user's active training program(s) with structure details.
  *
- * 1.4.1 D2 (connector truth, PEL-1211): the week, phase, schedule, build state and
+ * 1.4.1 D2 (connector truth): the week, phase, schedule, build state and
  * completion come from the app's backend (`get_training_truth` over the
  * coreToolsBridge), the same answer the app shows. This tool no longer works out a
  * week from the queue's sessions. It still reads the queue documents for the fields
@@ -103,7 +103,7 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
 
         const profileId = claims.profile_id;
 
-        // PEL-220: Use profile.active_queues as source of truth (matches Flutter app)
+        // Use profile.active_queues as source of truth (matches Flutter app)
         const [truth, { queueDocs }] = await Promise.all([deps.truth(profileId), deps.queueDocs(profileId)]);
 
         if (queueDocs.length === 0) {

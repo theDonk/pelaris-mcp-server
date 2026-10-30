@@ -6,7 +6,7 @@
  * RPE, feedback tags, coach note, and date. Designed for AI coaching agents
  * to record sessions that have already happened.
  *
- * PEL-226. Migrated onto the coreToolsBridge (WS1, exercise naming plan,
+ * Migrated onto the coreToolsBridge (WS1, exercise naming plan,
  * 02/07/2026): the direct-Firestore body is deleted. This wrapper keeps
  * scope, rate-limit, request logging, and scrubbing; core `log_session`
  * owns completion semantics, idempotency (same date+sport+duration key

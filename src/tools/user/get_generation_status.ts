@@ -10,15 +10,14 @@
  * Polls the status of a program generation job. Returns stage progress,
  * session count, and error details if any stage failed.
  *
- * PEL-231: originally the polling mechanism generate_weekly_plan's jobId
+ * Originally the polling mechanism generate_weekly_plan's jobId
  * fed, so AI coaching agents could detect success/failure and retry.
  * generate_weekly_plan is RETIRED (GL-I16, Spring Tide 1.2.0, 16/09/2026);
  * its replacement, generate_program, runs synchronously and returns no
  * jobId (see generate_program.ts's result shape) — NOT reworded to point at
  * it below, since that would claim a jobId generate_program never returns.
- * No currently-registered tool hands back a jobId this reads; flagged for
- * Fable/Brad as a possible follow-up (either retire this tool too, or wire
- * a jobId-returning path back in) rather than guessed at here.
+ * No currently-registered tool hands back a jobId this reads; a follow-up
+ * either retires this tool too or wires a jobId-returning path back in.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";

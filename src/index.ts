@@ -38,7 +38,7 @@ import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.
 // down, right above its former registration call site.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
 
-// User write tools (OAuth-scoped — PEL-69)
+// User write tools (OAuth-scoped)
 // generate_weekly_plan (src/tools/user/generate_weekly_plan.ts) is RETIRED
 // (GL-I16, Spring Tide 1.2.0, 16/09/2026) and deliberately no longer
 // imported here — see the "User write tools" comment further down, right
@@ -80,7 +80,7 @@ const app = express();
 app.use(corsMiddleware);
 app.use(express.json());
 
-// Protocol-level request log (MCP_FIXES.md §1.4 step 1b): one allow-listed line per /mcp
+// Protocol-level request log: one allow-listed line per /mcp
 // request, written once on finish or close, so 401s, 405s and aborted requests are seen too.
 app.use("/mcp", mcpProtocolLog);
 
@@ -180,7 +180,7 @@ app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
 
 // MCP endpoint — stateless mode (fresh server per request)
 app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedRequest, res) => {
-  // F6: the protocol-log middleware's id, so this request's lines join its mcp_request line.
+  // The protocol-log middleware's id, so this request's lines join its mcp_request line.
   const requestId = mcpRequestIdFor(res);
   const authContext = req.mcpAuth || null;
 
@@ -191,7 +191,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     { profileId: connector.profileId, clientClass: connector.assistantClass ?? "unknown" as const } :
     null;
 
-  // PEL-122: Use AsyncLocalStorage for concurrency-safe per-request auth context
+  // AsyncLocalStorage for concurrency-safe per-request auth context
   await runWithMcpRequestId(requestId, () => runWithConnectorFacts(connectorFacts, () => runWithAuth(authContext, async () => {
   try {
     // B2a C6 (h), CR-10: B1R's return check before a direct tool. It never throws and is
@@ -210,13 +210,10 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
         "diagnostic, or therapeutic advice. Do not diagnose or treat. If a user " +
         "reports pain, injury, or health symptoms, recommend they consult a " +
         "licensed professional. All coaching output is AI-generated. " +
-        // B2a C6 (f), FL-3 §3.6 (★★ semantic review): one guidance line; the
-        // model chooses the words. Reworded 22/10/2026 (connector rev 2.1, M3, forced by
-        // Brad's 20/10 ruling, BRAD_RETURN #46): programs are built in Pelaris, never in the
-        // chat, so the line no longer promises a plan "right here in the conversation". It
-        // asks the intake here, hands over the link generate_program returns, and keeps the
-        // offer of a first session today. A wording change, not a new behaviour: flag for the
-        // FL-3 owner and the B2a reviewer.
+        // One guidance line; the model chooses the words. Programs are built in Pelaris,
+        // never in the chat, so the line does not promise a plan "right here in the
+        // conversation". It asks the intake here, hands over the link generate_program
+        // returns, and keeps the offer of a first session today.
         "When get_onboarding_status shows setup is not finished (its next_step is " +
         "complete_intake or generate_program), offer to get the person started: if " +
         "their intake is not done, ask the intake questions here and save the answers " +
@@ -255,9 +252,8 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     // (resolve names -> canonical exerciseId -> pass to write tools).
     registerResolveExerciseIds(server);
 
-    // ─── User write tools (OAuth-scoped — PEL-69) ────────────────
-    // generate_program is a reply-only tool since connector rev 2.1 (22/10/2026, Brad's
-    // ruling BRAD_RETURN #46): it builds nothing here and answers with the link that opens
+    // ─── User write tools (OAuth-scoped) ────────────────
+    // generate_program is a reply-only tool since connector rev 2.1: it builds nothing here and answers with the link that opens
     // Pelaris at the right place (building their program, or the one they hold); the program
     // itself is built in the app. It stays listed so an assistant that is asked for a program
     // explains instead of failing. (Its former build-and-enrol path, Unified Uplift G3 / C-3,
