@@ -40,6 +40,7 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/generate_weekly_plan_retired.test.js",
   "dist/tools/user/__tests__/get_generation_status_retired.test.js",
   "dist/tools/user/__tests__/injury_and_team_sport_core_bridge.test.js",
+  "dist/tools/user/__tests__/record_benchmark_core_bridge.test.js",
   "dist/tools/user/__tests__/list_goals.test.js",
   "dist/tools/user/__tests__/log_session_bridge.test.js",
   "dist/tools/user/__tests__/manage_program_archive.test.js",
