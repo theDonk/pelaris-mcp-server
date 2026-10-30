@@ -5,8 +5,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { verifyBearerToken, type McpAuthenticatedRequest } from "./auth.js";
 import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimiter } from "./middleware/rate-limiter.js";
-import { mcpProtocolLog, mcpRequestIdFor } from "./middleware/protocol_log.js";
-import { logServer, runWithMcpRequestId } from "./logger.js";
+import { mcpProtocolLog, mcpRequestIdFor, mcpStepsFor, timedStep } from "./middleware/protocol_log.js";
+import { addStepLatency, logServer, runWithMcpRequestId } from "./logger.js";
 import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context.js";
 // Pelaris 1.4 B2a lane C, C6: DCR guard, client address, return hook, connector_use.
 import { DEFAULT_OAUTH_CF_BASE, mountConnectorRoutes, runConnectorReturnStep } from "./connector/routes.js";
@@ -179,7 +179,7 @@ app.get("/.well-known/oauth-protected-resource/mcp", (_req, res) => {
 });
 
 // MCP endpoint — stateless mode (fresh server per request)
-app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedRequest, res) => {
+app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", rateLimiter), async (req: McpAuthenticatedRequest, res) => {
   // The protocol-log middleware's id, so this request's lines join its mcp_request line.
   const requestId = mcpRequestIdFor(res);
   const authContext = req.mcpAuth || null;
@@ -192,12 +192,15 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
     null;
 
   // AsyncLocalStorage for concurrency-safe per-request auth context
+  const steps = mcpStepsFor(res);
   await runWithMcpRequestId(requestId, () => runWithConnectorFacts(connectorFacts, () => runWithAuth(authContext, async () => {
   try {
     // B2a C6 (h), CR-10: B1R's return check before a direct tool. It never throws and is
     // awaited here, inside the handler's try, so a malformed bridge reply can never
     // become an unhandled rejection that ends the process.
+    const returnCheckStarted = Date.now();
     await runConnectorReturnStep(req);
+    addStepLatency("return_check", Date.now() - returnCheckStarted, steps);
 
     const server = new McpServer(serverInfo(VERSION), {
       // Server-level framing the client reads. Establishes Pelaris as a
@@ -321,7 +324,7 @@ app.post("/mcp", verifyBearerToken, rateLimiter, async (req: McpAuthenticatedReq
       res.status(500).json({ error: "Internal server error" });
     }
   }
-  }))); // end runWithAuth, runWithConnectorFacts, runWithMcpRequestId
+  })), steps); // end runWithAuth, runWithConnectorFacts, runWithMcpRequestId
 });
 
 // Handle GET and DELETE on /mcp (required by Streamable HTTP spec)

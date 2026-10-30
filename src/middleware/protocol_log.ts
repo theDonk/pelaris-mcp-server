@@ -17,15 +17,26 @@ import type { NextFunction, Request, Response } from "express";
 import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
 
 import type { McpAuthenticatedRequest } from "../auth.js";
-import { describeMcpRequest, generateRequestId, logMcpRequest, type McpRequestDescription } from "../logger.js";
+import {
+  describeMcpRequest,
+  generateRequestId,
+  logMcpRequest,
+  type McpRequestDescription,
+  type McpStepLatencies,
+} from "../logger.js";
 
 /** The `res.locals` key the /mcp handler reads the shared request id from. */
 export const MCP_REQUEST_ID_LOCAL = "mcpRequestId";
+
+/** The `res.locals` key holding this request's step latencies. */
+export const MCP_STEPS_LOCAL = "mcpSteps";
 
 export function mcpProtocolLog(req: Request, res: Response, next: NextFunction): void {
   const started = Date.now();
   const requestId = generateRequestId();
   res.locals[MCP_REQUEST_ID_LOCAL] = requestId;
+  const steps: McpStepLatencies = {};
+  res.locals[MCP_STEPS_LOCAL] = steps;
   let description: McpRequestDescription | undefined;
   try {
     description = describeMcpRequest(req.body, req.headers, SUPPORTED_PROTOCOL_VERSIONS, LATEST_PROTOCOL_VERSION);
@@ -43,8 +54,9 @@ export function mcpProtocolLog(req: Request, res: Response, next: NextFunction):
         httpMethod: req.method,
         status: res.statusCode,
         completed: res.writableFinished,
-        durationMs: Date.now() - started,
-        clientClass: (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined,
+        latencyMs: Date.now() - started,
+        client_class: (req as McpAuthenticatedRequest).connectorAccess?.assistantClass ?? undefined,
+        stepLatencyMs: steps,
         description,
       });
     } catch {
@@ -54,6 +66,37 @@ export function mcpProtocolLog(req: Request, res: Response, next: NextFunction):
   res.once("finish", writeOnce);
   res.once("close", writeOnce);
   next();
+}
+
+/** This request's step latencies (a fresh, unlogged object if the middleware did not run). */
+export function mcpStepsFor(res: Response): McpStepLatencies {
+  const steps = res.locals[MCP_STEPS_LOCAL];
+  return steps && typeof steps === "object" ? steps as McpStepLatencies : {};
+}
+
+/**
+ * Wrap a middleware so the time until it calls `next` lands in `stepLatencyMs[step]` (a
+ * middleware that answers itself, a 401 say, records nothing: the line's `latencyMs` is then
+ * that step's time).
+ */
+export function timedStep(
+  step: keyof McpStepLatencies,
+  middleware: (req: Request, res: Response, next: NextFunction) => unknown,
+): (req: Request, res: Response, next: NextFunction) => void {
+  return (req, res, next) => {
+    const started = Date.now();
+    const steps = mcpStepsFor(res);
+    const done: NextFunction = (error?: unknown) => {
+      steps[step] = (steps[step] ?? 0) + (Date.now() - started);
+      next(error as never);
+    };
+    try {
+      const result = middleware(req, res, done);
+      if (result && typeof (result as Promise<unknown>).catch === "function") (result as Promise<unknown>).catch(next);
+    } catch (error) {
+      next(error as never);
+    }
+  };
 }
 
 /** The shared id for this /mcp request, or a fresh one if the middleware did not run. */

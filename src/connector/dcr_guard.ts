@@ -21,19 +21,14 @@
  */
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 
+import { normaliseClientString } from "../client_string.js";
 import { CUSTOM_SCHEME_PATTERN, type RedirectRefusal } from "./redirect_policy.js";
 
 export const CLIENT_NAME_MAX_CHARS = 64;
 
-/** Mirrors wayfinder lane A `consent_page.ts` `normaliseClientName`. */
+/** Mirrors wayfinder lane A `consent_page.ts` `normaliseClientName` (the shared cleaner, 64 chars). */
 export function normaliseClientName(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const cleaned = raw
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-  if (cleaned.length === 0) return null;
-  return Array.from(cleaned).slice(0, CLIENT_NAME_MAX_CHARS).join("").trim();
+  return normaliseClientString(raw, CLIENT_NAME_MAX_CHARS);
 }
 
 /**

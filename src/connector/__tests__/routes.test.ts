@@ -342,7 +342,8 @@ test("index.ts mounts the connector routes, owns no /register, /token or /revoke
   for (const path of ["/register", "/token", "/revoke"]) {
     assert.doesNotMatch(index, new RegExp(`app\\.post\\("${path}"`), `${path} lives in connector/routes.ts`);
   }
-  assert.match(index, /app\.post\("\/mcp", verifyBearerToken, rateLimiter,/);
+  // Auth and the limiter stay first, wrapped to time each step.
+  assert.match(index, /app\.post\("\/mcp", timedStep\("auth", verifyBearerToken\), timedStep\("rate_limit", rateLimiter\),/);
   const tryAt = index.indexOf("  try {\n    // B2a C6 (h), CR-10");
   assert.ok(tryAt > 0, "the return step sits at the top of the handler's try");
   assert.ok(index.indexOf("await runConnectorReturnStep(req);", tryAt) > tryAt);
