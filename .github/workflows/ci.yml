@@ -1,0 +1,84 @@
+name: PR checks
+
+# Runs on every PR, with no deploy: the same type check, build and tests as deploy.yml, a workflow audit, and the
+# cross-repo contract check against the wayfinder repository's rules.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Type check, build, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      # The same as deploy.yml: scripts/run_tests.mjs lists every test and points Firestore at a dead loopback port.
+      - run: npm run build
+      - run: npm test
+
+  workflow-lint:
+    name: Workflow lint (zizmor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: pipx run zizmor==1.30.1 --offline --persona auditor --config .github/zizmor.yml .github/workflows
+
+  # The wayfinder half of the cross-repo contract (wayfinder's tools/check_gateway_contract_drift.mjs), against the
+  # wayfinder branch of the same name when one exists (a lockstep pair), else wayfinder main. Read-only, sparse, with
+  # the token passed to actions/checkout only. Skipped with a visible warning until WAYFINDER_READONLY_TOKEN is set.
+  wayfinder-contract-drift:
+    name: Wayfinder contract drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: gate
+        env:
+          HAS_TOKEN: ${{ secrets.WAYFINDER_READONLY_TOKEN != '' }}
+        run: echo "has_token=$HAS_TOKEN" >> "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.has_token != 'true'
+        run: echo "::warning::WAYFINDER_READONLY_TOKEN is not set; the wayfinder contract drift check did not run."
+      - id: paired
+        if: steps.gate.outputs.has_token == 'true'
+        continue-on-error: true
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: theDonk/wayfinder
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.WAYFINDER_READONLY_TOKEN }}
+          path: wayfinder
+          sparse-checkout: |
+            tools
+            functions/src
+          persist-credentials: false
+      - if: steps.gate.outputs.has_token == 'true' && steps.paired.outcome != 'success'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: theDonk/wayfinder
+          ref: main
+          token: ${{ secrets.WAYFINDER_READONLY_TOKEN }}
+          path: wayfinder
+          sparse-checkout: |
+            tools
+            functions/src
+          persist-credentials: false
+      - if: steps.gate.outputs.has_token == 'true'
+        run: node wayfinder/tools/check_gateway_contract_drift.mjs "$GITHUB_WORKSPACE"
