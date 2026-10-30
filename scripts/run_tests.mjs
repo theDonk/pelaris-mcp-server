@@ -24,6 +24,7 @@ export const TEST_FILES = [
   "dist/__tests__/protocol_log_steps.test.js",
   "dist/connector/__tests__/redirect_policy.test.js",
   "dist/connector/__tests__/dials.test.js",
+  "dist/connector/__tests__/latency_alert.test.js",
   "dist/connector/__tests__/token_access.test.js",
   "dist/connector/__tests__/auth_ownership.test.js",
   "dist/connector/__tests__/return_hook.test.js",
