@@ -156,8 +156,54 @@ test("a running plan with a fresh stamp: no bridge call", async () => {
 test("a due stamp calls return_check (its one writer stamps); the gateway writes nothing itself", async () => {
   const bridge = fakeBridge(async () => ({ ok: true, result: { resumed_queue_ids: [] } }));
   const stale = { ...RUNNING, last_connector_use_at: Date.now() - 2 * 3600_000 };
-  assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge }), "empty");
+  assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge }), "stamp_async");
   assert.equal(bridge.calls.length, 1);
+});
+
+// ── Only a possible resume is awaited ────────────────────────────────────────
+
+test("stamp only (running plan, stamp due): the tool does not wait, even for a slow bridge", async () => {
+  const slow = fakeBridge(() => new Promise((r) => setTimeout(() => r({ ok: true, result: { resumed_queue_ids: [] } }), 300)));
+  const stale = { ...RUNNING, last_connector_use_at: Date.now() - 2 * 3600_000 };
+  const t0 = Date.now();
+  const started = Date.now();
+  assert.equal(await runReturnHook({ ...base, timeoutMs: 5000, profileData: stale, tools: ["get_training_overview"], bridge: slow, nowMs: t0 }), "stamp_async");
+  assert.ok(Date.now() - started < 100, "returned before the bridge answered");
+  assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge: slow, nowMs: t0 + 1000 }), "stamp_async");
+  assert.equal(slow.calls.length, 1, "one background call per profile at a time");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge: slow, nowMs: t0 + 2000 }), "cached_empty", "the empty answer is cached when it lands");
+});
+
+test("stamp only: a background failure still backs off, and never surfaces as an unhandled rejection", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const broken = fakeBridge(async () => { throw new Error("fetch failed"); });
+    const stale = { ...RUNNING, last_connector_use_at: Date.now() - 2 * 3600_000 };
+    const t0 = Date.now();
+    assert.equal(await quietly(async () => {
+      const outcome = await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge: broken, nowMs: t0 });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return outcome;
+    }), "stamp_async");
+    assert.equal(await runReturnHook({ ...base, profileData: stale, tools: ["get_training_overview"], bridge: broken, nowMs: t0 + 60_000 }), "backoff");
+    // A failed background stamp never blocks the awaited resume of a rested plan.
+    const resume = fakeBridge(async () => ({ ok: true, result: { resumed_queue_ids: ["q_rest"] } }));
+    assert.equal(await quietly(() => runReturnHook({ ...base, profileData: RESTED, tools: ["get_active_program"], bridge: resume, nowMs: t0 + 61_000 })), "resumed");
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+test("a possible resume is still awaited before the tool reads", async () => {
+  const slowResume = fakeBridge(() => new Promise((r) => setTimeout(() => r({ ok: true, result: { resumed_queue_ids: ["q_rest"] } }), 120)));
+  const started = Date.now();
+  const outcome = await quietly(() => runReturnHook({ ...base, timeoutMs: 2000, profileData: RESTED, tools: ["get_active_program"], bridge: slowResume }));
+  assert.equal(outcome, "resumed");
+  assert.ok(Date.now() - started >= 100, "waited for the resume");
 });
 
 test("an empty answer is cached per profile for the stamp minutes", async () => {
