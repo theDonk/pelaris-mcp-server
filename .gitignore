@@ -4,3 +4,8 @@ dist/
 *.js.map
 # Audit/test harness (local emulator only — never commit/ship)
 _audit_*.mjs
+
+# Claude Code: personal local settings, session logs and worktrees
+.claude/settings.local.json
+.claude/logs/
+.claude/worktrees/
