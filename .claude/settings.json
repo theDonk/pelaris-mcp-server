@@ -27,14 +27,18 @@
       "PowerShell(git push --force *)",
       "PowerShell(git push * --force*)",
       "PowerShell(git push -f *)",
-      "Read(.env)",
-      "Read(.env.*)",
-      "Read(!.env.example)",
-      "Read(.secret.local)",
-      "Read(*.secret.local)",
-      "Read(.mcp.json)",
-      "Read(*.pem)",
-      "Read(*.key)"
+      "Bash(gemini --yolo*)",
+      "Bash(gemini * --yolo*)",
+      "Bash(gemini -y *)",
+      "Bash(gemini * -y *)",
+      "Bash(gemini * --approval-mode*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.secret.local)",
+      "Read(**/key.properties)",
+      "Read(**/.mcp.json)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
     ]
   }
 }
