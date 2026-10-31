@@ -1,0 +1,2 @@
+# Gitignored local files a new worktree needs (Claude Code copies matches into each worktree it creates).
+.claude/settings.local.json
