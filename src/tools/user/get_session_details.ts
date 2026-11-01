@@ -13,13 +13,14 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
+import { sessionSourcesFromLinkedEntries } from "../shared/session_sources.js";
 
 export function registerGetSessionDetails(server: McpServer): void {
   server.registerTool(
     "get_session_details",
     {
       title: "Get Session Details",
-      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap). When an activity recorded two or more laps, importedActuals.laps carries them exactly as the device or app recorded them (SI units; lapsSource says how they were recorded; lapsCapped marks a long list cut to its first laps). Describe laps as recorded.",
+      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap). When an activity recorded two or more laps, importedActuals.laps carries them exactly as the device or app recorded them (SI units; lapsSource says how they were recorded; lapsCapped marks a long list cut to its first laps). Describe laps as recorded. sources lists where the data came from, main source first, each with its provider and the recording device when known (deviceName, for example \"Garmin Forerunner 965\"; null when the source names none), so you can say which app or device recorded the session. It is empty when nothing synced.",
       inputSchema: {
         sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
       },
@@ -217,6 +218,9 @@ export function registerGetSessionDetails(server: McpServer): void {
               : null,
             ...lapFields,
           } : null,
+          // Where the data came from, for every provider: the same list the core tool returns for a
+          // bridged session, so an assistant can name the app and the device.
+          sources: sessionSourcesFromLinkedEntries(d.linked_imported_sources),
           feedback: d.feedback ? {
             rpe: d.feedback.rpe,
             note: d.feedback.note,

@@ -34,6 +34,7 @@ export const TEST_FILES = [
   "dist/tools/shared/__tests__/core_adapter.test.js",
   "dist/tools/shared/__tests__/bridge_client_reuse.test.js",
   "dist/tools/shared/__tests__/removal_capture.test.js",
+  "dist/tools/shared/__tests__/session_sources.test.js",
   "dist/tools/user/__tests__/connector_truth.test.js",
   "dist/tools/user/__tests__/create_planned_session_core_input.test.js",
   "dist/tools/user/__tests__/generate_program_link.test.js",
