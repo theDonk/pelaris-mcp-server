@@ -81,11 +81,30 @@ export function programStatusOf(queue: Raw, entry: Raw | undefined): ProgramStat
 export function summarizeProgram(
   doc: QueryDocumentSnapshot | DocumentSnapshot,
   entries: ReadonlyMap<string, Raw>,
+  options?: { plannedTotalWeeks?: number | null },
 ): Record<string, unknown> {
   const d = doc.data()!;
   const sessions = (d.sessions || []) as Array<Record<string, unknown>>;
   const completed = sessions.filter((s) => s.is_completed).length;
   const weeks = [...new Set(sessions.map((s) => s.week_number as number))].sort((a, b) => a - b);
+  const header = d.header != null && typeof d.header === "object" ? (d.header as Raw) : null;
+  const entry = entries.get(doc.id);
+  const entryWeeks =
+    (entry && typeof entry.duration_weeks === "number" ? entry.duration_weeks : null) ??
+    (entry && typeof entry.total_weeks === "number" ? entry.total_weeks : null) ??
+    (entry && typeof entry.durationWeeks === "number" ? entry.durationWeeks : null) ??
+    (entry && typeof entry.declaredWeeks === "number" ? entry.declaredWeeks : null);
+  const declaredWeeksRaw =
+    options?.plannedTotalWeeks ??
+    entryWeeks ??
+    (typeof d.duration_weeks === "number" ? d.duration_weeks : null) ??
+    (typeof d.total_weeks === "number" ? d.total_weeks : null) ??
+    (header && typeof header.durationWeeks === "number" ? header.durationWeeks : null) ??
+    (header && typeof header.duration_weeks === "number" ? header.duration_weeks : null);
+  const totalWeeks =
+    typeof declaredWeeksRaw === "number" && declaredWeeksRaw > weeks.length
+      ? declaredWeeksRaw
+      : weeks.length;
 
   return {
     programId: doc.id,
@@ -94,7 +113,8 @@ export function summarizeProgram(
     totalSessions: sessions.length,
     completedSessions: completed,
     completionPercent: sessions.length > 0 ? Math.round((completed / sessions.length) * 100) : 0,
-    totalWeeks: weeks.length,
+    totalWeeks,
+    materializedWeeks: weeks.length,
     generationStatus: d.generation_status || null,
     status: programStatusOf(d, entries.get(doc.id)),
     dateCreated: d.date_created?.toDate?.()?.toISOString?.() || null,

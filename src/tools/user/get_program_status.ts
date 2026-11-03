@@ -87,7 +87,16 @@ export function registerGetProgramStatus(server: McpServer, deps: ProgramStatusD
           }
 
           const entries = entriesByQueueId(profileData);
-          const programs = queueDocs.map((doc) => summarizeProgram(doc, entries));
+          const programs = queueDocs.map((doc) => {
+            const entry = entries.get(doc.id);
+            const plannedTotalWeeks =
+              typeof entry?.duration_weeks === "number"
+                ? entry.duration_weeks
+                : typeof entry?.total_weeks === "number"
+                  ? entry.total_weeks
+                  : null;
+            return summarizeProgram(doc, entries, { plannedTotalWeeks });
+          });
           const result = scrubDocument({ programs } as Record<string, unknown>);
 
           logToolCall({
@@ -114,7 +123,16 @@ export function registerGetProgramStatus(server: McpServer, deps: ProgramStatusD
         }
 
         const entries = entriesByQueueId(profileData);
-        const programs = docs.map((doc) => summarizeProgram(doc, entries));
+        const programs = docs.map((doc) => {
+          const entry = entries.get(doc.id);
+          const plannedTotalWeeks =
+            typeof entry?.duration_weeks === "number"
+              ? entry.duration_weeks
+              : typeof entry?.total_weeks === "number"
+                ? entry.total_weeks
+                : null;
+          return summarizeProgram(doc, entries, { plannedTotalWeeks });
+        });
         const result = scrubDocument({ programs } as Record<string, unknown>);
 
         logToolCall({

@@ -95,6 +95,32 @@ test("summarizeProgram: status from the app's list; removedAt from Remove's time
   assert.equal(running.removedAt, null);
   assert.equal(running.completedSessions, 1);
   assert.equal(running.completionPercent, 50);
+  assert.equal(running.totalWeeks, 1);
+  assert.equal(running.materializedWeeks, 1);
+
+  const rolling = summarizeProgram(
+    doc(ID_RUN, {
+      title: "Rolling 8-week plan",
+      duration_weeks: 8,
+      sessions: [{ week_number: 1 }, { week_number: 2 }],
+    }),
+    entries,
+  );
+  assert.equal(rolling.totalWeeks, 8, "planned horizon comes from duration_weeks");
+  assert.equal(rolling.materializedWeeks, 2, "materializedWeeks reflects the rolling window");
+
+  const withOption = summarizeProgram(
+    doc(ID_RUN, { title: "Option override", sessions: [{ week_number: 1 }] }),
+    entries,
+    { plannedTotalWeeks: 12 },
+  );
+  assert.equal(withOption.totalWeeks, 12);
+  assert.equal(withOption.materializedWeeks, 1);
+});
+
+test("get_training_context includes coachingHint pointing to get_session_details", () => {
+  const source = codeOf("../get_training_context.js");
+  assert.match(source, /coachingHint:\s*"Session lists show high-level titles and status only\. Call get_session_details with a sessionId to inspect full exercise blocks, sets, reps, and weights\."/);
 });
 
 // ── M2: get_program_status through the wire ──────────────────────────────────

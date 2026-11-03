@@ -245,6 +245,8 @@ export function registerGetTrainingContext(
                 asOf: truth.asOf,
               }),
           recentSessions,
+          coachingHint:
+            "Session lists show high-level titles and status only. Call get_session_details with a sessionId to inspect full exercise blocks, sets, reps, and weights.",
           checkins,
           goals,
           goalSummary: profileData.goal_summary?.text || null,
