@@ -18,7 +18,7 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { NO_RUNNING_PROGRAM_MESSAGE } from "../shared/program-utils.js";
+import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor } from "../shared/program-utils.js";
 import {
   TRUTH_UNAVAILABLE_MESSAGE,
   programTruthFields,
@@ -76,6 +76,7 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
     weeklyOverviews: queue?.weekly_overviews ?? null,
     generationStatus: truth.generationStatus,
     ...programTruthFields(truth),
+    ...adaptationFieldsFor(queue ?? {}, truth.buildState),
   };
 }
 

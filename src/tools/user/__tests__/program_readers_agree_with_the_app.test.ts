@@ -342,7 +342,7 @@ test("adaptationNoteFor: includes date and train link when date given; still giv
   const withDate = adaptationNoteFor("2026-11-17");
   assert.match(withDate, /2026-11-17/);
   assert.match(withDate, /https:\/\/coach\.pelaris\.io\/start\/train/);
-  assert.match(withDate, /Weekly program adaptation is paused/);
+  assert.match(withDate, /Weekly adaptation is paused/);
   assert.doesNotMatch(withDate, /\u2014/, "no em dashes");
 
   const noDate = adaptationNoteFor(null);

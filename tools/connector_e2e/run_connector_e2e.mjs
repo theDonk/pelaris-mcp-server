@@ -30,6 +30,8 @@
 // The run MUTATES the seeded people (n1 completes an intake, unstarted loses its program), so a second run
 // against the same session stops at its own precondition check (exit 2) and prints the re-seed commands.
 //
+// Group 7b pauses the started person's queue (jit_state) for its calls and restores it afterwards.
+//
 // Tokens: minted locally exactly the way the OAuth server mints them (HS256 over the dummy secret, the same
 // claims, the same pseudonym, a mcp_tokens/{sha256} document), because a real consent screen needs a person.
 // The gateway still verifies the signature, the audience and the token document, which the first checks prove.
@@ -82,7 +84,7 @@ for (const key of ["GOOGLE_APPLICATION_CREDENTIALS"]) delete process.env[key];
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
 const { initializeApp } = await import("firebase-admin/app");
-const { getFirestore } = await import("firebase-admin/firestore");
+const { getFirestore, FieldValue } = await import("firebase-admin/firestore");
 
 const db = getFirestore(initializeApp({ projectId: PROJECT }, "connector-e2e"));
 
@@ -256,14 +258,16 @@ function idLeaks(record) {
     if (typeof value === "string") {
       scanString(value, where);
     } else if (Array.isArray(value)) {
-      value.forEach((item, i) => walk(item, `${where}[${i}]`, inPrograms || where.endsWith("programs")));
+      value.forEach((item, i) => walk(item, `${where}[${i}]`, inPrograms || where.endsWith("programs") || where.endsWith("activePrograms")));
     } else if (value && typeof value === "object") {
       for (const [k, v] of Object.entries(value)) {
         if (PII_KEYS.has(k) && v !== "[REDACTED]" && v !== null && v !== "") leaks.push(`${where}.${k} is a PII key with a value`);
         if ((k === "queueId" || k === "queue_id") && v) leaks.push(`${where}.${k} is a raw queue id key`);
-        if (k === "programId" && typeof v === "string") {
-          if (!(inPrograms || where.endsWith("programs") || /programs\[\d+\]$/.test(where))) leaks.push(`${where}.programId is outside a programs list`);
-          continue; // a program id inside a programs list is allowed by design
+        if ((k === "programId" || k === "primaryProgramId" || k === "sessionId") && typeof v === "string") {
+          if (k === "programId" && !(inPrograms || where.endsWith("programs") || where.endsWith("activePrograms") || /programs\[\d+\]$/.test(where) || /activePrograms\[\d+\]$/.test(where))) {
+            leaks.push(`${where}.programId is outside a programs list`);
+          }
+          continue; // a programId inside a programs/activePrograms list, primaryProgramId, or sessionId is allowed by design
         }
         walk(v, `${where}.${k}`, inPrograms);
       }
@@ -624,6 +628,38 @@ async function main() {
       unknown.isError && !unknown.text.includes(stranger) && /could not find/i.test(unknown.text), unknown.text.slice(0, 300));
   }
 
+  // ── 7b. a paused queue: every program-reading tool carries the state and the note with the link ───────────────
+  group("7b. A paused program: every program-reading tool answers adaptationState paused and the note with the link");
+  {
+    const uid = PEOPLE.started.uid;
+    const queueId = people.started.programIds[0];
+    const queueRef = db.collection("profiles").doc(uid).collection("queues").doc(queueId);
+    const original = (await queueRef.get()).data()?.jit_state;
+    const hadField = original !== undefined;
+    const carriesNote = (p) => p?.adaptationState === "paused"
+      && typeof p.adaptationNote === "string" && p.adaptationNote.includes(LINK_TRAIN) && p.link === LINK_TRAIN;
+    const mine = (programs) => (programs ?? []).filter((p) => p.programId === queueId || programs.length === 1);
+    try {
+      await queueRef.set({ jit_state: "paused_entitlement" }, { merge: true });
+      const active = await call("started", "get_active_program");
+      check("P1", "get_active_program: adaptationState paused and the note with the train link",
+        !active.isError && mine(active.json?.programs).some(carriesNote), active.text.slice(0, 400));
+      const current = await call("started", "get_program_status", { action: "get_current" });
+      check("P2", "get_program_status get_current: adaptationState paused and the note with the train link",
+        !current.isError && mine(current.json?.programs).some(carriesNote), current.text.slice(0, 400));
+      const history = await call("started", "get_program_status", { action: "list_history" });
+      check("P3", "get_program_status list_history: adaptationState paused and the note with the train link",
+        !history.isError && (history.json?.programs ?? []).filter((p) => p.programId === queueId).some(carriesNote), history.text.slice(0, 400));
+      const overview = await call("started", "get_training_overview");
+      check("P4", "get_training_overview: adaptationState paused and the note with the train link",
+        !overview.isError && mine(overview.json?.activePrograms ?? overview.json?.programs).some(carriesNote), overview.text.slice(0, 400));
+    } finally {
+      // Put the seeded queue back as it was.
+      if (hadField) await queueRef.set({ jit_state: original }, { merge: true });
+      else await queueRef.update({ jit_state: FieldValue.delete() });
+    }
+  }
+
   // ── 8. what every reply may not carry ───────────────────────────────────────────────────────────────────────
   group("8. Every reply: no id, no em dash");
   {
@@ -653,7 +689,8 @@ async function main() {
     }
     const found = new Map();
     for (const l of toolLines) {
-      const k = `${l.tool}|${l.userPseudonym}`;
+      const toolName = l.tool === "get_training_context" ? "get_training_overview" : l.tool;
+      const k = `${toolName}|${l.userPseudonym}`;
       found.set(k, (found.get(k) ?? 0) + 1);
     }
     const short = [];
