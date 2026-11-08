@@ -19,8 +19,84 @@ import {
   isManualEntry,
   planStateOf,
 } from "../../connector/return_hook.js";
+import { ENTRY_LINK_TRAIN } from "./entry_links.js";
 
 type Raw = Record<string, unknown>;
+
+/** Whether the program's rolling weekly adaptation is running or paused (e.g. free JIT allowance ended). */
+export type AdaptationState = "active" | "paused";
+
+/**
+ * Returns `"paused"` when `queue.jit_state === "paused_entitlement"` (the JIT scheduler has stopped
+ * building new weeks because the free allowance ended) or when the backend truth reports
+ * `buildState === "paused"`. Every MCP tool continues to work in either state; this is informational only.
+ */
+export function adaptationStateOf(queue: Raw, truthBuildState?: string | null): AdaptationState {
+  if (queue["jit_state"] === "paused_entitlement" || truthBuildState === "paused") return "paused";
+  return "active";
+}
+
+/**
+ * Returns the latest scheduled session date (`YYYY-MM-DD`) found in `queue.weeks[].sessions[]` or the
+ * flat `queue.sessions[]`, or `null` when no dated sessions exist. Used to tell an athlete how far
+ * their written sessions reach when adaptation is paused.
+ */
+export function materializedThroughDateOf(queue: Raw): string | null {
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+  let max: string | null = null;
+
+  function update(candidate: string): void {
+    if (max == null || candidate > max) max = candidate;
+  }
+
+  function fromSession(s: unknown): void {
+    if (s == null || typeof s !== "object") return;
+    const session = s as Raw;
+    for (const key of ["scheduled_date", "scheduledDate"] as const) {
+      const v = session[key];
+      if (typeof v === "string" && DATE_RE.test(v)) update(v.slice(0, 10));
+    }
+    const d = session["date"];
+    if (typeof d === "string" && d.length >= 10) {
+      const sliced = d.slice(0, 10);
+      if (DATE_RE.test(sliced)) update(sliced);
+    }
+  }
+
+  const weeks = queue["weeks"];
+  if (Array.isArray(weeks)) {
+    for (const week of weeks) {
+      if (week == null || typeof week !== "object") continue;
+      const sessions = (week as Raw)["sessions"];
+      if (Array.isArray(sessions)) {
+        for (const s of sessions) fromSession(s);
+      }
+    }
+  }
+
+  const sessions = queue["sessions"];
+  if (Array.isArray(sessions)) {
+    for (const s of sessions) fromSession(s);
+  }
+
+  return max;
+}
+
+/**
+ * Plain-language note for a paused adaptation state. When `materializedThroughDate` is non-null the note
+ * names when the written sessions run out. Never mentions offers, pricing or discount codes.
+ */
+export function adaptationNoteFor(materializedThroughDate: string | null): string {
+  const through =
+    materializedThroughDate != null
+      ? ` after your scheduled sessions through ${materializedThroughDate}`
+      : "";
+  return (
+    `Weekly program adaptation is paused${through}. ` +
+    "All MCP workout logging and plan tools remain free and active. " +
+    `Open Pelaris on Today to resume rolling adaptation: ${ENTRY_LINK_TRAIN}`
+  );
+}
 
 /**
  * The answer when nothing is running (`get_program_status`, `get_active_program`). A paused program is
@@ -106,6 +182,8 @@ export function summarizeProgram(
       ? declaredWeeksRaw
       : weeks.length;
 
+  const adaptationState = adaptationStateOf(d);
+  const materializedThroughDate = materializedThroughDateOf(d);
   return {
     programId: doc.id,
     title: d.title || null,
@@ -119,5 +197,10 @@ export function summarizeProgram(
     status: programStatusOf(d, entries.get(doc.id)),
     dateCreated: d.date_created?.toDate?.()?.toISOString?.() || null,
     removedAt: d.removed_at?.toDate?.()?.toISOString?.() || null,
+    adaptationState,
+    materializedThroughDate,
+    ...(adaptationState === "paused"
+      ? { adaptationNote: adaptationNoteFor(materializedThroughDate), link: ENTRY_LINK_TRAIN }
+      : {}),
   };
 }
