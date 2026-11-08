@@ -23,7 +23,8 @@ import {
 import { registerGetActiveProgram, shapeActiveProgram } from "../get_active_program.js";
 import { registerGetWeeklyDebrief, shapeDebrief } from "../get_weekly_debrief.js";
 import { consistencyInsight } from "../get_coach_insight.js";
-import { bodyAnalysisAsOf } from "../get_body_analysis.js";
+import { ENTRY_LINK_SCAN } from "../../shared/entry_links.js";
+import { bodyAnalysisAsOf, bodyFatFields, bodySymmetry } from "../get_body_analysis.js";
 import { TEST_CLAIMS, captureLogs, openToolSession } from "./mcp_harness.js";
 
 const READ_CLAIMS = { ...TEST_CLAIMS, scope: "training:read coach:read health:read" };
@@ -148,6 +149,16 @@ test("body analysis carries an as-of date and its source", () => {
   assert.match(out.asOfNote, /source: photo_scan/);
   assert.match(out.asOfNote, /may be newer/);
   assert.match(bodyAnalysisAsOf(null, null).asOfNote, /not recorded/);
+});
+
+test("body analysis v2.2: symmetry ratios, body fat and the /start/scan link", () => {
+  const sym = bodySymmetry({ shouldersCm: 120, hipsCm: 100, upperArmCm: 36, waistCm: 80, thighCm: 60, calfCm: 40 });
+  assert.deepEqual(sym, { upperToLowerRatio: 1.2, armToWaistRatio: 0.45, thighToWaistRatio: 0.75, calfToThighRatio: 0.67 });
+  assert.equal(bodySymmetry({ waistCm: 80 }), null);
+  assert.deepEqual(bodyFatFields(18.5), { bodyFatPercent: 18.5, bodyFatRangePercent: null });
+  assert.deepEqual(bodyFatFields({ mid: 20, low: 17, high: 23 }), { bodyFatPercent: 20, bodyFatRangePercent: { low: 17, high: 23 } });
+  assert.deepEqual(bodyFatFields(undefined), { bodyFatPercent: null, bodyFatRangePercent: null });
+  assert.equal(ENTRY_LINK_SCAN, "https://coach.pelaris.io/start/scan");
 });
 
 // ── get_coach_insight: the app's count ───────────────────────────────────────
