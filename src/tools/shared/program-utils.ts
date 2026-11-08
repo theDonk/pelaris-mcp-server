@@ -91,11 +91,24 @@ export function adaptationNoteFor(materializedThroughDate: string | null): strin
     materializedThroughDate != null
       ? ` after your scheduled sessions through ${materializedThroughDate}`
       : "";
-  return (
-    `Weekly program adaptation is paused${through}. ` +
-    "All MCP workout logging and plan tools remain free and active. " +
-    `Open Pelaris on Today to resume rolling adaptation: ${ENTRY_LINK_TRAIN}`
-  );
+  return `Weekly adaptation is paused${through}. Open Pelaris to pick it back up: ${ENTRY_LINK_TRAIN}`;
+}
+
+/**
+ * The adaptation fields every program-reading tool returns, so whichever tool the assistant picks the
+ * answer is the same: `adaptationState` and `materializedThroughDate` always; for a paused program also
+ * the note (with the plain link inside its text) and the separate `link` field.
+ */
+export function adaptationFieldsFor(queue: Raw, truthBuildState?: string | null): Raw {
+  const adaptationState = adaptationStateOf(queue, truthBuildState);
+  const materializedThroughDate = materializedThroughDateOf(queue);
+  return {
+    adaptationState,
+    materializedThroughDate,
+    ...(adaptationState === "paused"
+      ? { adaptationNote: adaptationNoteFor(materializedThroughDate), link: ENTRY_LINK_TRAIN }
+      : {}),
+  };
 }
 
 /**
@@ -182,8 +195,6 @@ export function summarizeProgram(
       ? declaredWeeksRaw
       : weeks.length;
 
-  const adaptationState = adaptationStateOf(d);
-  const materializedThroughDate = materializedThroughDateOf(d);
   return {
     programId: doc.id,
     title: d.title || null,
@@ -197,10 +208,6 @@ export function summarizeProgram(
     status: programStatusOf(d, entries.get(doc.id)),
     dateCreated: d.date_created?.toDate?.()?.toISOString?.() || null,
     removedAt: d.removed_at?.toDate?.()?.toISOString?.() || null,
-    adaptationState,
-    materializedThroughDate,
-    ...(adaptationState === "paused"
-      ? { adaptationNote: adaptationNoteFor(materializedThroughDate), link: ENTRY_LINK_TRAIN }
-      : {}),
+    ...adaptationFieldsFor(d),
   };
 }
