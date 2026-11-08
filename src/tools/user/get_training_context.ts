@@ -20,6 +20,8 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { programTruthFields, readTrainingTruth, type TruthReader } from "../shared/training_truth.js";
+import { adaptationStateOf, materializedThroughDateOf, adaptationNoteFor } from "../shared/program-utils.js";
+import { ENTRY_LINK_TRAIN } from "../shared/entry_links.js";
 
 /** An injury id as the core issues it. */
 const INJURY_ID = /^inj_[0-9a-f]{10}$/;
@@ -132,6 +134,8 @@ export function registerGetTrainingContext(
         // rather than guess a week: the rest of the snapshot is still true.
         const programs = (truth?.programs ?? []).map((p) => {
           const d = queueById.get(p.queueId) ?? {};
+          const adaptationState = adaptationStateOf(d, p.buildState);
+          const materializedThroughDate = materializedThroughDateOf(d);
           return {
             programId: p.queueId,
             title: p.title,
@@ -143,6 +147,11 @@ export function registerGetTrainingContext(
             currentPhase: p.phase ? { phase: p.phase.phase, focus: p.phase.focus } : null,
             generationStatus: p.generationStatus,
             ...programTruthFields(p),
+            adaptationState,
+            materializedThroughDate,
+            ...(adaptationState === "paused"
+              ? { adaptationNote: adaptationNoteFor(materializedThroughDate), link: ENTRY_LINK_TRAIN }
+              : {}),
           };
         });
         const activeDocs = queuesSnap.docs.filter((doc) => activeQueueIds.has(doc.id));

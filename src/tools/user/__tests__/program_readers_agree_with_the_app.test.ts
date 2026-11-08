@@ -18,6 +18,9 @@ import {
   heldPlanQueueIdOf,
   programStatusOf,
   summarizeProgram,
+  adaptationStateOf,
+  materializedThroughDateOf,
+  adaptationNoteFor,
 } from "../../shared/program-utils.js";
 import { registerGetProgramStatus, type ProgramStatusDeps } from "../get_program_status.js";
 import { registerGetOnboardingStatus, type OnboardingStatusDeps } from "../get_onboarding_status.js";
@@ -294,4 +297,83 @@ test("get_onboarding_status source: no queue-collection scan, no archived filter
   assert.doesNotMatch(source, /"queues"\)\s*\.limit/);
   assert.doesNotMatch(source, /!==\s*"archived"/);
   assert.match(source, /onboardingFactsOf\(d\)/);
+});
+
+// ── S2C-4a: adaptationStateOf, materializedThroughDateOf, adaptationNoteFor ──
+
+test("adaptationStateOf: paused when jit_state is paused_entitlement or truthBuildState is paused", () => {
+  assert.equal(adaptationStateOf({ jit_state: "paused_entitlement" }), "paused");
+  assert.equal(adaptationStateOf({}, "paused"), "paused");
+  assert.equal(adaptationStateOf({ jit_state: "paused_entitlement" }, "paused"), "paused");
+  assert.equal(adaptationStateOf({}, "fully_built"), "active");
+  assert.equal(adaptationStateOf({}, "builds_as_you_train"), "active");
+  assert.equal(adaptationStateOf({}), "active");
+  assert.equal(adaptationStateOf({ jit_state: "active" }), "active", "other jit_state values are not paused");
+});
+
+test("materializedThroughDateOf: returns max date from weeks.sessions and flat sessions; null when none", () => {
+  assert.equal(materializedThroughDateOf({}), null);
+  assert.equal(materializedThroughDateOf({ sessions: [] }), null);
+
+  const withWeeks = {
+    weeks: [
+      { sessions: [{ scheduled_date: "2026-11-10" }, { scheduled_date: "2026-11-17" }] },
+      { sessions: [{ scheduled_date: "2026-11-03" }] },
+    ],
+  };
+  assert.equal(materializedThroughDateOf(withWeeks), "2026-11-17");
+
+  const withFlat = {
+    sessions: [{ scheduledDate: "2026-11-24" }, { scheduledDate: "2026-11-10" }],
+  };
+  assert.equal(materializedThroughDateOf(withFlat), "2026-11-24");
+
+  const mixed = {
+    weeks: [{ sessions: [{ scheduled_date: "2026-11-30" }] }],
+    sessions: [{ scheduled_date: "2026-11-15" }],
+  };
+  assert.equal(materializedThroughDateOf(mixed), "2026-11-30", "returns max across both sources");
+
+  const withDateField = { sessions: [{ date: "2026-12-01T00:00:00.000Z" }] };
+  assert.equal(materializedThroughDateOf(withDateField), "2026-12-01", "ISO date strings are sliced to YYYY-MM-DD");
+});
+
+test("adaptationNoteFor: includes date and train link when date given; still gives link when null", () => {
+  const withDate = adaptationNoteFor("2026-11-17");
+  assert.match(withDate, /2026-11-17/);
+  assert.match(withDate, /https:\/\/coach\.pelaris\.io\/start\/train/);
+  assert.match(withDate, /Weekly program adaptation is paused/);
+  assert.doesNotMatch(withDate, /\u2014/, "no em dashes");
+
+  const noDate = adaptationNoteFor(null);
+  assert.match(noDate, /https:\/\/coach\.pelaris\.io\/start\/train/);
+  assert.doesNotMatch(noDate, /through null/);
+  assert.doesNotMatch(noDate, /SETSAIL/, "offer-free: no discount codes");
+});
+
+test("summarizeProgram: adaptationState active when no jit_state; paused when paused_entitlement", () => {
+  const entries = entriesByQueueId({ active_queues: [runningEntry] });
+  const active = summarizeProgram(
+    doc(ID_RUN, { title: "Active Plan", sessions: [{ week_number: 1, scheduled_date: "2026-11-10" }] }),
+    entries,
+  );
+  assert.equal(active.adaptationState, "active");
+  assert.equal(active.materializedThroughDate, "2026-11-10");
+  assert.equal("adaptationNote" in active, false, "no note when active");
+  assert.equal("link" in active, false, "no link when active");
+
+  const paused = summarizeProgram(
+    doc(ID_RUN, {
+      title: "Paused Adaptation",
+      jit_state: "paused_entitlement",
+      weeks: [{ sessions: [{ scheduled_date: "2026-11-30" }] }],
+      sessions: [],
+    }),
+    entries,
+  );
+  assert.equal(paused.adaptationState, "paused");
+  assert.equal(paused.materializedThroughDate, "2026-11-30");
+  assert.ok(typeof paused.adaptationNote === "string" && (paused.adaptationNote as string).includes("2026-11-30"), "note includes the date");
+  assert.equal(paused.link, "https://coach.pelaris.io/start/train");
+  assert.doesNotMatch(paused.adaptationNote as string, /SETSAIL/, "offer-free");
 });
