@@ -1,5 +1,5 @@
 /**
- * First Light's entry links, the two the connector hands to an assistant.
+ * First Light's entry links, the ones the connector hands to an assistant.
  *
  * Programs are built in Pelaris, not in a chat (connector rev 2.1). The connector therefore answers "build me a
  * program" with a link that opens Pelaris at the right place. The tokens are
@@ -10,9 +10,12 @@
  * - `train`: lands them on Today with the program they already hold (a paused
  *   program waits there with its Resume).
  *
+ * - `scan`: opens the Body scan (a new scan, or the first one). Used by `get_body_analysis`.
+ *
  * A token retired later degrades to Today in the app, never an error, so a
  * stale link here is harmless.
  */
 
 export const ENTRY_LINK_PROGRAM = "https://coach.pelaris.io/start/program";
 export const ENTRY_LINK_TRAIN = "https://coach.pelaris.io/start/train";
+export const ENTRY_LINK_SCAN = "https://coach.pelaris.io/start/scan";

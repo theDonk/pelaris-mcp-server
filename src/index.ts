@@ -224,6 +224,8 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
         "their program in Pelaris, and offer to do their first session today. " +
         "Programs are built in Pelaris, not in this chat; plan single sessions or a " +
         "week at a time here. " +
+        "When a tool gives a link for the person (to train, open their program or start a scan), " +
+        "share it with them in your reply. " +
         "When it reports preferred_units, use them and do not ask for units again. " +
         "Offer this once; if the person declines, carry on with what they asked.",
     });
