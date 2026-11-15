@@ -43,8 +43,8 @@ export function registerGetBenchmarks(server: McpServer): void {
           };
         }
 
-        // Sanity ranges for body measurement benchmarks (in cm/kg)
-        const BODY_MEASUREMENT_RANGES: Record<string, { min: number; max: number }> = {
+        // Sanity ranges for body measurements and cardio calibration anchors
+        const PLAUSIBLE_BENCHMARK_RANGES: Record<string, { min: number; max: number }> = {
           shoulder_circumference: { min: 70, max: 170 },
           shoulders: { min: 70, max: 170 },
           waist: { min: 50, max: 150 },
@@ -54,6 +54,9 @@ export function registerGetBenchmarks(server: McpServer): void {
           hips: { min: 60, max: 160 },
           weight: { min: 30, max: 250 },
           body_weight: { min: 30, max: 250 },
+          threshold_pace: { min: 135, max: 720 },
+          lthr_bpm: { min: 100, max: 220 },
+          max_hr_bpm: { min: 120, max: 240 },
         };
 
         const benchmarks = benchmarksSnap.docs.map((doc) => {
@@ -72,10 +75,10 @@ export function registerGetBenchmarks(server: McpServer): void {
             else trend = "stable";
           }
 
-          // Data quality sanity check for body measurements
+          // Data quality sanity check for body measurements and cardio calibration benchmarks
           let dataQuality: "valid" | "suspect" = "valid";
           const idLower = doc.id.toLowerCase();
-          const range = BODY_MEASUREMENT_RANGES[idLower];
+          const range = PLAUSIBLE_BENCHMARK_RANGES[idLower];
           if (range && currentValue != null) {
             if (currentValue < range.min || currentValue > range.max) {
               dataQuality = "suspect";

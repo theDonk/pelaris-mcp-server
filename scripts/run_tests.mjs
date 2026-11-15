@@ -51,6 +51,7 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/resolve_exercise_ids.test.js",
   "dist/tools/user/__tests__/session_modify_mapping.test.js",
   "dist/tools/user/__tests__/swap_exercise_core_input.test.js",
+  "dist/tools/user/__tests__/release_1_6_3_mcp_parity.test.js",
   "dist/__tests__/server_info.test.js",
 ];
 

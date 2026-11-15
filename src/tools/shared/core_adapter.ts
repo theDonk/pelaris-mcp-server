@@ -68,6 +68,13 @@ export const coreWriteExerciseSchema = z.object({
     .max(600)
     .optional()
     .describe("Duration in MINUTES (cardio/timed exercises). Minutes, not seconds: 90 seconds is 1.5."),
+  targetDurationSec: z
+    .number()
+    .int()
+    .min(1)
+    .max(36000)
+    .optional()
+    .describe("Duration in seconds for timed holds or isometric strength exercises (e.g. Plank, Side Plank, L-Sit, Wall Sit, Dead Hang)."),
   distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters (swim/run/ride)"),
   restSeconds: z.number().int().min(0).max(3600).optional().describe("Rest between sets in seconds. 0 = no rest."),
   rpe: z.number().min(1).max(10).optional().describe("Target RPE, 1-10"),
@@ -144,6 +151,8 @@ export interface LegacyPlannedExerciseFields {
   weight?: number;
   /** Duration in SECONDS (legacy schema unit; core wants minutes). */
   duration?: number;
+  /** Explicit timed-hold duration in seconds for isometric strength sets. */
+  targetDurationSec?: number;
   /** Distance in meters. */
   distance?: number;
   notes?: string;
@@ -159,6 +168,10 @@ export interface LegacyLoggedExerciseFields {
   weightKg?: number;
   /** Duration in SECONDS (legacy schema unit; core wants minutes). */
   durationSec?: number;
+  /** Explicit timed-hold target duration in seconds for isometric strength sets. */
+  targetDurationSec?: number;
+  /** Explicit timed-hold performed duration in seconds for isometric strength sets. */
+  actualDurationSec?: number;
   distanceMeters?: number;
   notes?: string;
 }
@@ -180,6 +193,7 @@ export function mapLegacyPlannedExercise(ex: LegacyPlannedExerciseFields): CoreW
   if (ex.reps !== undefined) spec.reps = ex.reps;
   if (ex.weight !== undefined) spec.weightKg = ex.weight;
   if (ex.duration !== undefined) spec.durationMinutes = secondsToDurationMinutes(ex.duration);
+  if (ex.targetDurationSec !== undefined) spec.targetDurationSec = ex.targetDurationSec;
   if (ex.distance !== undefined) spec.distanceMeters = ex.distance;
   if (ex.notes !== undefined) spec.notes = ex.notes;
   return spec;
@@ -195,9 +209,32 @@ export function mapLegacyLoggedExercise(ex: LegacyLoggedExerciseFields): CoreWri
   if (ex.reps !== undefined) spec.reps = ex.reps;
   if (ex.weightKg !== undefined) spec.weightKg = ex.weightKg;
   if (ex.durationSec !== undefined) spec.durationMinutes = secondsToDurationMinutes(ex.durationSec);
+  const holdSec = ex.targetDurationSec ?? ex.actualDurationSec;
+  if (holdSec !== undefined) spec.targetDurationSec = holdSec;
   if (ex.distanceMeters !== undefined) spec.distanceMeters = ex.distanceMeters;
   if (ex.notes !== undefined) spec.notes = ex.notes;
   return spec;
+}
+
+/** Forward structured bridge hints (attention flags and read-only matching
+ *  planned-session suggestions) onto mapped workout-log responses without
+ *  adding keys when those hints are absent. */
+export function withLogSessionMetadata(
+  mapped: Record<string, unknown>,
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...mapped };
+  if (result.attention !== undefined) {
+    out.attention = result.attention;
+  }
+  const match = result.matchingPlannedSession ?? result.suggestedPlannedSessionMatch;
+  if (match !== undefined) {
+    out.matchingPlannedSession = match;
+    if (result.suggestedPlannedSessionMatch !== undefined) {
+      out.suggestedPlannedSessionMatch = result.suggestedPlannedSessionMatch;
+    }
+  }
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { programTruthFields, readTrainingTruth, type TruthReader } from "../shared/training_truth.js";
 import { adaptationFieldsFor } from "../shared/program-utils.js";
+import { buildAthleteChallengeFacts } from "../shared/challenge_facts.js";
 
 /** An injury id as the core issues it. */
 const INJURY_ID = /^inj_[0-9a-f]{10}$/;
@@ -84,7 +85,7 @@ export function registerGetTrainingContext(
         const profileId = claims.profile_id;
 
         // Parallel reads for performance
-        const [truth, profileSnap, queuesSnap, diarySnap, checkinsSnap, goalsSnap] = await Promise.all([
+        const [truth, profileSnap, queuesSnap, diarySnap, checkinsSnap, goalsSnap, benchmarksSnap] = await Promise.all([
           deps.truth(profileId),
           db.collection("profiles").doc(profileId).get(),
           profileSubcollection(profileId, "queues")
@@ -111,6 +112,10 @@ export function registerGetTrainingContext(
             .where("is_completed", "==", false)
             .limit(10)
             .get(),
+          profileSubcollection(profileId, "benchmarks")
+            .limit(10)
+            .get()
+            .catch(() => ({ docs: [] })),
         ]);
 
         if (!profileSnap.exists) {
@@ -163,16 +168,24 @@ export function registerGetTrainingContext(
           sport = programs[0].sport || firstMethodologyId?.split("_")[0] || null;
         }
 
+        const activeInjuries = activeInjuriesWithIds(profileData.training_context?.injuries);
+        const rawCardioMode = profileData.preferences?.cardio_target_mode;
+        const cardioTargetMode =
+          rawCardioMode === "pace" || rawCardioMode === "heart_rate" || rawCardioMode === "smart_hybrid"
+            ? rawCardioMode
+            : "smart_hybrid";
+
         const profileContext = {
           sport,
           experienceLevel: profileData.training_context?.experience_level || profileData.experience || null,
           equipment: profileData.training_context?.equipment || profileData.equipment || [],
           sessionsPerWeek: profileData.preferences?.sessions_per_week || profileData.availability?.days_per_week || null,
           preferredUnits: profileData.preferredUnits || profileData.preferred_units || "metric",
-          hasInjuries: !!profileData.training_context?.injury_history,
-          // 1.4 B2c (IJ-3b): the active injuries that carry an id, as closed values, so a
+          cardioTargetMode,
+          hasInjuries: !!profileData.training_context?.injury_history || activeInjuries.length > 0,
+          // Active injuries that carry a stored id, as closed values, so a
           // connector can update or resolve one with record_injury. No notes.
-          activeInjuries: activeInjuriesWithIds(profileData.training_context?.injuries),
+          activeInjuries,
         };
 
         // Recent diary entries
@@ -225,8 +238,34 @@ export function registerGetTrainingContext(
           };
         });
 
+        const completedInWindow = diarySnap.docs.filter((doc) => {
+          const d = doc.data();
+          return d.status === "completed" || d.is_completed === true;
+        }).length;
+        const challengeBenchmarks = benchmarksSnap.docs.flatMap((doc) => {
+          const b = doc.data() as Record<string, unknown>;
+          const val = b.current_max;
+          if (typeof val === "number" && Number.isFinite(val) && val > 0) {
+            return [{
+              benchmarkId: doc.id,
+              exerciseName: typeof b.name === "string" && b.name.trim() ? b.name.trim() : doc.id,
+              currentValue: val,
+              unit: typeof b.unit === "string" && b.unit.trim() ? b.unit.trim() : "kg",
+            }];
+          }
+          return [];
+        });
+        const athleteChallengeFacts = buildAthleteChallengeFacts({
+          sport,
+          hasActiveInjury: profileContext.hasInjuries,
+          completedSessionsLast28d: completedInWindow,
+          plannedSessionsLast28d: diarySnap.docs.length,
+          benchmarks: challengeBenchmarks,
+        });
+
         const result = scrubDocument({
           profile: profileContext,
+          athleteChallengeFacts,
           activePrograms: programs,
           ...(truth == null
             ? {

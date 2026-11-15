@@ -111,6 +111,8 @@ export function registerUpdateSession(server: McpServer): void {
               reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
               weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
               durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds"),
+              targetDurationSec: z.number().int().min(1).max(36000).optional().describe("Target timed-hold duration in seconds (for isometric strength holds such as Plank or Dead Hang)"),
+              actualDurationSec: z.number().int().min(1).max(36000).optional().describe("Actual timed-hold duration in seconds performed (for isometric strength holds such as Plank or Dead Hang)"),
               distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
             }),
           )

@@ -23,6 +23,40 @@ import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
+import { ENTRY_LINK_PROGRAM } from "../shared/entry_links.js";
+
+const INTAKE_RESPONSE_FIELDS = [
+  "status",
+  "message",
+  "recommendedDurationWeeks",
+  "goals",
+  "missing",
+] as const;
+
+/**
+ * Project user-facing fields from the core intake result and attach the
+ * program-creation entry link + clear next step once intake is complete.
+ */
+export function shapeCompleteIntakeResult(
+  result: Record<string, unknown>,
+): Record<string, unknown> {
+  const projected: Record<string, unknown> = {};
+  for (const key of INTAKE_RESPONSE_FIELDS) {
+    if (result[key] !== undefined) projected[key] = result[key];
+  }
+  if (projected.status === undefined) projected.status = "completed";
+  if (projected.status === "completed") {
+    const continuationUrl =
+      typeof result.continuationUrl === "string" && result.continuationUrl.length > 0
+        ? result.continuationUrl
+        : ENTRY_LINK_PROGRAM;
+    projected.continuationUrl = continuationUrl;
+    projected.nextStep =
+      `Intake is saved. Programs are built in Pelaris, not in this chat: share ${continuationUrl} ` +
+      `so the athlete can build their program in Pelaris.`;
+  }
+  return projected;
+}
 
 export function registerCompleteIntake(server: McpServer): void {
   server.registerTool(
@@ -96,21 +130,7 @@ export function registerCompleteIntake(server: McpServer): void {
           };
         }
 
-        // Project to an explicit allow-list of user-facing fields. The raw core
-        // envelope can carry internal handles/projection fields (runId,
-        // detectedMethodologyId, trainingContextProjection, ...) the model never
-        // needs; only surface the outcome fields that help the coach proceed.
-        const INTAKE_RESPONSE_FIELDS = [
-          "status",
-          "message",
-          "recommendedDurationWeeks",
-          "goals",
-        ] as const;
-        const projected: Record<string, unknown> = {};
-        for (const key of INTAKE_RESPONSE_FIELDS) {
-          if (result[key] !== undefined) projected[key] = result[key];
-        }
-        if (projected.status === undefined) projected.status = "completed";
+        const projected = shapeCompleteIntakeResult(result);
 
         return { content: [{ type: "text" as const, text: JSON.stringify(scrubDocument(projected), null, 2) }] };
       } catch (error) {
