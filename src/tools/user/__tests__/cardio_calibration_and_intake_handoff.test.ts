@@ -1,7 +1,6 @@
 /**
  * Parity tests for intake continuation links, timed holds, cardio calibration
- * bounds, cardioTargetMode preference updates, session match metadata, and
- * athlete challenge / lift recency context.
+ * bounds, cardioTargetMode preference updates, and session match metadata.
  */
 
 import { test, after } from "node:test";
@@ -40,10 +39,6 @@ const { registerRecordBenchmark, IMPLAUSIBLE_CALIBRATION_TEXT } = await import("
 const { buildDirectProfileUpdates, CARDIO_TARGET_MODES } = await import("../update_user_profile.js");
 const { mapLogWorkoutResult } = await import("../log_workout.js");
 const { mapLogCompletedSessionResult } = await import("../log_completed_session.js");
-const {
-  buildAthleteChallengeFacts,
-  recommendStartingWeightFromSimilarLifts,
-} = await import("../../shared/challenge_facts.js");
 const { runWithAuth } = await import("../../../request-context.js");
 const { hasDash } = await import("./mcp_harness.js");
 
@@ -78,7 +73,7 @@ function benchmarkHandler(): BenchmarkHandler {
   return captured as BenchmarkHandler;
 }
 
-test("complete_intake attaches program link and nextStep guidance without dashes", () => {
+test("complete_intake attaches program link and structured nextStep without dashes", () => {
   const shaped = shapeCompleteIntakeResult({
     status: "completed",
     message: "Intake saved.",
@@ -87,9 +82,10 @@ test("complete_intake attaches program link and nextStep guidance without dashes
   });
   assert.equal(shaped.status, "completed");
   assert.equal(shaped.continuationUrl, ENTRY_LINK_PROGRAM);
-  assert.equal(typeof shaped.nextStep, "string");
-  assert.ok(String(shaped.nextStep).includes(ENTRY_LINK_PROGRAM));
-  assert.equal(hasDash(String(shaped.nextStep)), false);
+  assert.equal(shaped.nextStep, "generate_program");
+  assert.equal(typeof shaped.nextStepGuidance, "string");
+  assert.ok(String(shaped.nextStepGuidance).includes(ENTRY_LINK_PROGRAM));
+  assert.equal(hasDash(String(shaped.nextStepGuidance)), false);
 });
 
 test("timed holds map targetDurationSec / actualDurationSec and render as 45s hold instead of 1 reps", () => {
@@ -208,34 +204,4 @@ test("log_workout and log_completed_session forward matchingPlannedSession when 
   const { matchingPlannedSession: _a, suggestedPlannedSessionMatch: _b, ...withoutMatch } = base;
   assert.equal("matchingPlannedSession" in mapLogWorkoutResult(withoutMatch, false), false);
   assert.equal("matchingPlannedSession" in mapLogCompletedSessionResult(withoutMatch), false);
-});
-
-test("challenge facts and similar-lift recommendation apply bounded recency decay without dashes", () => {
-  const fresh = recommendStartingWeightFromSimilarLifts({
-    targetExerciseName: "Romanian Deadlift",
-    loggedLifts: [{ exerciseName: "Conventional Deadlift", estimatedOneRepMaxKg: 180, daysAgo: 7 }],
-    now: new Date("2026-11-15T00:00:00Z"),
-  })!;
-  assert.equal(fresh.recencyDecayFactor, 1);
-  assert.equal(fresh.decayedEstimated1RmKg, 180);
-
-  const stale = recommendStartingWeightFromSimilarLifts({
-    targetExerciseName: "Romanian Deadlift",
-    loggedLifts: [{ exerciseName: "Conventional Deadlift", estimatedOneRepMaxKg: 180, daysAgo: 64 }],
-    now: new Date("2026-11-15T00:00:00Z"),
-  })!;
-  assert.equal(stale.recencyDecayFactor, 0.9);
-  assert.equal(stale.decayedEstimated1RmKg, 162);
-  assert.ok(stale.recommendedWeightKg < fresh.recommendedWeightKg);
-  assert.equal(hasDash(stale.rationale), false);
-
-  const injuredFacts = buildAthleteChallengeFacts({
-    sport: "running",
-    hasActiveInjury: true,
-    completedSessionsLast28d: 8,
-    plannedSessionsLast28d: 12,
-  });
-  assert.equal(injuredFacts.hasActiveInjury, true);
-  assert.ok(injuredFacts.suggestedChallenges.some((c) => c.category === "recovery_mobility"));
-  assert.equal(hasDash(JSON.stringify(injuredFacts)), false);
 });

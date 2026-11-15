@@ -51,7 +51,8 @@ export function shapeCompleteIntakeResult(
         ? result.continuationUrl
         : ENTRY_LINK_PROGRAM;
     projected.continuationUrl = continuationUrl;
-    projected.nextStep =
+    projected.nextStep = "generate_program";
+    projected.nextStepGuidance =
       `Intake is saved. Programs are built in Pelaris, not in this chat: share ${continuationUrl} ` +
       `so the athlete can build their program in Pelaris.`;
   }
