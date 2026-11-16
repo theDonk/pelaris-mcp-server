@@ -163,16 +163,24 @@ export function registerGetTrainingContext(
           sport = programs[0].sport || firstMethodologyId?.split("_")[0] || null;
         }
 
+        const activeInjuries = activeInjuriesWithIds(profileData.training_context?.injuries);
+        const rawCardioMode = profileData.preferences?.cardio_target_mode;
+        const cardioTargetMode =
+          rawCardioMode === "pace" || rawCardioMode === "heart_rate" || rawCardioMode === "smart_hybrid"
+            ? rawCardioMode
+            : "pace";
+
         const profileContext = {
           sport,
           experienceLevel: profileData.training_context?.experience_level || profileData.experience || null,
           equipment: profileData.training_context?.equipment || profileData.equipment || [],
           sessionsPerWeek: profileData.preferences?.sessions_per_week || profileData.availability?.days_per_week || null,
           preferredUnits: profileData.preferredUnits || profileData.preferred_units || "metric",
-          hasInjuries: !!profileData.training_context?.injury_history,
-          // 1.4 B2c (IJ-3b): the active injuries that carry an id, as closed values, so a
+          cardioTargetMode,
+          hasInjuries: !!profileData.training_context?.injury_history || activeInjuries.length > 0,
+          // Active injuries that carry a stored id, as closed values, so a
           // connector can update or resolve one with record_injury. No notes.
-          activeInjuries: activeInjuriesWithIds(profileData.training_context?.injuries),
+          activeInjuries,
         };
 
         // Recent diary entries

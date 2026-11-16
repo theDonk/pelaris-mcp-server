@@ -203,6 +203,7 @@ export function registerCreatePlannedSession(server: McpServer): void {
               reps: z.number().int().min(1).max(200).optional().describe("Target reps per set"),
               weight: z.number().min(0).max(1000).optional().describe("Target weight in kg"),
               duration: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for cardio/timed exercises)"),
+              targetDurationSec: z.number().int().min(1).max(36000).optional().describe("Target timed-hold duration in seconds (for isometric strength holds such as Plank or Dead Hang)"),
               distance: z.number().min(0).max(100000).optional().describe("Distance in meters"),
               notes: z.string().max(500).optional().describe("Exercise-specific notes"),
             }),

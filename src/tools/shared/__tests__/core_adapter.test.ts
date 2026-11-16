@@ -25,8 +25,8 @@ import type { BridgeResult } from "../bridge_client.js";
 /** Exactly the exercise field names the core write contract persists. */
 const CORE_EXERCISE_FIELDS = new Set([
   "name", "exerciseId", "sets", "reps", "weightKg", "durationMinutes",
-  "distanceMeters", "restSeconds", "rpe", "pace", "zone", "strokeType",
-  "cue", "notes",
+  "targetDurationSec", "distanceMeters", "restSeconds", "rpe", "pace", "zone",
+  "strokeType", "cue", "notes",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────

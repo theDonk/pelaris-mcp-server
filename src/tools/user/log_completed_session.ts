@@ -31,6 +31,7 @@ import {
   exerciseIdField,
   mapLegacyLoggedExercise,
   unwrapBridgeResult,
+  withLogSessionMetadata,
 } from "../shared/core_adapter.js";
 
 const VALID_SPORTS = [
@@ -86,17 +87,6 @@ export function buildLogCompletedSessionCoreInput(
   return input;
 }
 
-/** ST-11 (U4): core `log_session` may return a structured `attention` flag
- *  ("planned session completed, no sets marked done; confirm completedAsPrescribed?").
- *  MCP clients never see the coach's prompt, so it must cross the mapper on
- *  every branch; the calling model still decides what to do. */
-function withAttention(
-  mapped: Record<string, unknown>,
-  result: Record<string, unknown>,
-): Record<string, unknown> {
-  return result.attention !== undefined ? { ...mapped, attention: result.attention } : mapped;
-}
-
 /** Map the core `log_session` output back onto this tool's legacy response
  *  shape (the status vocabulary and field names agents already parse).
  *  Core "updated" (a planned target was completed) -> "completed_planned";
@@ -106,14 +96,14 @@ export function mapLogCompletedSessionResult(
   result: Record<string, unknown>,
 ): Record<string, unknown> {
   if (result.status === "already_logged") {
-    return withAttention({
+    return withLogSessionMetadata({
       sessionId: result.sessionId,
       status: "already_logged",
       message: result.message,
     }, result);
   }
   if (result.status === "updated") {
-    return withAttention({
+    return withLogSessionMetadata({
       sessionId: result.sessionId,
       status: "completed_planned",
       date: result.date,
@@ -122,7 +112,7 @@ export function mapLogCompletedSessionResult(
       message: `Planned session "${result.title ?? result.sessionId}" marked as completed.`,
     }, result);
   }
-  return withAttention({
+  return withLogSessionMetadata({
     sessionId: result.sessionId,
     status: "logged",
     date: result.date,
@@ -198,6 +188,8 @@ export function registerLogCompletedSession(server: McpServer): void {
               reps: z.number().int().min(1).max(200).optional().describe("Reps per set"),
               weightKg: z.number().min(0).max(1000).optional().describe("Weight in kg"),
               durationSec: z.number().int().min(0).max(36000).optional().describe("Duration in seconds (for timed exercises)"),
+              targetDurationSec: z.number().int().min(1).max(36000).optional().describe("Target timed-hold duration in seconds (for isometric strength holds such as Plank or Dead Hang)"),
+              actualDurationSec: z.number().int().min(1).max(36000).optional().describe("Actual timed-hold duration in seconds performed (for isometric strength holds such as Plank or Dead Hang)"),
               distanceMeters: z.number().min(0).max(100000).optional().describe("Distance in meters"),
               notes: z.string().max(500).optional().describe("Exercise-specific notes"),
             }),

@@ -33,27 +33,71 @@ export const UNIT_MISMATCH_TEXT =
   "is recorded in (a run time is in seconds, a lift in kg). Check the unit with get_benchmarks, convert the " +
   "number to it, and record it again with that unit, or record a different benchmark if this is a different test.";
 
+export const CARDIO_CALIBRATION_RANGES: Readonly<Record<string, { min: number; max: number; unit: string; label: string }>> = {
+  threshold_pace: { min: 135, max: 720, unit: "sec/km", label: "Threshold pace" },
+  lthr_bpm: { min: 100, max: 220, unit: "bpm", label: "Lactate threshold heart rate (lthr_bpm)" },
+  max_hr_bpm: { min: 120, max: 240, unit: "bpm", label: "Max heart rate (max_hr_bpm)" },
+};
+
+export const IMPLAUSIBLE_CALIBRATION_TEXT =
+  "Error: implausible_calibration_value. Nothing was saved: cardio calibration benchmarks must fall within safe " +
+  "physiological bounds (threshold_pace 135 to 720 sec/km, lthr_bpm 100 to 220 bpm, max_hr_bpm 120 to 240 bpm).";
+
+const CALIBRATION_ALIASES: Readonly<Record<string, keyof typeof CARDIO_CALIBRATION_RANGES>> = {
+  threshold_pace: "threshold_pace",
+  lthr_bpm: "lthr_bpm",
+  lthr: "lthr_bpm",
+  lactate_threshold_hr: "lthr_bpm",
+  lactate_threshold_heart_rate: "lthr_bpm",
+  max_hr_bpm: "max_hr_bpm",
+  max_hr: "max_hr_bpm",
+  max_heart_rate: "max_hr_bpm",
+};
+
+/** Resolve a canonical cardio calibration key when benchmarkName refers to one. */
+export function resolveCalibrationBenchmarkKey(
+  benchmarkName: string,
+): keyof typeof CARDIO_CALIBRATION_RANGES | null {
+  const normalized = benchmarkName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return CALIBRATION_ALIASES[normalized] ?? null;
+}
+
+/** Return an actionable error string when a cardio calibration value is outside bounds, else null. */
+export function calibrationRangeRefusal(benchmarkName: string, value: number): string | null {
+  const key = resolveCalibrationBenchmarkKey(benchmarkName);
+  if (!key) return null;
+  const spec = CARDIO_CALIBRATION_RANGES[key];
+  if (!Number.isFinite(value) || value < spec.min || value > spec.max) {
+    return (
+      `Error: implausible_calibration_value. ${spec.label} must be between ${spec.min} and ${spec.max} ` +
+      `${spec.unit}. Nothing was saved.`
+    );
+  }
+  return null;
+}
+
 export function registerRecordBenchmark(server: McpServer): void {
   server.registerTool(
     "record_benchmark",
     {
       title: "Record Benchmark",
       description: "Record a new personal best or benchmark result. Previous values are saved to history so you can track progress over time. " +
-        "Name the benchmark as the athlete would (it is matched to Pelaris's own benchmark), give the value in the benchmark's unit, and say the unit.",
+        "Name the benchmark as the athlete would (it is matched to Pelaris's own benchmark), give the value in the benchmark's unit, and say the unit. " +
+        "Cardio calibration benchmarks: threshold_pace (135 to 720 sec/km), lthr_bpm (100 to 220 bpm), max_hr_bpm (120 to 240 bpm).",
       inputSchema: {
         benchmarkName: z
           .string()
           .min(1)
           .max(200)
-          .describe("Name or id of the benchmark (e.g., 'Bench Press 1RM', '10km Run', 'squat_1rm')"),
+          .describe("Name or id of the benchmark (e.g., 'Bench Press 1RM', '10km Run', 'squat_1rm', 'threshold_pace', 'lthr_bpm', 'max_hr_bpm')"),
         value: z
           .number()
-          .describe("The benchmark value in the benchmark's unit (e.g., 100 for 100kg, 1350 for a 22:30 run in seconds)"),
+          .describe("The benchmark value in the benchmark's unit (e.g., 100 for 100kg, 1350 for a 22:30 run in seconds, 270 for 4:30/km threshold_pace in sec/km, 171 for lthr_bpm)"),
         unit: z
           .string()
           .max(50)
           .optional()
-          .describe("Unit of the value (e.g., 'kg', 'sec', 'reps', 'watts'). A value in a different unit from the benchmark's is refused, never converted."),
+          .describe("Unit of the value (e.g., 'kg', 'sec', 'sec/km', 'bpm', 'reps', 'watts'). A value in a different unit from the benchmark's is refused, never converted."),
         notes: z
           .string()
           .max(500)
@@ -85,6 +129,22 @@ export function registerRecordBenchmark(server: McpServer): void {
           };
         }
 
+        const calibrationError = calibrationRangeRefusal(params.benchmarkName, params.value);
+        if (calibrationError) {
+          logToolCall({
+            requestId,
+            tool: "record_benchmark",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: false,
+            error: "implausible_calibration_value",
+          });
+          return {
+            content: [{ type: "text" as const, text: calibrationError }],
+            isError: true,
+          };
+        }
+
         // The core's update_athlete, branch "benchmark", for the token's own profile only.
         const bridged = await callCoreBridge("update_athlete", claims.profile_id, {
           type: "benchmark",
@@ -102,11 +162,14 @@ export function registerRecordBenchmark(server: McpServer): void {
             success: false,
             error: bridged.error ?? "bridge_failed",
           });
+          const text =
+            bridged.error === "benchmark_unit_mismatch"
+              ? UNIT_MISMATCH_TEXT
+              : bridged.error === "implausible_calibration_value"
+                ? IMPLAUSIBLE_CALIBRATION_TEXT
+                : `Error: ${bridged.error ?? "unknown error"}`;
           return {
-            content: [{
-              type: "text" as const,
-              text: bridged.error === "benchmark_unit_mismatch" ? UNIT_MISMATCH_TEXT : `Error: ${bridged.error ?? "unknown error"}`,
-            }],
+            content: [{ type: "text" as const, text }],
             isError: true,
           };
         }

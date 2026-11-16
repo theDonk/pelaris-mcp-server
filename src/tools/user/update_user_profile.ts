@@ -56,6 +56,70 @@ export const teamSportField = z
   })
   .strict();
 
+/** Cardio target basis options stored on preferences.cardio_target_mode. */
+export const CARDIO_TARGET_MODES = ["pace", "heart_rate", "smart_hybrid"] as const;
+export type CardioTargetMode = (typeof CARDIO_TARGET_MODES)[number];
+
+export interface DirectProfileUpdateParams {
+  equipment?: readonly string[];
+  availableDays?: readonly string[];
+  sessionsPerWeek?: number;
+  preferredSessionDuration?: number;
+  preferredUnits?: "metric" | "imperial";
+  cardioTargetMode?: CardioTargetMode;
+  experienceLevel?: "beginner" | "intermediate" | "advanced" | "elite";
+  poolLength?: "25m" | "50m" | "open_water";
+  environment?: "gym" | "home" | "outdoor" | "pool" | "mixed";
+}
+
+/** Build the direct Firestore field updates for non-bridge profile fields. */
+export function buildDirectProfileUpdates(params: DirectProfileUpdateParams): {
+  updates: Record<string, unknown>;
+  updatedFields: string[];
+} {
+  const updates: Record<string, unknown> = {};
+  const updatedFields: string[] = [];
+
+  if (params.equipment) {
+    updates["training_context.equipment"] = params.equipment;
+    updatedFields.push("equipment");
+  }
+  if (params.availableDays) {
+    updates["preferences.available_days"] = params.availableDays;
+    updatedFields.push("availableDays");
+  }
+  if (params.sessionsPerWeek != null) {
+    updates["preferences.sessions_per_week"] = params.sessionsPerWeek;
+    updatedFields.push("sessionsPerWeek");
+  }
+  if (params.preferredSessionDuration != null) {
+    updates["preferences.preferred_session_duration"] = params.preferredSessionDuration;
+    updatedFields.push("preferredSessionDuration");
+  }
+  if (params.preferredUnits) {
+    updates["preferredUnits"] = params.preferredUnits;
+    updatedFields.push("preferredUnits");
+  }
+  if (params.cardioTargetMode) {
+    updates["preferences.cardio_target_mode"] = params.cardioTargetMode;
+    updates["field_origins.cardio_target_mode"] = "coach";
+    updatedFields.push("cardioTargetMode");
+  }
+  if (params.experienceLevel) {
+    updates["training_context.experience_level"] = params.experienceLevel;
+    updatedFields.push("experienceLevel");
+  }
+  if (params.poolLength) {
+    updates["training_context.pool_length"] = params.poolLength;
+    updatedFields.push("poolLength");
+  }
+  if (params.environment) {
+    updates["training_context.environment"] = params.environment;
+    updatedFields.push("environment");
+  }
+  return { updates, updatedFields };
+}
+
 export function registerUpdateUserProfile(server: McpServer): void {
   server.registerTool(
     "update_profile",
@@ -93,6 +157,10 @@ export function registerUpdateUserProfile(server: McpServer): void {
           .enum(["metric", "imperial"])
           .optional()
           .describe("Preferred measurement units"),
+        cardioTargetMode: z
+          .enum(CARDIO_TARGET_MODES)
+          .optional()
+          .describe("Default cardio intensity target basis across workouts and reports: 'pace', 'heart_rate', or 'smart_hybrid' (swimming workouts always use pace)."),
         experienceLevel: z
           .enum(["beginner", "intermediate", "advanced", "elite"])
           .optional()
@@ -134,10 +202,10 @@ export function registerUpdateUserProfile(server: McpServer): void {
           };
         }
 
+        const { updates, updatedFields } = buildDirectProfileUpdates(params);
+
         // Validate at least one field provided
-        const hasUpdates = params.equipment || params.availableDays || params.sessionsPerWeek != null ||
-          params.preferredSessionDuration != null || params.preferredUnits || params.experienceLevel ||
-          params.poolLength || params.environment || params.teamSport;
+        const hasUpdates = updatedFields.length > 0 || !!params.teamSport;
 
         if (!hasUpdates) {
           return {
@@ -145,7 +213,7 @@ export function registerUpdateUserProfile(server: McpServer): void {
               type: "text" as const,
               text: JSON.stringify({
                 status: "no_changes",
-                message: "No changes specified. Provide at least one field to update (equipment, availableDays, sessionsPerWeek, preferredSessionDuration, preferredUnits, experienceLevel, poolLength, environment, teamSport).",
+                message: "No changes specified. Provide at least one field to update (equipment, availableDays, sessionsPerWeek, preferredSessionDuration, preferredUnits, cardioTargetMode, experienceLevel, poolLength, environment, teamSport).",
               }, null, 2),
             }],
           };
@@ -153,11 +221,8 @@ export function registerUpdateUserProfile(server: McpServer): void {
 
         const profileId = claims.profile_id;
 
-        // 1.4 B2c (TS-7): the team sport goes to the wayfinder core's update_athlete over
-        // the bridge, the one validated writer (registry ids only, origin coach, server
-        // time), for the token's own profile only. It runs first so a refusal (a closed
-        // code, never the typed input) stops the call before anything else is written,
-        // and there is no direct-write fallback.
+        // Team sport updates route through the backend update_athlete bridge
+        // so its registry validation runs before anything else is written.
         if (params.teamSport) {
           const bridged = await callCoreBridge("update_athlete", profileId, { type: "profile", teamSport: params.teamSport });
           if (!bridged.ok || bridged.result == null) {
@@ -175,9 +240,7 @@ export function registerUpdateUserProfile(server: McpServer): void {
           }
         }
 
-        const onlyTeamSport = !!params.teamSport && !(params.equipment || params.availableDays || params.sessionsPerWeek != null ||
-          params.preferredSessionDuration != null || params.preferredUnits || params.experienceLevel ||
-          params.poolLength || params.environment);
+        const onlyTeamSport = !!params.teamSport && updatedFields.length === 0;
         const profileRef = db.collection("profiles").doc(profileId);
         const profileDoc = onlyTeamSport ? null : await profileRef.get();
 
@@ -186,43 +249,6 @@ export function registerUpdateUserProfile(server: McpServer): void {
             content: [{ type: "text" as const, text: "Profile not found" }],
             isError: true,
           };
-        }
-
-        // Build update object — only include provided fields
-        const updates: Record<string, unknown> = {};
-        const updatedFields: string[] = [];
-
-        if (params.equipment) {
-          updates["training_context.equipment"] = params.equipment;
-          updatedFields.push("equipment");
-        }
-        if (params.availableDays) {
-          updates["preferences.available_days"] = params.availableDays;
-          updatedFields.push("availableDays");
-        }
-        if (params.sessionsPerWeek != null) {
-          updates["preferences.sessions_per_week"] = params.sessionsPerWeek;
-          updatedFields.push("sessionsPerWeek");
-        }
-        if (params.preferredSessionDuration != null) {
-          updates["preferences.preferred_session_duration"] = params.preferredSessionDuration;
-          updatedFields.push("preferredSessionDuration");
-        }
-        if (params.preferredUnits) {
-          updates["preferredUnits"] = params.preferredUnits;
-          updatedFields.push("preferredUnits");
-        }
-        if (params.experienceLevel) {
-          updates["training_context.experience_level"] = params.experienceLevel;
-          updatedFields.push("experienceLevel");
-        }
-        if (params.poolLength) {
-          updates["training_context.pool_length"] = params.poolLength;
-          updatedFields.push("poolLength");
-        }
-        if (params.environment) {
-          updates["training_context.environment"] = params.environment;
-          updatedFields.push("environment");
         }
 
         if (params.teamSport) updatedFields.push("teamSport");

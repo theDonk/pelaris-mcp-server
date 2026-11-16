@@ -15,6 +15,52 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { sessionSourcesFromLinkedEntries } from "../shared/session_sources.js";
 
+export function mapDiarySessionSet(s: Record<string, unknown>): Record<string, unknown> {
+  if (s.type === "strength") {
+    const targetDurationSec = s.target_duration_sec ?? null;
+    const actualDurationSec = s.actual_duration_sec ?? null;
+    const holdSec =
+      typeof actualDurationSec === "number" && actualDurationSec > 0
+        ? actualDurationSec
+        : typeof targetDurationSec === "number" && targetDurationSec > 0
+          ? targetDurationSec
+          : null;
+    return {
+      type: "strength",
+      targetWeightKg: s.target_weight_kg ?? null,
+      targetReps: holdSec != null && s.target_reps === 1 ? null : (s.target_reps ?? null),
+      targetRpe: s.target_rpe ?? null,
+      actualWeightKg: s.actual_weight_kg ?? null,
+      actualReps: holdSec != null && s.actual_reps === 1 ? null : (s.actual_reps ?? null),
+      actualRpe: s.actual_rpe ?? null,
+      ...(targetDurationSec != null || actualDurationSec != null
+        ? {
+            targetDurationSec,
+            actualDurationSec,
+            ...(holdSec != null ? { summary: `${holdSec}s hold` } : {}),
+          }
+        : {}),
+      isCompleted: Boolean(s.isCompleted || s.is_completed),
+    };
+  }
+  if (s.type === "cardio") {
+    return {
+      type: "cardio",
+      targetDistanceMeters: s.target_distance_meters ?? null,
+      targetDurationSec: s.target_duration_sec ?? null,
+      actualDistanceMeters: s.actual_distance_meters ?? null,
+      actualDurationSec: s.actual_duration_sec ?? null,
+      isCompleted: Boolean(s.isCompleted || s.is_completed),
+    };
+  }
+  return {
+    type: s.type || "unknown",
+    targetDurationSec: s.target_duration_sec ?? null,
+    actualDurationSec: s.actual_duration_sec ?? null,
+    isCompleted: Boolean(s.isCompleted || s.is_completed),
+  };
+}
+
 export function registerGetSessionDetails(server: McpServer): void {
   server.registerTool(
     "get_session_details",
@@ -100,36 +146,7 @@ export function registerGetSessionDetails(server: McpServer): void {
                 exerciseId: ex.exercise_id,
                 // AI-authored per-exercise adaptation delta.
                 deltaNote: ex.delta_note ?? null,
-                sets: sets.map((s) => {
-                  if (s.type === "strength") {
-                    return {
-                      type: "strength",
-                      targetWeightKg: s.target_weight_kg ?? null,
-                      targetReps: s.target_reps ?? null,
-                      targetRpe: s.target_rpe ?? null,
-                      actualWeightKg: s.actual_weight_kg ?? null,
-                      actualReps: s.actual_reps ?? null,
-                      actualRpe: s.actual_rpe ?? null,
-                      isCompleted: s.isCompleted || false,
-                    };
-                  } else if (s.type === "cardio") {
-                    return {
-                      type: "cardio",
-                      targetDistanceMeters: s.target_distance_meters ?? null,
-                      targetDurationSec: s.target_duration_sec ?? null,
-                      actualDistanceMeters: s.actual_distance_meters ?? null,
-                      actualDurationSec: s.actual_duration_sec ?? null,
-                      isCompleted: s.isCompleted || false,
-                    };
-                  } else {
-                    return {
-                      type: s.type || "unknown",
-                      targetDurationSec: s.target_duration_sec ?? null,
-                      actualDurationSec: s.actual_duration_sec ?? null,
-                      isCompleted: s.isCompleted || false,
-                    };
-                  }
-                }),
+                sets: sets.map(mapDiarySessionSet),
               };
             }),
           };
