@@ -7,11 +7,12 @@
 - Development: *Build on the foundations we have, lay strong foundations for the future.*
 - Design: *To swim across the ocean, you start at the beach, and aim for the horizon.*
 
-**Before you act, ask the four principle questions**
+**Before you act, ask the five principle questions**
 1. **AI-first:** is this a judgement call? Then the AI decides. Code only executes. No keyword, regex or threshold gates for understanding.
 2. **Improve and enhance:** what existing thing am I extending? Name it before writing anything new, and don't rebuild.
-3. **End-to-end:** have I traced the whole path, from the tool call, through the server, to what the athlete sees?
-4. **Basics brilliantly:** is it verified with evidence (a command log, a test run, a CI link), not "should work"?
+3. **Standardise and stay consistent:** does this use one shared producer and contract, and reduce duplication of features, functions and code?
+4. **End-to-end:** have I traced the whole path, from the tool call, through the server, to what the athlete sees?
+5. **Basics brilliantly:** is it verified with evidence (a command log, a test run, a CI link), not "should work"?
 
 **Push back.** If a request conflicts with the mottos, an existing rule or the evidence, say so in one line and offer the better option before acting.
 

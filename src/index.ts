@@ -12,6 +12,7 @@ import { runWithAuth, setRequestAuth, clearRequestAuth } from "./request-context
 import { DEFAULT_OAUTH_CF_BASE, mountConnectorRoutes, runConnectorReturnStep } from "./connector/routes.js";
 import { runWithConnectorFacts } from "./connector/connector_use.js";
 import { serverInfo } from "./server_info.js";
+import { mountWebhookRoutes } from "./webhooks/proxy.js";
 
 // Single source of truth for version — reads from package.json
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -78,6 +79,8 @@ const PORT = parseInt(process.env.PORT || "8080", 10);
 const app = express();
 // CORS before body parsing so OPTIONS preflights short-circuit cleanly.
 app.use(corsMiddleware);
+// Mount raw-body webhook proxy BEFORE express.json() so upstream signatures verify exact bytes.
+mountWebhookRoutes(app);
 app.use(express.json());
 
 // Protocol-level request log: one allow-listed line per /mcp
