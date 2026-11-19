@@ -37,6 +37,38 @@ export type TruthBuildState =
   | "build_failed"
   | "ended";
 
+export interface TruthWeekSession {
+  sessionId: string | null;
+  focus: string | null;
+  slotType: string | null;
+  scheduledDate: string | null;
+  isCompleted: boolean;
+}
+
+/**
+ * What "this week", "Week N" and "next week" mean. One sentence for every tool that
+ * returns weeks, so the assistant never works out week membership from a session's
+ * stored week number.
+ */
+export const WEEK_MEANING_NOTE =
+  "A week is Monday to Sunday in the athlete's own timezone. \"Week N\" is the number the Pelaris app shows for that week, " +
+  "and \"next week\" is the following Monday to Sunday. Use the sessions listed under each week; " +
+  "do not work out which week a session is in from its stored week number.";
+
+/**
+ * The next-week fields, only when the server sent them (older servers do not).
+ * Never invented. `shapeSession` lets a tool add its own per-session fields.
+ */
+export function nextWeekFields(
+  p: TruthProgram,
+  shapeSession: (s: TruthWeekSession) => Record<string, unknown> = (s) => ({ ...s }),
+): Record<string, unknown> {
+  return {
+    ...(p.nextWeekNumber !== undefined ? { nextWeekNumber: p.nextWeekNumber } : {}),
+    ...(Array.isArray(p.nextWeekSessions) ? { nextWeekSessions: p.nextWeekSessions.map(shapeSession) } : {}),
+  };
+}
+
 export interface TruthProgram {
   queueId: string;
   title: string | null;
@@ -61,13 +93,11 @@ export interface TruthProgram {
   nextUnbuiltWeekStartsOn: string | null;
   programEnded: { endedOn: string } | null;
   schedule: Array<{ week: number; startsOn: string | null; built: boolean; plannedSessions: number; completedSessions: number }>;
-  currentWeekSessions: Array<{
-    sessionId: string | null;
-    focus: string | null;
-    slotType: string | null;
-    scheduledDate: string | null;
-    isCompleted: boolean;
-  }>;
+  currentWeekSessions: TruthWeekSession[];
+  /** The week number the app shows for the following Monday to Sunday. Absent until the server sends it. */
+  nextWeekNumber?: number | null;
+  /** The sessions dated in the following Monday to Sunday, same shape as `currentWeekSessions`. Absent until the server sends it. */
+  nextWeekSessions?: TruthWeekSession[];
   completion: { sessionsCompleted: number; sessionsTotal: number; completionPercent: number };
 }
 

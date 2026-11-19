@@ -21,6 +21,9 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
 import {
   TRUTH_UNAVAILABLE_MESSAGE,
+  WEEK_MEANING_NOTE,
+  nextWeekFields,
+  type TruthWeekSession,
   programTruthFields,
   readTrainingTruth,
   type TruthProgram,
@@ -50,6 +53,18 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
     if (typeof s.id === "string") sessionFlags.set(s.id, s);
   }
   const isProgram = truth.kind === "program";
+  const withFlags = (s: TruthWeekSession) => {
+    const flags = s.sessionId != null ? sessionFlags.get(s.sessionId) : undefined;
+    return {
+      sessionId: s.sessionId,
+      focus: s.focus,
+      slotType: s.slotType,
+      isCompleted: s.isCompleted,
+      scheduledDate: s.scheduledDate,
+      hasCoachNote: !!flags?.coach_note,
+      adaptationApplied: (flags?.adaptation_applied as boolean | undefined) ?? false,
+    };
+  };
   return {
     programId: truth.queueId,
     title: truth.title,
@@ -61,18 +76,8 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
     totalWeeks: isProgram ? (truth.declaredWeeks ?? truth.builtThroughWeek) : 0,
     currentWeek: truth.currentWeek,
     currentPhase: truth.phase ? { phase: truth.phase.phase, focus: truth.phase.focus } : null,
-    currentWeekSessions: truth.currentWeekSessions.map((s) => {
-      const flags = s.sessionId != null ? sessionFlags.get(s.sessionId) : undefined;
-      return {
-        sessionId: s.sessionId,
-        focus: s.focus,
-        slotType: s.slotType,
-        isCompleted: s.isCompleted,
-        scheduledDate: s.scheduledDate,
-        hasCoachNote: !!flags?.coach_note,
-        adaptationApplied: (flags?.adaptation_applied as boolean | undefined) ?? false,
-      };
-    }),
+    currentWeekSessions: truth.currentWeekSessions.map(withFlags),
+    ...nextWeekFields(truth, withFlags),
     weeklyOverviews: queue?.weekly_overviews ?? null,
     generationStatus: truth.generationStatus,
     ...programTruthFields(truth),
@@ -85,7 +90,9 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
     "get_active_program",
     {
       title: "Get Active Program",
-      description: "View your current training programs with progress, phase, weekly structure, and session details.",
+      description:
+        "View your current training programs with progress, phase, weekly structure, and session details. " +
+        "Weeks are Monday to Sunday in your own timezone, \"Week N\" is the number the Pelaris app shows, and next week is the following Monday to Sunday.",
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Active Program" },
     },
@@ -124,6 +131,7 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
         );
 
         const result = scrubDocument({
+          weekNote: WEEK_MEANING_NOTE,
           programs,
           primaryProgramId: truth.primaryQueueId,
           asOf: truth.asOf,

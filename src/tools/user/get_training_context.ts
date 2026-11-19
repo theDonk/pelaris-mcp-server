@@ -19,7 +19,7 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { programTruthFields, readTrainingTruth, type TruthReader } from "../shared/training_truth.js";
+import { WEEK_MEANING_NOTE, nextWeekFields, programTruthFields, readTrainingTruth, type TruthReader } from "../shared/training_truth.js";
 import { adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
 
 /** An injury id as the core issues it. */
@@ -64,7 +64,8 @@ export function registerGetTrainingContext(
     "get_training_overview",
     {
       title: "Get Training Overview",
-      description: "View your complete training snapshot — active programs, recent sessions, check-in data, goals, and progress at a glance.",
+      description: "View your complete training snapshot: active programs, recent sessions, check-in data, goals, and progress at a glance. " +
+        "Weeks are Monday to Sunday in your own timezone, \"Week N\" is the number the Pelaris app shows, and next week is the following Monday to Sunday.",
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Training Overview" },
     },
@@ -142,6 +143,7 @@ export function registerGetTrainingContext(
             completedSessions: p.completion.sessionsCompleted,
             currentWeek: p.currentWeek,
             currentPhase: p.phase ? { phase: p.phase.phase, focus: p.phase.focus } : null,
+            ...nextWeekFields(p),
             generationStatus: p.generationStatus,
             ...programTruthFields(p),
             ...adaptationFieldsFor(d, p.buildState),
@@ -243,6 +245,7 @@ export function registerGetTrainingContext(
                   "you have no program: do not offer to create a new one. Try again in a moment.",
               }
             : {
+                weekNote: WEEK_MEANING_NOTE,
                 primaryProgramId: truth.primaryQueueId,
                 thisWeek: truth.weekCounts == null
                   ? null
@@ -250,7 +253,7 @@ export function registerGetTrainingContext(
                       weekStarting: truth.week.weekId,
                       weekEnding: truth.week.weekEndId,
                       ...truth.weekCounts,
-                      note: "Counts for the calendar week, Monday to Sunday. Program sessions are counted against the plan; bonus sessions are extra and never a shortfall.",
+                      note: "Counts for the calendar week, Monday to Sunday in the athlete's own timezone. Program sessions are counted against the plan; bonus sessions are extra and never a shortfall.",
                     },
                 asOf: truth.asOf,
               }),
