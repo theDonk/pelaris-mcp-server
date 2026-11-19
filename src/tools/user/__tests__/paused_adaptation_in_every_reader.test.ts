@@ -70,8 +70,9 @@ test("withSignedAdaptationLink: one mint per reply, only paused programs get the
   const active = { programId: "b", ...adaptationFieldsFor(ACTIVE_QUEUE) };
   const out = await withSignedAdaptationLink([paused, active], READ_CLAIMS, mint);
   assert.equal(mints, 1);
-  assert.equal(out[0].link, signed);
-  assert.ok(String(out[0].adaptationNote).includes(signed));
+  const first = out[0] as Record<string, unknown>;
+  assert.equal(first.link, signed);
+  assert.ok(String(first.adaptationNote).includes(signed));
   assertActiveNoExtras(out[1], "active stays as it was");
 
   mints = 0;
