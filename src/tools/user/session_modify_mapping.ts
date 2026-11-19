@@ -126,7 +126,10 @@ export function buildUpdateSessionCompletionInput(
 
 /** The modify_training_session tool params after zod validation. */
 export interface ModifyTrainingSessionParams {
-  sessionId: string;
+  /** Needed for every single-session change; not used by rescheduleSessions. */
+  sessionId?: string;
+  /** Move several planned sessions in one call (core type 'reschedule_many'). */
+  rescheduleSessions?: Array<{ sessionId: string; newDate: string }>;
   reduceVolume?: number;
   increaseIntensity?: number;
   swapExercise?: { from: string; to: string; toExerciseId?: string };
@@ -150,6 +153,21 @@ export function buildModifyTrainingOperations(
   params: ModifyTrainingSessionParams,
 ): ModifySessionOperation[] {
   const operations: ModifySessionOperation[] = [];
+  if (params.rescheduleSessions && params.rescheduleSessions.length > 0) {
+    // One core call moves them all, so a week either moves together or the
+    // result says which sessions stayed and why.
+    operations.push({
+      action: "rescheduling sessions",
+      input: {
+        type: "reschedule_many",
+        moves: params.rescheduleSessions.map((move) => ({
+          sessionId: move.sessionId,
+          newDate: move.newDate,
+        })),
+      },
+    });
+  }
+  if (params.sessionId == null) return operations;
   if (params.reduceVolume != null || params.increaseIntensity != null) {
     const input: Record<string, unknown> = { type: "scale", sessionId: params.sessionId };
     if (params.reduceVolume != null) input.volumeMultiplier = params.reduceVolume;

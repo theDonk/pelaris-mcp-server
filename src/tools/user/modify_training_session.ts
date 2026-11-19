@@ -36,13 +36,14 @@ export function registerModifyTrainingSession(server: McpServer): void {
     "modify_training_session",
     {
       title: "Modify Training Session",
-      description: "Adjust a planned session — reduce volume, change intensity, swap exercises, or reschedule to a different date.",
+      description: "Adjust a planned session: reduce volume, change intensity, swap exercises, or reschedule to a different date. To move several sessions at once (for example after the athlete changes their training days), pass rescheduleSessions and they all move in one call.",
       inputSchema: {
         sessionId: z
           .string()
           .min(1)
           .max(200)
-          .describe("The session ID (from get_training_overview or get_session_details)"),
+          .optional()
+          .describe("The session ID (from get_training_overview or get_session_details). Required for every change except rescheduleSessions."),
         reduceVolume: z
           .number()
           .min(0.1)
@@ -68,6 +69,20 @@ export function registerModifyTrainingSession(server: McpServer): void {
           .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
           .optional()
           .describe("New scheduled date in YYYY-MM-DD format"),
+        rescheduleSessions: z
+          .array(
+            z.object({
+              sessionId: z.string().min(1).max(200).describe("A planned session to move"),
+              newDate: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+                .describe("Its new date in YYYY-MM-DD format"),
+            }),
+          )
+          .min(1)
+          .max(60)
+          .optional()
+          .describe("Move several planned sessions in one call, across any built weeks. The result lists which moved, which stayed and why, and which need the athlete to choose a day. Sessions the athlete moved by hand stay where they put them."),
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Modify Training Session" },
     },
@@ -94,8 +109,18 @@ export function registerModifyTrainingSession(server: McpServer): void {
           };
         }
 
+        const singleChangeAsked = params.reduceVolume != null || params.increaseIntensity != null ||
+          params.swapExercise != null || params.rescheduleDate != null;
+        if (singleChangeAsked && params.sessionId == null) {
+          return {
+            content: [{ type: "text" as const, text: "Error: sessionId is required for reduceVolume, increaseIntensity, swapExercise and rescheduleDate" }],
+            isError: true,
+          };
+        }
+
         const operations = buildModifyTrainingOperations({
           sessionId: params.sessionId,
+          rescheduleSessions: params.rescheduleSessions,
           reduceVolume: params.reduceVolume,
           increaseIntensity: params.increaseIntensity,
           swapExercise: params.swapExercise,
@@ -103,7 +128,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
         });
         if (operations.length === 0) {
           return {
-            content: [{ type: "text" as const, text: "Error: At least one modification is required (reduceVolume, increaseIntensity, swapExercise, or rescheduleDate)" }],
+            content: [{ type: "text" as const, text: "Error: At least one modification is required (reduceVolume, increaseIntensity, swapExercise, rescheduleDate, or rescheduleSessions)" }],
             isError: true,
           };
         }
@@ -114,6 +139,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
         const modifications: string[] = [];
         const updatedFields = new Set<string>();
         let title: unknown;
+        let batch: Record<string, unknown> | undefined;
 
         for (const operation of operations) {
           const bridged = await callCoreBridge("modify_session", profileId, operation.input);
@@ -141,6 +167,14 @@ export function registerModifyTrainingSession(server: McpServer): void {
             updatedFields.add(field);
           }
           if (result.title != null) title = result.title;
+          if (result.type === "reschedule_many") {
+            batch = {
+              moved: result.moved ?? [],
+              skipped: result.skipped ?? [],
+              needsAthlete: result.needsAthlete ?? [],
+              failed: result.failed ?? [],
+            };
+          }
         }
 
         const output = scrubDocument({
@@ -148,6 +182,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
           title,
           modifications,
           updatedFields: [...updatedFields],
+          ...(batch ?? {}),
           message: `Session modified successfully: ${modifications.join("; ")}`,
         });
 

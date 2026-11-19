@@ -231,3 +231,24 @@ test("buildModifyTrainingOperations maps reschedule and keeps the legacy apply o
 test("buildModifyTrainingOperations with no modifications returns an empty list", () => {
   assert.deepEqual(buildModifyTrainingOperations({ sessionId: "sess_1" }), []);
 });
+
+test("buildModifyTrainingOperations maps rescheduleSessions to one reschedule_many call", () => {
+  const operations = buildModifyTrainingOperations({
+    rescheduleSessions: [
+      { sessionId: "sess_1", newDate: "2026-07-06" },
+      { sessionId: "sess_2", newDate: "2026-07-08" },
+    ],
+  });
+  assert.equal(operations.length, 1);
+  assert.deepEqual(operations[0].input, {
+    type: "reschedule_many",
+    moves: [
+      { sessionId: "sess_1", newDate: "2026-07-06" },
+      { sessionId: "sess_2", newDate: "2026-07-08" },
+    ],
+  });
+});
+
+test("buildModifyTrainingOperations skips single-session changes when no sessionId is given", () => {
+  assert.deepEqual(buildModifyTrainingOperations({ rescheduleDate: "2026-07-05" }), []);
+});
