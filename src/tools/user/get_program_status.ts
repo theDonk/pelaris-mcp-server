@@ -18,7 +18,7 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { NO_RUNNING_PROGRAM_MESSAGE, entriesByQueueId, summarizeProgram } from "../shared/program-utils.js";
+import { NO_RUNNING_PROGRAM_MESSAGE, entriesByQueueId, summarizeProgram, withSignedAdaptationLink } from "../shared/program-utils.js";
 
 const VALID_ACTIONS = ["get_current", "list_history"] as const;
 
@@ -97,7 +97,7 @@ export function registerGetProgramStatus(server: McpServer, deps: ProgramStatusD
                   : null;
             return summarizeProgram(doc, entries, { plannedTotalWeeks });
           });
-          const result = scrubDocument({ programs } as Record<string, unknown>);
+          const result = scrubDocument({ programs: await withSignedAdaptationLink(programs, claims) } as Record<string, unknown>);
 
           logToolCall({
             requestId,
@@ -133,7 +133,7 @@ export function registerGetProgramStatus(server: McpServer, deps: ProgramStatusD
                 : null;
           return summarizeProgram(doc, entries, { plannedTotalWeeks });
         });
-        const result = scrubDocument({ programs } as Record<string, unknown>);
+        const result = scrubDocument({ programs: await withSignedAdaptationLink(programs, claims) } as Record<string, unknown>);
 
         logToolCall({
           requestId,

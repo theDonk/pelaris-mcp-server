@@ -12,7 +12,7 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { plainDay } from "../shared/training_truth.js";
-import { ENTRY_LINK_SCAN } from "../shared/entry_links.js";
+import { mintSignedEntryLink } from "../shared/entry_links.js";
 
 /**
  * 1.4.1 D2 (connector truth): the "as of" line. A body analysis is a snapshot from the day it was
@@ -92,7 +92,7 @@ export function registerGetBodyAnalysis(server: McpServer): void {
 
         if (biometricsSnap.empty) {
           return {
-            content: [{ type: "text" as const, text: JSON.stringify({ analysis: null, message: "No body analysis data found", scanLink: ENTRY_LINK_SCAN }) }],
+            content: [{ type: "text" as const, text: JSON.stringify({ analysis: null, message: "No body analysis data found", scanLink: await mintSignedEntryLink("scan", claims) }) }],
           };
         }
 
@@ -124,7 +124,7 @@ export function registerGetBodyAnalysis(server: McpServer): void {
           bodyFatRangePercent: bodyFat.bodyFatRangePercent,
           symmetry: bodySymmetry(latest),
           // Where to start a new scan: the connector never takes photos, the app does.
-          scanLink: ENTRY_LINK_SCAN,
+          scanLink: await mintSignedEntryLink("scan", claims),
 
           // Ratios
           ratios: {

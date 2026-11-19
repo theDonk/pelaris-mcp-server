@@ -18,7 +18,7 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor } from "../shared/program-utils.js";
+import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
 import {
   TRUTH_UNAVAILABLE_MESSAGE,
   programTruthFields,
@@ -118,7 +118,10 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
         }
 
         const queueById = new Map(queueDocs.map((doc) => [doc.id, doc.data()]));
-        const programs = truth.programs.map((p) => shapeActiveProgram(p, queueById.get(p.queueId)));
+        const programs = await withSignedAdaptationLink(
+          truth.programs.map((p) => shapeActiveProgram(p, queueById.get(p.queueId))),
+          claims,
+        );
 
         const result = scrubDocument({
           programs,

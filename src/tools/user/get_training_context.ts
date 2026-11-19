@@ -20,7 +20,7 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { programTruthFields, readTrainingTruth, type TruthReader } from "../shared/training_truth.js";
-import { adaptationFieldsFor } from "../shared/program-utils.js";
+import { adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
 
 /** An injury id as the core issues it. */
 const INJURY_ID = /^inj_[0-9a-f]{10}$/;
@@ -235,7 +235,7 @@ export function registerGetTrainingContext(
 
         const result = scrubDocument({
           profile: profileContext,
-          activePrograms: programs,
+          activePrograms: await withSignedAdaptationLink(programs, claims),
           ...(truth == null
             ? {
                 programsNote:

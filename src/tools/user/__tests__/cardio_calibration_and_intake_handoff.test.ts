@@ -88,6 +88,16 @@ test("complete_intake attaches program link and structured nextStep without dash
   assert.equal(hasDash(String(shaped.nextStepGuidance)), false);
 });
 
+test("complete_intake prefers the minted signed link over the core's plain link", () => {
+  const signed = `${ENTRY_LINK_PROGRAM}?h=${"a".repeat(43)}`;
+  const shaped = shapeCompleteIntakeResult(
+    { status: "completed", continuationUrl: ENTRY_LINK_PROGRAM },
+    signed,
+  );
+  assert.equal(shaped.continuationUrl, signed);
+  assert.ok(String(shaped.nextStepGuidance).includes(signed));
+});
+
 test("timed holds map targetDurationSec / actualDurationSec and render as 45s hold instead of 1 reps", () => {
   const parsed = coreWriteExerciseSchema.parse({ name: "Plank", sets: 3, targetDurationSec: 45 });
   assert.equal(parsed.targetDurationSec, 45);

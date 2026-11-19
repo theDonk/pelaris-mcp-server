@@ -1,8 +1,8 @@
 /**
  * Entry links handed by the connector to an assistant.
  *
- * Plain links open `/start/<route>` in Pelaris. When valid OAuth session facts
- * (`uid` and `profile_id`) are present, `mintSignedEntryLink` writes a single-use,
+ * Plain links open `/start/<route>` in Pelaris. When the verified connector
+ * request facts carry `uid` and `profileId`, `mintSignedEntryLink` writes a single-use,
  * 10-minute SHA-256 token record to `handoff_tokens/{tokenHash}` and returns
  * `https://coach.pelaris.io/start/<route>?h=<opaqueToken>`, falling back cleanly
  * to the plain `/start/<route>` link if credentials are absent or storage fails.
@@ -106,24 +106,23 @@ export async function mintSignedEntryLink(
   deps: MintSignedEntryLinkDeps = {},
 ): Promise<string> {
   const fallback = plainEntryLink(route);
-  if (!claims) return fallback;
 
+  // Identity comes only from the verified connector request facts. Claims may
+  // only narrow: a claims profile id that differs from the facts gets the plain link.
+  const facts = (deps.getConnectorFacts ?? currentConnectorFacts)();
+  if (!facts) return fallback;
   const rawProfileId =
-    typeof claims.profile_id === "string" && claims.profile_id.trim().length > 0
+    typeof facts.profileId === "string" ? facts.profileId.trim() : "";
+  const rawUid = typeof facts.uid === "string" ? facts.uid.trim() : "";
+  if (!isSafeId(rawProfileId) || !isSafeId(rawUid)) return fallback;
+
+  const claimsProfileId =
+    typeof claims?.profile_id === "string" && claims.profile_id.trim().length > 0
       ? claims.profile_id.trim()
-      : typeof claims.profileId === "string" && claims.profileId.trim().length > 0
+      : typeof claims?.profileId === "string" && claims.profileId.trim().length > 0
         ? claims.profileId.trim()
         : "";
-  if (!isSafeId(rawProfileId)) return fallback;
-
-  const facts = (deps.getConnectorFacts ?? currentConnectorFacts)();
-  const rawUid =
-    typeof claims.uid === "string" && claims.uid.trim().length > 0
-      ? claims.uid.trim()
-      : facts && facts.profileId === rawProfileId && typeof facts.uid === "string"
-        ? facts.uid.trim()
-        : "";
-  if (!isSafeId(rawUid)) return fallback;
+  if (claimsProfileId && claimsProfileId !== rawProfileId) return fallback;
 
   try {
     const opaqueToken = (

@@ -23,7 +23,7 @@ import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
-import { ENTRY_LINK_PROGRAM } from "../shared/entry_links.js";
+import { ENTRY_LINK_PROGRAM, mintSignedEntryLink } from "../shared/entry_links.js";
 
 const INTAKE_RESPONSE_FIELDS = [
   "status",
@@ -36,9 +36,12 @@ const INTAKE_RESPONSE_FIELDS = [
 /**
  * Project user-facing fields from the core intake result and attach the
  * program-creation entry link + clear next step once intake is complete.
+ * `programLink` is the signed hand-off link the handler minted; without it the
+ * core's plain link (or the plain constant) is used.
  */
 export function shapeCompleteIntakeResult(
   result: Record<string, unknown>,
+  programLink?: string,
 ): Record<string, unknown> {
   const projected: Record<string, unknown> = {};
   for (const key of INTAKE_RESPONSE_FIELDS) {
@@ -47,7 +50,9 @@ export function shapeCompleteIntakeResult(
   if (projected.status === undefined) projected.status = "completed";
   if (projected.status === "completed") {
     const continuationUrl =
-      typeof result.continuationUrl === "string" && result.continuationUrl.length > 0
+      programLink && programLink.length > 0
+        ? programLink
+        : typeof result.continuationUrl === "string" && result.continuationUrl.length > 0
         ? result.continuationUrl
         : ENTRY_LINK_PROGRAM;
     projected.continuationUrl = continuationUrl;
@@ -131,7 +136,10 @@ export function registerCompleteIntake(server: McpServer): void {
           };
         }
 
-        const projected = shapeCompleteIntakeResult(result);
+        const programLink = (result.status ?? "completed") === "completed"
+          ? await mintSignedEntryLink("program", claims)
+          : undefined;
+        const projected = shapeCompleteIntakeResult(result, programLink);
 
         return { content: [{ type: "text" as const, text: JSON.stringify(scrubDocument(projected), null, 2) }] };
       } catch (error) {
