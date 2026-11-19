@@ -50,6 +50,7 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/program_readers_agree_with_the_app.test.js",
   "dist/tools/user/__tests__/paused_adaptation_in_every_reader.test.js",
   "dist/tools/user/__tests__/programs_built_in_pelaris_wording.test.js",
+  "dist/tools/user/__tests__/get_body_analysis_core_bridge.test.js",
   "dist/tools/user/__tests__/resolve_exercise_ids.test.js",
   "dist/tools/user/__tests__/run_calculator.test.js",
   "dist/tools/user/__tests__/session_modify_mapping.test.js",
