@@ -38,6 +38,7 @@ import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.
 // longer imported here. See the "User coaching tools" comment further
 // down, right above its former registration call site.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
+import { registerRunCalculator } from "./tools/user/run_calculator.js";
 
 // User write tools (OAuth-scoped)
 // generate_weekly_plan (src/tools/user/generate_weekly_plan.ts) is RETIRED
@@ -230,6 +231,7 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
         "When a tool gives a link for the person (to train, open their program or start a scan), " +
         "share it with them in your reply. " +
         "When it reports preferred_units, use them and do not ask for units again. " +
+        "For any training maths question, use run_calculator so Pelaris does the numbers. " +
         "Offer this once; if the person declines, carry on with what they asked.",
     });
 
@@ -259,6 +261,8 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     // Exercise-id preflight: read tool that teaches the write vocabulary
     // (resolve names -> canonical exerciseId -> pass to write tools).
     registerResolveExerciseIds(server);
+    // Sports science calculators: free to run, saved on plans that include saving.
+    registerRunCalculator(server);
 
     // ─── User write tools (OAuth-scoped) ────────────────
     // generate_program is a reply-only tool since connector rev 2.1: it builds nothing here and answers with the link that opens

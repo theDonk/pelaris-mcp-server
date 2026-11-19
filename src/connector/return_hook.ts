@@ -191,6 +191,7 @@ export const BRIDGED_TOOLS: ReadonlySet<string> = new Set([
   "manage_program",
   "modify_training_session",
   "resolve_exercise_ids",
+  "run_calculator",
   "swap_exercise",
   "update_session",
 ]);
@@ -206,7 +207,7 @@ export const KNOWN_TOOLS: ReadonlySet<string> = new Set([
   "get_onboarding_status", "get_program_status", "get_session_details", "get_training_overview",
   "get_weekly_debrief", "list_goals", "log_completed_session", "log_workout", "manage_goals",
   "manage_program", "modify_training_session", "record_benchmark", "record_injury", "resolve_exercise_ids",
-  "search_training_resources", "send_feedback", "swap_exercise", "update_profile", "update_session",
+  "run_calculator", "search_training_resources", "send_feedback", "swap_exercise", "update_profile", "update_session",
 ]);
 
 /** The direct tools a JSON-RPC body (one message or a batch) calls. */
