@@ -191,7 +191,7 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
   // runs inside the try below (B2a fix pass, CR-10).
   const connector = req.isAdminAuth ? undefined : req.connectorAccess;
   const connectorFacts = connector ?
-    { profileId: connector.profileId, clientClass: connector.assistantClass ?? "unknown" as const } :
+    { uid: connector.uid, profileId: connector.profileId, clientClass: connector.assistantClass ?? "unknown" as const } :
     null;
 
   // AsyncLocalStorage for concurrency-safe per-request auth context

@@ -39,6 +39,7 @@ export interface McpAuthenticatedRequest extends Request {
    * `connector_use` run only when it is present.
    */
   connectorAccess?: {
+    uid: string;
     profileId: string;
     profileData: Record<string, unknown>;
     assistantClass: AssistantClass | null;
@@ -238,6 +239,7 @@ export async function verifyBearerToken(
 
       if (access.kind === "allow") {
         req.connectorAccess = {
+          uid: access.uid,
           profileId: access.profileId,
           profileData: access.profileData,
           assistantClass: access.assistantClass,

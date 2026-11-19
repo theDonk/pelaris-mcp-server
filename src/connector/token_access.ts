@@ -56,6 +56,7 @@ export type TokenDenyReason =
 export type TokenAccess =
   | {
     kind: "allow";
+    uid: string;
     profileId: string;
     profileData: Record<string, unknown>;
     /** The token doc's stored class (lane A stamps it at mint), or null for an older token. */
@@ -112,7 +113,7 @@ export async function judgeTokenAccess(
   const assistantClass = typeof stored === "string" && (ASSISTANT_CLASSES as readonly string[]).includes(stored) ?
     stored as AssistantClass :
     null;
-  return { kind: "allow", profileId, profileData: profileData as Record<string, unknown>, assistantClass };
+  return { kind: "allow", uid, profileId, profileData: profileData as Record<string, unknown>, assistantClass };
 }
 
 /** The production reader: two single-document reads. */
