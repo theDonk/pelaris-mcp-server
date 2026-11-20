@@ -171,6 +171,8 @@ export interface CardPage {
   /** Lets pending promises and host replies settle. */
   settle: () => Promise<void>;
   body: FakeElement;
+  /** Every text drawn on a canvas, in order. */
+  canvasTexts: string[];
 }
 
 export async function openCardPage(html: string, opts: PageOptions = {}): Promise<CardPage> {
@@ -180,6 +182,7 @@ export async function openCardPage(html: string, opts: PageOptions = {}): Promis
   const docEl = new FakeElement("html");
   const winListeners: Record<string, Listener[]> = {};
   const sent: CardPage["sent"] = [];
+  const canvasTexts: string[] = [];
   let timers: Array<{ id: number; fn: () => void }> = [];
   let timerId = 1;
 
@@ -188,7 +191,20 @@ export async function openCardPage(html: string, opts: PageOptions = {}): Promis
     documentElement: docEl,
     body,
     getElementById: byId,
-    createElement: (tag: string) => new FakeElement(tag),
+    createElement: (tag: string) => {
+      const e = new FakeElement(tag);
+      if (tag === "canvas") {
+        // A recording 2d context: text is kept in order; a character is 25 px wide.
+        const ctx2d = {
+          fillText: (t: string) => void canvasTexts.push(String(t)),
+          measureText: (t: string) => ({ width: String(t).length * 25 }),
+          fillRect: () => undefined,
+        };
+        Object.assign(e, { getContext: () => ctx2d, toDataURL: () => "data:image/png;base64,AA" });
+      }
+      if (tag === "a" || tag === "img") Object.assign(e, { remove: () => undefined });
+      return e;
+    },
     querySelectorAll: (sel: string) => {
       const cls = sel.startsWith(".") ? sel.slice(1) : null;
       return cls ? body.all().filter((e) => e.classList.contains(cls)) : [];
@@ -254,5 +270,6 @@ export async function openCardPage(html: string, opts: PageOptions = {}): Promis
     },
     settle,
     body,
+    canvasTexts,
   };
 }

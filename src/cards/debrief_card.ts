@@ -5,14 +5,17 @@
  * line when there were bonus sessions, next week's focus and the tagline line.
  *
  * Headline win and one thing to watch: no stored field holds either, and choosing them
- * is a judgement, so this code does not pick them. The only line it shows is a single
- * fact stated as data: when the week has exactly one new record in `newPrs`, that
- * record, worded neutrally ("Back squat: 80, was 77.5"). Otherwise both lines are left
- * out and the assistant's own message carries the judgement.
+ * is a judgement, so this code does not pick them; the assistant's own message carries
+ * the judgement. What the card does show is every entry of `newPrs`, as plain data rows
+ * under "New records" (exercise, value, the previous value when present; no unit, the
+ * tool gives none). No cap and no pick: a long list makes the card taller (no nested
+ * scroll inside the card), and an empty list shows no section. `newPrs` holds training
+ * records only (exercise name, value, previous value, date), with no type field and no
+ * body measurements, so nothing is filtered.
  *
  * Actions: "Save as image" draws a square picture on a canvas inside the card (week,
- * sessions, the record line when shown, next week's focus, the tagline; no name, no
- * account details) and offers it as a download. If the host's frame blocks downloads,
+ * sessions, the first record rows that fit and "and N more" when cut, next week's focus,
+ * the tagline; no name, no account details) and offers it as a download. If the host's frame blocks downloads,
  * the picture shows in the card and the action becomes "Copy text". "Open in Pelaris"
  * is the signed one-tap link to the program route.
  */
@@ -33,12 +36,19 @@ export interface DebriefCardData {
   completed: number;
   planned: number;
   bonusLine: string | null;
-  recordLine: string | null;
+  /** Every new record, in the tool's order. Empty when there are none. */
+  records: DebriefCardRecord[];
   focus: string | null;
   tagline: string;
   fileName: string;
   shareText: string;
   openUrl: string | null;
+}
+
+export interface DebriefCardRecord {
+  exercise: string;
+  /** The value as plain data, with the previous value when present ("80, was 77.5"). */
+  value: string;
 }
 
 type Raw = Record<string, unknown>;
@@ -58,19 +68,23 @@ function plainNumber(n: number): string {
 }
 
 /**
- * One new record as data, or null. The value carries no unit in the tool output, so
- * none is added; "was" is neutral for records where lower is better (times) too.
+ * Every new record as a data row, in the tool's order. The value carries no unit in the
+ * tool output, so none is added; "was" is neutral for records where lower is better
+ * (times) too. An entry without a name or a numeric value is not a record and is left out.
  */
-export function recordLineFrom(newPrs: unknown): string | null {
-  if (!Array.isArray(newPrs) || newPrs.length !== 1) return null;
-  const pr = newPrs[0] as Raw | null;
-  if (!pr || typeof pr !== "object") return null;
-  const name = text(pr.exerciseName);
-  if (!name || typeof pr.value !== "number" || !Number.isFinite(pr.value)) return null;
-  const was = typeof pr.previousValue === "number" && Number.isFinite(pr.previousValue)
-    ? `, was ${plainNumber(pr.previousValue)}`
-    : "";
-  return `New record: ${name} ${plainNumber(pr.value)}${was}`;
+export function recordRowsFrom(newPrs: unknown): DebriefCardRecord[] {
+  if (!Array.isArray(newPrs)) return [];
+  const rows: DebriefCardRecord[] = [];
+  for (const pr of newPrs as Array<Raw | null>) {
+    if (!pr || typeof pr !== "object") continue;
+    const exercise = text(pr.exerciseName);
+    if (!exercise || typeof pr.value !== "number" || !Number.isFinite(pr.value)) continue;
+    const was = typeof pr.previousValue === "number" && Number.isFinite(pr.previousValue)
+      ? `, was ${plainNumber(pr.previousValue)}`
+      : "";
+    rows.push({ exercise, value: `${plainNumber(pr.value)}${was}` });
+  }
+  return rows;
 }
 
 function fileNameFor(weekStarting: unknown): string {
@@ -97,11 +111,12 @@ export function buildDebriefCardData(result: Raw, openUrl: string | null): Debri
     ? `${completed} of ${planned} session${planned === 1 ? "" : "s"}`
     : `${completed} session${completed === 1 ? "" : "s"}`;
   const bonusLine = bonus > 0 ? `plus ${bonus} bonus session${bonus === 1 ? "" : "s"}` : null;
-  const recordLine = recordLineFrom(m.newPrs);
+  const records = recordRowsFrom(m.newPrs);
   const shareText = [
     weekLabel,
     sessionsLine + (bonusLine ? `, ${bonusLine}` : ""),
-    recordLine,
+    records.length ? "New records:" : null,
+    ...records.map((r) => `${r.exercise}: ${r.value}`),
     focus ? `Next week: ${focus}` : null,
     DEBRIEF_CARD_TAGLINE,
   ].filter((x): x is string => !!x).join("\n");
@@ -112,7 +127,7 @@ export function buildDebriefCardData(result: Raw, openUrl: string | null): Debri
     completed,
     planned,
     bonusLine,
-    recordLine,
+    records,
     focus,
     tagline: DEBRIEF_CARD_TAGLINE,
     fileName: fileNameFor(result.weekStarting),
@@ -136,8 +151,8 @@ const DEBRIEF_CARD_BODY = `
   <div class="db-bar" id="bar" role="img" aria-label=""><span id="bar-fill"></span></div>
   <p class="pc-sub" id="bonus"></p>
   <section id="record-section" class="pc-hidden">
-    <h2 class="pc-sec">This week</h2>
-    <p class="pc-line" id="record"></p>
+    <h2 class="pc-sec">New records</h2>
+    <ul class="pc-rows" id="records"></ul>
   </section>
   <section id="focus-section" class="pc-hidden">
     <h2 class="pc-sec">Next week's focus</h2>
@@ -174,7 +189,15 @@ const DEBRIEF_CARD_SCRIPT = `
       $("bar").setAttribute("aria-label", d.sessionsLine);
     }
     text("bonus", d.bonusLine); show("bonus", !!d.bonusLine);
-    text("record", d.recordLine); show("record-section", !!d.recordLine);
+    var recs = Array.isArray(d.records) ? d.records : [];
+    var list = $("records"); list.replaceChildren();
+    recs.forEach(function(r){
+      var li = document.createElement("li"); li.className = "pc-row";
+      var a = document.createElement("span"); a.textContent = r.exercise;
+      var b = document.createElement("span"); b.textContent = r.value;
+      li.append(a, b); list.append(li);
+    });
+    show("record-section", recs.length > 0);
     text("focus", d.focus); show("focus-section", !!d.focus);
     text("tagline", d.tagline);
     var open = $("open");
@@ -190,6 +213,12 @@ const DEBRIEF_CARD_SCRIPT = `
     });
     if (line) lines.push(line);
     return lines.slice(0, 3);
+  }
+  function fit(ctx, str, maxWidth){
+    var t = String(str);
+    if (ctx.measureText(t).width <= maxWidth) return t;
+    while (t.length > 1 && ctx.measureText(t + "...").width > maxWidth) t = t.slice(0, -1);
+    return t + "...";
   }
   function picture(){
     var size = 1080, c = document.createElement("canvas");
@@ -209,8 +238,20 @@ const DEBRIEF_CARD_SCRIPT = `
     }
     x.fillStyle = "#d7e6f5"; x.font = "500 52px " + font;
     if (d.bonusLine) { x.fillText(d.bonusLine, 90, y); y += 90; }
-    if (d.recordLine) { wrap(x, d.recordLine, 900).forEach(function(l){ x.fillText(l, 90, y); y += 66; }); y += 30; }
-    if (d.focus) { wrap(x, "Next week: " + d.focus, 900).forEach(function(l){ x.fillText(l, 90, y); y += 66; }); }
+    var focusLines = d.focus ? wrap(x, "Next week: " + d.focus, 900) : [];
+    var recs = Array.isArray(d.records) ? d.records : [];
+    if (recs.length) {
+      // The first rows that fit above the focus and the tagline, then "and N more".
+      var bottom = size - 190 - focusLines.length * 66 - (focusLines.length ? 30 : 0);
+      var room = Math.max(0, Math.floor((bottom - y - 50) / 50));
+      var shown = recs.length <= room ? recs.length : Math.max(0, room - 1);
+      x.font = "600 36px " + font; x.fillText("New records", 90, y); y += 50;
+      x.font = "500 40px " + font;
+      recs.slice(0, shown).forEach(function(r){ x.fillText(fit(x, r.exercise + ": " + r.value, 900), 90, y); y += 50; });
+      if (shown < recs.length) { x.fillText("and " + (recs.length - shown) + " more", 90, y); y += 50; }
+      y += 30; x.font = "500 52px " + font;
+    }
+    focusLines.forEach(function(l){ x.fillText(l, 90, y); y += 66; });
     x.fillStyle = "#9cc9f0"; x.font = "600 44px " + font;
     x.fillText(d.tagline, 90, size - 150);
     return c;
@@ -269,7 +310,7 @@ export const DEBRIEF_CARD: CardDefinition = {
     completed: true,
     planned: true,
     bonusLine: true,
-    recordLine: true,
+    records: { exercise: true, value: true },
     focus: true,
     tagline: true,
     fileName: true,
