@@ -1,189 +1,95 @@
 # Cards
 
-Cards are small interactive views a host draws under a tool result, built on the open
-**MCP Apps** extension, so one card serves every host that supports it. A tool's text
-reply never changes: hosts without card support, and the assistant itself, read exactly
-what they read before.
+## 1. What cards are
 
-## How it works here
+- A card is a small interactive view that an AI chat draws under a tool result.
+- Cards use the open **MCP Apps** standard, so one card serves every host that supports it.
+- The tool's text reply is always complete on its own. Cards add to it and never replace it.
+- A host without card support, and the assistant itself, read exactly what they always read.
+- There are four cards today: Week, Debrief, Body and Session.
 
-- `src/cards/card_shell.ts` is the one shell every card goes through:
-  - `registerCardResources` registers each card's `ui://` HTML resource
-    (MIME `text/html;profile=mcp-app`, `_meta.ui.csp` with no outside origins, `prefersBorder`);
-  - `cardToolMeta(card)` gives a tool definition `_meta.ui.resourceUri` (the nested key
-    only: the flat `ui/resourceUri` key is deprecated in the spec, to be removed before GA,
-    and neither Claude's nor ChatGPT's docs ask for it);
-  - `withCard(result, card, data)` adds the card's data to the result under
-    `_meta["pelaris/card"]`, keeping only the fields in the card's allow-list (`fields`).
-    The data rides in `_meta`, not `structuredContent`, because some hosts hand
-    `structuredContent` to the model in place of the text, which would shrink what the
-    assistant sees.
-- `src/cards/templates.ts` holds the shared page (`renderCardPage`), styles and the host
-  bridge (`window.PelarisCard`). No dependencies, no CDN, no fonts, no network; a page CSP
-  meta (`default-src 'none'`, inline script and style only); no inline event handlers;
-  card data is drawn with `textContent` only. Surround colours come from the host's
-  standard style variables (`--color-background-primary` and so on) with light and dark
-  fallbacks; the Pelaris accent is on buttons only; buttons are at least 44 px; the layout
-  holds at 320 px.
-- The bridge speaks MCP Apps JSON-RPC over `postMessage`: `ui/initialize`, then
-  `ui/notifications/initialized`; it reads `ui/notifications/tool-result` and
-  `ui/notifications/host-context-changed`, and reports `ui/notifications/size-changed`.
-  Actions, each falling back to the ChatGPT runtime (`window.openai`, all of it in the
-  bridge's one "Host section") and then to a plain result of `false` so the card can show
-  a note:
-  `sendMessage(text)` (`ui/message`), `openLink(url)` (`ui/open-link`),
-  `callTool(name, args)` (`tools/call`; resolves to the tool's result, `false` when no
-  path exists, or `"pending"` when the host gave no answer in time),
-  `requestFullscreen()` and `requestInline()` (`ui/request-display-mode`; each resolves to
-  whether the `mode` the host returned is the one asked for), `canFullscreen()` (whether
-  `hostContext.availableDisplayModes`, read at `ui/initialize` and on each
-  `host-context-changed`, offers `fullscreen`; with no MCP Apps host, whether the ChatGPT
-  runtime has its display mode call), and
-  `onContext(fn)` (host context on connect and on each change, for example `displayMode`).
-  The bridge tries another transport only when there is no host connection at all or the
-  host answers method-not-found (JSON-RPC `-32601`). Never after a timeout or an error
-  result, because the first request may already have run: a write is never sent twice.
-  A host error on `tools/call` comes back to the card as an `isError` result. A
-  `ui/message` or `ui/open-link` result with `isError` resolves to `false`, so the card
-  shows a one-line note instead of assuming it was sent.
-- A tool a card calls itself is a narrow, app-only tool with `cardCallableToolMeta()` in its
-  `_meta` (`ui.visibility: ["app"]`: the spec says a host MUST NOT offer it to the model,
-  plus the host's own keys from the host adapter, for ChatGPT `openai/widgetAccessible`).
-  It is registered only for a host that draws cards. Today there is one:
-  `card_reschedule_session` (input exactly `{ sessionId, newDate }`, strict; the same
-  reschedule path and claims-derived profile as `modify_training_session`, and the same
-  `moved` / `skipped` / `needsAthlete` / `failed` / `message` reply). The model's
-  `modify_training_session` is not callable from a card. The card tool is a write:
-  `readOnlyHint: false, destructiveHint: true`, and `idempotentHint: true` (a repeat of
-  the same move finds the session already on that day and leaves it).
-- `src/cards/__tests__/card_dom_harness.ts` runs a card page's real scripts (bridge and
-  card) in a Node `vm` context with a small fake DOM and a stub host, with manual timers.
-  No browser and no dependency; layout, CSS and canvas are out of its scope.
-- `src/cards/registry.ts` lists every card; `src/index.ts` calls `registerCards(server)`.
+## 2. Architecture
 
-### The host adapter
+- **Shell** (`src/cards/card_shell.ts`): `defineCard` builds a card's page once and derives its `ui://` URI from the page content hash (`cardResourceUri`), so any change to the page, the shared CSS or the bridge gives a new URI. `cardToolMeta` links a tool to its card. `withCard`, `attachCard` (mints a signed link) and `attachCardNow` (no link) add the data to a result under `_meta["pelaris/card"]` as `{ card, v, data }`, keeping only allow-listed fields. The data rides in `_meta`, not `structuredContent`, so the model's view is unchanged.
+- **Host adapter** (`src/cards/host.ts`): `HostProfile`, `CARD_HOSTS` (the one allow-list), `cardsOn(host)` (switch on AND host draws cards). A text-only host gets no `ui://` resources, no `_meta.ui` on tools, no card data and no signed link. Per-host extras live here: Claude's `ui.domain` (first 32 hex characters of the SHA-256 of the server URL, then `.claudemcpcontent.com`) and ChatGPT's `openai/widgetAccessible` on app-only tools.
+- **Bridge** (`src/cards/templates.ts`): `renderCardPage` builds a dependency-free page (no CDN, no fonts, no network, a strict CSP meta, no inline handlers, data drawn with `textContent` only). `window.PelarisCard` speaks MCP Apps JSON-RPC over `postMessage` (`ui/initialize`, `ui/message`, `ui/open-link`, `tools/call`, `ui/request-display-mode`, size and context notifications). All ChatGPT-runtime code (`window.openai`) sits in the bridge's one "Host section", tried only when the standard path is absent.
+- **No-resend rule:** the bridge tries another path only when there is no host connection or the host answers method-not-found (`-32601`). Never after a timeout or an error, because the first request may already have run. `callTool` resolves to the result, `false` (no path) or `"pending"` (no answer in time). `canFullscreen()` reads the host's `availableDisplayModes`.
+- **Cards** (`src/cards/*_card.ts`): one page and one pure mapper each. `src/cards/format.ts` holds shared date helpers (UTC days, "Thu 26 Nov", weeks Monday to Sunday).
+- **Registry** (`src/cards/registry.ts`): `CARDS` lists every card; `registerCards(server)` is called from `src/index.ts`.
+- **App-only write tool:** `card_reschedule_session` (in `src/tools/user/modify_training_session.ts`, `registerCardRescheduleSession`). Meta from `cardCallableToolMeta()`: `ui.visibility: ["app"]` (the spec says a host MUST NOT offer it to the model) plus the host's own keys. Registered only for a host that draws cards.
+- **Off switch:** `PELARIS_CARDS=off` (also `0`, `false`, `no`) turns every card off for every host. Unset means on. `PELARIS_CARDS_UI_DOMAIN` overrides every host's `ui.domain` (`none` sends none).
 
-`src/cards/host.ts` turns what the request knows about the host into a `HostProfile`
-(`supportsCards`, `name`, `source`, `uiDomain`, `appToolMeta`). Every card helper and every
-mint of a card's signed link goes through `cardsOn(host)`: the switch is on AND the host
-draws cards. A text-only host gets no `ui://` resources, no `_meta.ui` on tools (tools are
-registered per request, and the spec lets a server register different tool variants per
-host), no card data and no link written for a card nobody sees.
+## 3. The four cards
 
-How the host is known: the transport is stateless (a new server per POST /mcp), so the
-client's `initialize` capabilities and `clientInfo` reach only the server that answers
-`initialize`, never the one answering `tools/list` or `tools/call`. Every request carries
-the OAuth token, whose stored assistant class was set at consent from the validated
-redirect host. So the adapter takes, in order: a declared
-`extensions["io.modelcontextprotocol/ui"].mimeTypes` naming the card MIME type (when a
-caller has it); else the host's name (the token's class, or `clientInfo.name`) on
-`CARD_HOSTS`, the one allow-list (today `claude` and `chatgpt`); else no cards. Unknown
-or missing means no card work. Admin-authed calls carry no token class and get no cards.
+- **Week** (`get_active_program`): seven Monday to Sunday tiles and a This week / Next week switch. Inline: Rearrange this week (full screen) and Open in Pelaris. Where the host offers no full screen, the first action is Move a session and the move view opens in the card. Full screen: day list, drag or a Move button. Write path: Confirm calls `card_reschedule_session` with `{ sessionId, newDate }`. A planned, not completed session dated today or later can move. No Skip.
+- **Debrief** (`get_weekly_debrief`): "N of M sessions" with a plain bar, the bonus line, every new record as plain rows (the tool's order, no cap, no pick), next week's focus, the tagline. Inline: Save as image (a canvas picture; falls back to showing it, then Copy text) and Open in Pelaris. No full screen, no write. An empty week gets no card.
+- **Body** (`get_body_analysis`): latest scan, waist, hips and shoulders with the change since the previous scan, and the estimate line. Inline: Compare scans (only where the host offers full screen) and Open in Pelaris (the tool's own `scanLink`). Full screen: a slider over scans in `history` and a plain schematic outline. No write. No usable measurements means no card.
+- **Session** (`get_session_details`): title, date, length, warm-up line, main-set rows. Inline: Start in Pelaris (signed link, route `SESSION_CARD_START_ROUTE`) and Swap an exercise (sends a chat message on tap; the assistant runs `swap_exercise`, which asks before changing anything). No full screen, no write.
 
-`ui.domain` is per host: Claude's is its documented rule (the first 32 hex characters of
-the SHA-256 of the server URL, then `.claudemcpcontent.com`); ChatGPT gets none.
+## 4. Add a card
 
-### The switch
+1. Create `src/cards/<name>_card.ts`. Define a data interface, then `defineCard<Data>({ id, v, title, description, fields, page })`. Give a name only (`id`); never write a URI, it is derived from the page content hash.
+2. `fields` must equal the data type's keys exactly: a scalar key is `true`, an object or array of objects carries its own nested list. A missing or extra key is a compile error. Arrays of plain scalars are not supported.
+3. The payload envelope is `{ card, v, data }`. Start at `v: 1`. Bump `v` when the data's shape changes in a way an older page would draw wrongly: the page draws only the `v` it knows and shows a plain fallback line otherwise.
+4. `page` is `{ title, css?, body, script, displayModes? }`. The body is static markup (ids and classes, no data, no `on*=` attributes). The script calls `window.PelarisCard.onData(draw)` and draws with `textContent`. At most two actions inline. Richer views ask for full screen (`displayModes: ["inline", "fullscreen"]`, `canFullscreen()`, `requestFullscreen()`). Wrap markup shown only in full screen in `<!--full-->` and `<!--/full-->`.
+5. Export a pure mapper from the tool's reply to the card's data (see `buildWeekCardData`) and test it in `src/cards/__tests__/<name>_card.test.ts`.
+6. Test the page with `openCardPage` from `card_dom_harness.ts` (see `week_card_page.test.ts`): draw sample data, tap each action, and check what the stub host receives.
+7. Add the card to `CARDS` in `src/cards/registry.ts`.
+8. In the tool, spread `...(cardToolMeta(CARD) ? { _meta: cardToolMeta(CARD) } : {})` into the config, then wrap the reply with `attachCard` (needs a signed link) or `attachCardNow`.
+9. List the new test files in `scripts/run_tests.mjs`. `card_templates.test.ts` checks every registered card automatically (two inline actions at most, no inline handlers, no inline SVG except cards in `INLINE_SVG_CARDS`, today only Body).
 
-`PELARIS_CARDS=off` (also `0`, `false`, `no`) turns every card off for every host: no
-`ui://` resources, no `_meta.ui` on tools, no card data on results, no card links minted.
-Unset means on. `PELARIS_CARDS_UI_DOMAIN` overrides every host's `ui.domain` (`none`
-sends none).
+## 5. Add a host
 
-## Cards today
+1. Confirm in that host's own docs, before any code: how it advertises MCP Apps support; the resource MIME type it expects (`text/html;profile=mcp-app`); which bridge methods it implements (`ui/message`, `ui/open-link`, `tools/call`, `ui/request-display-mode`); its display modes; the `ui.domain` format, if it needs one; how it treats app-only tools and whether it asks before a write; and how it opens links.
+2. Add one entry to `CARD_HOSTS` in `src/cards/host.ts`, keyed by the host's assistant class: its `uiDomain` rule if it has one and any `appToolMeta` keys. Cite the doc in the comment above the list.
+3. If the host needs bridge code the standard path lacks, add it to the bridge's "Host section" only.
+4. Test: `host.test.ts` (profile for the new name, domain, tool meta), `card_shell.test.ts`, and `cards_off_parity.test.ts` (text reply unchanged). Then draw each card in the live host and record the result in the table in section 8.
 
-| Card | Tool | Shows | Actions |
-|---|---|---|---|
-| Week (`ui://pelaris/cards/week-v1.html`) | `get_active_program` | the primary program's week as seven tiles, Monday to Sunday (the session's own `focus`, else `slotType`, cut short by CSS; minutes only when the server sent a stored `durationMinutes`), the date range, a This week / Next week switch when next-week sessions came back. Full screen: the days as a list; a planned session dated today or later and not completed moves by drag or by its Move button (a day picker); a confirm panel shows the session and both dates before anything is written. No Skip. | Rearrange this week (full screen; Confirm calls the app-only `card_reschedule_session` with `{ sessionId, newDate }`, updates the tiles from `moved`, shows the reason or `message` otherwise; a move shows "Moved: Tempo run, Thu 26 Nov to Fri 27 Nov" in the card and sends nothing to the chat by itself, and "Tell the coach" (secondary, in the move view, after a move) sends a one-line note only when tapped; Confirm is disabled from the first tap until a definite answer; with no card tool call at all it sends the request as a chat message; after a timeout it says "Still checking. Reopen your week in Pelaris to see where it landed." and offers no way to repeat that move), Open in Pelaris (signed link, `program` route). Where the host does not offer full screen, the first action is "Move a session" instead: the move view and day picker open in the card itself |
-| Debrief (`ui://pelaris/cards/debrief-v1.html`) | `get_weekly_debrief` | week label, "N of M sessions" with a plain bar, the bonus line, every entry of `newPrs` as plain data rows under "New records" (exercise, value, the previous value when present; no unit: the tool gives none), in the tool's order, no cap and no pick, no section when empty; a long list makes the card taller rather than scrolling inside it (inline guidelines discourage nested scroll); the saved image carries the first rows that fit, then "and N more" when cut. `newPrs` holds training records only (exercise name, value, previous value, date): it has no type field and no body measurements, so nothing is filtered, next week's focus, the tagline. No headline win or watch line is picked in code (a judgement: the assistant's message carries it). An empty week gets no card. | Save as image (a square canvas picture: week, sessions, the first record rows that fit and "and N more" when cut, focus, tagline; no name, no account details; then shown in the card, and the action becomes Copy text), Open in Pelaris (signed link, `program` route). Where the host does not offer full screen, the first action is "Move a session" instead: the move view and day picker open in the card itself |
-| Body (`ui://pelaris/cards/body-v1.html`) | `get_body_analysis` | the latest scan's date; waist, hips and shoulders with the change since the previous scan (plain signed numbers with the unit); shoulder to waist when returned; "Measurements are estimates from the scan, not exact." "Compare scans" shows only where the host offers full screen. Full screen: a slider with one stop per scan in `history` (newest at the right), or two stops from the latest values and `comparisonToPrevious` (the earlier one is the latest minus the change); rows for waist, hips, shoulders and weight (when present) with the change since the first stop; a plain schematic outline in inline SVG whose shoulder, waist and hip widths follow the numbers (clamped), the first stop dashed behind it. No photo, ever; no red or green; nothing called a record or a best. Centimetres and kilograms (the tool carries no unit preference). No analysis, or none of waist, hips and shoulders (a profile weight only), means no card. | Compare scans (full screen; hidden with a single scan), Open in Pelaris (the tool's own signed `scanLink`; no link, no button) |
-| Session (`ui://pelaris/cards/session-v1.html`) | `get_session_details` | title, date, length, warm-up line (only blocks typed `warm_up`), main-set rows (sets x reps with load or RPE; cardio distance or time) | Start in Pelaris (signed one-tap link, route in `SESSION_CARD_START_ROUTE`), Swap an exercise (sends a chat message; the assistant runs `swap_exercise`, which asks before it changes anything) |
+## 6. Rules every card obeys
 
-## Tool contract changes on this branch
+- The text reply is untouched.
+- Allow-listed, versioned data only. Nothing private.
+- No photos or image fields.
+- A body number is never a record, best or win, and gets no red or green.
+- No progress ring and no streak.
+- At most two inline actions.
+- Writes go only through a narrow app-only tool, behind a Confirm tap.
+- Never resend a write after a timeout or an error.
+- Never send a chat message without the person's tap.
+- Code never picks a highlight: a list is shown whole or not at all.
+- No em dashes. Dates like "Thu 26 Nov". Weeks run Monday to Sunday.
 
-What the assistant reads is the same with cards on, off, or on a text-only host, except
-for these deliberate, additive changes (tested in `cards_off_parity.test.ts`):
+## 7. How the host is identified
 
-- `get_body_analysis` returns `history`: recent scans, newest first, each with its date
-  and weight, waist, hips and shoulders (numbers and dates only; null with one scan).
-- `get_active_program` passes a session's stored `durationMinutes` through when it has
-  one (never estimated).
-- `modify_training_session` is now `idempotentHint: false`: reduceVolume and
-  increaseIntensity scale the stored values, so a repeat compounds.
+The server is stateless: a new server answers each POST to `/mcp`. The client's `initialize` capabilities and `clientInfo` reach only the server that answers `initialize`, never the one answering `tools/list` or `tools/call`. Every request does carry the OAuth token, whose stored assistant class was set at consent from the validated redirect host. So the adapter takes, in order:
 
-## Add a card
+1. a declared `extensions["io.modelcontextprotocol/ui"].mimeTypes` naming the card MIME type, when a caller has it (a test, or a stateful transport);
+2. else the host name (the token's class, or a matching `clientInfo.name`) on `CARD_HOSTS` (today `claude` and `chatgpt`);
+3. else no cards. Unknown or missing hosts, and admin-authed calls, get plain tools.
 
-1. Create `src/cards/<name>_card.ts` exporting a `CardDefinition`: `id`, a versioned
-   `resourceUri` (`ui://pelaris/cards/<name>-v1.html`; bump the version after a breaking
-   change), `title`, `description`, the `fields` allow-list, and `html: () => renderCardPage({ title, body, script, displayModes? })`.
-   The body is static markup (ids and classes, no data, no `on*=` attributes); the script
-   calls `window.PelarisCard.onData(draw)` and draws with `textContent`. At most two
-   actions inline; anything richer asks for full screen (`displayModes: ["inline", "fullscreen"]`
-   and `PelarisCard.requestFullscreen()`).
-2. Export a pure mapper from the tool's reply to the card's data, and test it.
-3. Add the definition to `CARDS` in `src/cards/registry.ts`.
-4. In the tool: spread `...(cardToolMeta(CARD) ? { _meta: cardToolMeta(CARD) } : {})` into
-   the tool config, and return `withCard(reply, CARD, data)` on success.
-5. List the new test files in `scripts/run_tests.mjs`. `card_templates.test.ts` checks
-   every registered card's page automatically. Wrap markup shown only in full screen in
-   `<!--full-->` and `<!--/full-->`: the two-action limit counts the inline markup only.
+## 8. What is verified
 
-Never pass a card more than it shows, never send a body photo, never draw a progress ring
-or streak, and keep the text reply complete on its own. Inline SVG is allowed only for the
-cards named in `INLINE_SVG_CARDS` in `card_templates.test.ts` (today the Body card's
-outline): one `<svg>` of plain `path` and `circle` shapes, no links, no `xmlns`, no images.
+Read Fri 20 Nov 2026. **No card has been drawn inside a live ChatGPT or Claude chat yet.** What was checked: unit tests, the page harness, and (by hand, not committed) the pages in a local browser at 320 px, light and dark, with a stub host and sample data.
 
-## Verified against (read Fri 20 Nov 2026)
+| Host | Verified against its docs | NOT yet verified in a live chat |
+|---|---|---|
+| ChatGPT | Standard `_meta.ui.resourceUri` and bridge ([Build the ChatGPT UI](https://developers.openai.com/plugins/build/chatgpt-ui.md), [UI guidelines](https://developers.openai.com/plugins/concepts/ui-guidelines.md)); `tools/call` and `ui/message` on the bridge. | Any card drawn. Docs do not mention `ui/open-link` or `ui/request-display-mode`, nor whether result `_meta` reaches the card through the standard bridge; the `window.openai` fallbacks (`toolResponseMetadata`, `openExternal`, `sendFollowUpMessage`, `requestDisplayMode`) are unconfirmed on the current runtime. Whether `openai/widgetAccessible` is honoured on this server. Whether a write from a card asks the athlete first. |
+| Claude | Resource shape, `ui.domain` rule, design guidance ([Get started](https://claude.com/docs/connectors/building/mcp-apps/getting-started.md), [Quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart.md), [Design guidelines](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines.md)). | Any card drawn. Whether the computed `ui.domain` works, or is needed at all (the docs tie it to apps with their own sign-in). Whether a one-tap link opens without a confirm prompt (needs the link origin declared in the directory listing). Whether a card may call `card_reschedule_session`. Whether a host reports `displayMode` back. Drag in a sandboxed frame on touch (the Move button does not need drag). |
+| Muse (text only) | No primary Meta source found on whether Muse renders MCP Apps. It is not on `CARD_HOSTS`, so it gets the plain tool reply and no card work. | Nothing to verify until a source says it draws cards. |
 
-- MCP Apps spec, stable 2026-01-26:
-  [specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx),
-  [SDK types](https://github.com/modelcontextprotocol/ext-apps/blob/main/src/spec.types.ts)
-  (`ui/message` content as a content-block array and `appInfo` in `ui/initialize` follow the SDK types),
-  [SEP-1865](https://modelcontextprotocol.io/seps/1865-mcp-apps-interactive-user-interfaces-for-mcp).
-- ChatGPT: [Build the ChatGPT UI](https://developers.openai.com/plugins/build/chatgpt-ui.md),
-  [UI guidelines](https://developers.openai.com/plugins/concepts/ui-guidelines.md).
-- Claude: [Get started with MCP Apps](https://claude.com/docs/connectors/building/mcp-apps/getting-started.md),
-  [Quickstart](https://claude.com/docs/connectors/building/mcp-apps/quickstart.md),
-  [Design guidelines](https://claude.com/docs/connectors/building/mcp-apps/design-guidelines.md).
+Both hosts: neither's docs say whether the host declares the MCP Apps extension in `initialize`, and this stateless server could not see it on a tool call anyway, hence the allow-list. Spec: MCP Apps stable 2026-01-26 ([specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx), [SDK types](https://github.com/modelcontextprotocol/ext-apps/blob/main/src/spec.types.ts), [SEP-1865](https://modelcontextprotocol.io/seps/1865-mcp-apps-interactive-user-interfaces-for-mcp)). Also not verified: whether a host lets the Debrief card download its picture or write to the clipboard (the fallbacks are showing the picture and a select-to-copy note), and units (rows show kilograms and metric distances; the athlete's preference is not read).
 
-## Not verified
+## 9. Testing
 
-- **Every host:** no card has been drawn in a live host yet. Checked: unit tests, a
-  static page check, and the page drawn in a local browser at 320 px, light and dark,
-  with sample data.
-- **ChatGPT:** its docs name `tools/call` and `ui/message` on the bridge but do not
-  mention `ui/open-link` or `ui/request-display-mode`, nor whether result `_meta`
-  reaches the card through the standard bridge. The bridge falls back to
-  `window.openai` (`toolResponseMetadata`, `openExternal`, `sendFollowUpMessage`,
-  `requestDisplayMode`), not confirmed on the current runtime.
-- **Claude:** whether `ui.domain` is needed for this card (the docs tie it to apps that
-  run their own sign-in), and whether a one-tap link opens without a confirm prompt
-  (that needs the link origin declared in the directory listing).
-- **Meta Muse:** no primary Meta source found on whether Muse renders MCP Apps. It is not
-  on `CARD_HOSTS`, so it gets no card work and the plain tool reply.
-- **Host capability:** neither Claude's nor ChatGPT's docs say whether the host declares
-  the MCP Apps extension in `initialize` (and this stateless server could not see it on a
-  tool call anyway), hence the allow-list. Claude's computed `ui.domain` is not yet
-  checked in a live Claude chat.
-- **Week card, every host:** checked in a local browser at 320 px, light and dark, with
-  a stub host: full screen request, Move, day picker, confirm, the tool call's exact
-  arguments, the tile update and the "Tell the coach" message on tap. Not checked live: whether a
-  host lets the card call `card_reschedule_session` (a write; Claude and ChatGPT may ask
-  the athlete first), whether ChatGPT honours `openai/widgetAccessible` on this server,
-  whether a host reports `displayMode` back, and drag in a host's sandboxed frame on
-  touch (the Move button is the path that does not need drag).
-- **Debrief card:** drawn in a local browser at 320 px, light and dark, with a stub host
-  and sample data: the card, Save as image (the picture shown in the card, the action
-  becoming Copy text, the fallback note). Not verified: whether any host
-  lets the sandboxed card download the picture (not claimed for ChatGPT), and whether
-  clipboard writes work there; the fallbacks are the picture shown in the card and a
-  select-to-copy note.
-- **Body card:** drawn in a local browser at 320 px, light and dark, with a stub host and
-  sample data (three scans): inline rows and changes, the full screen request, the slider
-  and the Earlier and Later buttons at each stop, the outline and the rows. Not checked
-  live: whether a host shows full screen for it, the range input under touch inside a
-  host's sandboxed frame (the Earlier and Later buttons do not need it), and whether
-  the scan link opens without a confirm prompt. With real data the outline moves by a
-  few pixels for a change of a few centimetres: honest, and small.
-- Units: rows show kilograms and metric distances; the athlete's preferred units are
-  not read by this tool.
+- `npm run build`, then `npm test`. Tests run from `dist`, so build first; new test files must be listed in `scripts/run_tests.mjs`.
+- `src/cards/__tests__/card_dom_harness.ts` runs a page's real scripts (bridge and card) in a Node `vm` context with a small fake DOM, a stub host that answers JSON-RPC the way a test says, and manual timers (a request can time out without waiting). No browser, no dependency. Layout, CSS and canvas are out of scope.
+- Preview: no preview script or local viewer is committed. To look at a card, render its page (`CARD.html()`) to a file and open it in a browser with a stub host of your own.
+
+## 10. Tool contract changes in this release
+
+What the assistant reads is the same with cards on, off, or on a text-only host, except for these deliberate, additive changes (tested in `cards_off_parity.test.ts`):
+
+- `get_body_analysis` returns `history`: recent scans, newest first, each with its date and weight, waist, hips and shoulders (numbers and dates only; null with one scan).
+- `get_active_program` passes a session's stored `durationMinutes` through when it has one (never estimated).
+- `modify_training_session` is now `idempotentHint: false`: reduceVolume and increaseIntensity scale the stored values, so a repeat compounds. It is not callable from a card.
+- New app-only tool `card_reschedule_session` (input exactly `{ sessionId, newDate }`, strict), registered only for a card host. It uses the same reschedule path as `modify_training_session` and returns the same `moved` / `skipped` / `needsAthlete` / `failed` / `message` reply. Annotations: `readOnlyHint: false`, `destructiveHint: true`, `idempotentHint: true` (a repeat finds the session already on that day).
