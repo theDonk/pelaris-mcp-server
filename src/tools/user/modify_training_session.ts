@@ -85,7 +85,8 @@ export function registerModifyTrainingSession(server: McpServer): void {
           .optional()
           .describe("Move several planned sessions in one call, across any built weeks. The result lists which moved, which stayed and why, and which need the athlete to choose a day. Sessions the athlete moved by hand stay where they put them."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Modify Training Session" },
+      // Not idempotent: reduceVolume and increaseIntensity scale the stored values, so a repeat compounds.
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false, title: "Modify Training Session" },
       // The Week card's Confirm calls this tool (a write: the host still asks the athlete as it does for any write).
       ...(cardCallableToolMeta() ? { _meta: cardCallableToolMeta() } : {}),
     },
