@@ -95,9 +95,12 @@ body{font:14px/1.45 var(--pc-font);color:var(--pc-text);min-width:280px}
  * - sendMessage(text): `ui/message`, else `window.openai.sendFollowUpMessage`
  * - openLink(url): `ui/open-link`, else `window.openai.openExternal`, else a new tab
  * - callTool(name, args): `tools/call`, else `window.openai.callTool`; resolves to the
- *   tool's result object (or true when a path gave none back), false when none accepted
+ *   tool's result object (or true when a path gave none back), false when no path exists,
+ *   "pending" when the host did not answer in time; a host error is an isError result
  * - requestFullscreen() / requestInline(): `ui/request-display-mode`, else
  *   `window.openai.requestDisplayMode`
+ * A fallback runs only when there is no host connection or the host answers
+ * method-not-found (-32601), never after a timeout or an error, so nothing is sent twice.
  * - onContext(fn): called with the host context on connect and on every change
  *   (for example `displayMode` moving between inline and fullscreen)
  * Each other action resolves to true when some path accepted it and false when none
@@ -109,6 +112,7 @@ export const CARD_BRIDGE_JS = `
   var PROTOCOL_VERSION = "2026-01-26";
   var DATA_KEY = "pelaris/card";
   var DISPLAY_MODES = Array.isArray(window.PELARIS_CARD_DISPLAY_MODES) ? window.PELARIS_CARD_DISPLAY_MODES : ["inline"];
+  var CALL_TIMEOUT_MS = 30000;
   var nextId = 1;
   var pending = {};
   var listeners = [];
@@ -118,12 +122,18 @@ export const CARD_BRIDGE_JS = `
   var parentWin = window.parent && window.parent !== window ? window.parent : null;
   var oa = function(){ return (typeof window.openai === "object" && window.openai) ? window.openai : null; };
 
+  // An error that says why a request failed: { noHost }, { timeout } or a JSON-RPC { code }.
+  function failure(message, extra){ var e = new Error(message); Object.keys(extra || {}).forEach(function(k){ e[k] = extra[k]; }); return e; }
+  // Another transport is tried only when the standard path is not there at all: no host
+  // connection, or the host answers method-not-found. Never after a timeout or an error
+  // result, because the first request may already have run (a write must not run twice).
+  function mayFallBack(err){ return !host.connected || !!(err && (err.noHost || err.code === -32601)); }
   function post(msg){ if (parentWin) parentWin.postMessage(msg, "*"); }
   function request(method, params, timeoutMs){
     return new Promise(function(resolve, reject){
-      if (!parentWin) { reject(new Error("no host")); return; }
+      if (!parentWin) { reject(failure("no host", { noHost: true })); return; }
       var id = nextId++;
-      var timer = setTimeout(function(){ delete pending[id]; reject(new Error("timeout")); }, timeoutMs || 8000);
+      var timer = setTimeout(function(){ delete pending[id]; reject(failure("timeout", { timeout: true })); }, timeoutMs || 8000);
       pending[id] = { resolve: function(v){ clearTimeout(timer); resolve(v); },
                       reject: function(e){ clearTimeout(timer); reject(e); } };
       post({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
@@ -160,7 +170,7 @@ export const CARD_BRIDGE_JS = `
     if (!m || m.jsonrpc !== "2.0") return;
     if (m.id != null && pending[m.id] && !m.method) {
       var p = pending[m.id]; delete pending[m.id];
-      if (m.error) p.reject(new Error(m.error.message || "error")); else p.resolve(m.result);
+      if (m.error) p.reject(failure(m.error.message || "error", { code: m.error.code })); else p.resolve(m.result);
       return;
     }
     if (m.method === "ui/notifications/tool-result") deliver(dataFromResult(m.params));
@@ -210,25 +220,21 @@ export const CARD_BRIDGE_JS = `
     if (typeof ResizeObserver === "function") new ResizeObserver(reportSize).observe(document.body);
   }
 
-  function attempt(primary, fallback){
-    return (host.connected ? primary() : Promise.reject(new Error("not connected")))
-      .then(function(){ return true; })
-      .catch(function(){
-        try { var r = fallback(); return Promise.resolve(r).then(function(ok){ return ok !== false; }); }
-        catch (e) { return false; }
-      })
+  function fallBack(fallback, keep){
+    try { var r = fallback(); return Promise.resolve(r).then(function(v){ return v === false ? false : keep(v); }); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  function primaryOr(primary, fallback, keep, onFail){
+    return (host.connected ? primary() : Promise.reject(failure("not connected", { noHost: true })))
+      .then(keep, function(err){ return mayFallBack(err) ? fallBack(fallback, keep) : onFail(err); })
       .catch(function(){ return false; });
   }
-  // Like attempt, but resolves to the value a path gave back (true when it gave none).
-  function attemptValue(primary, fallback){
-    var keep = function(v){ return (v && typeof v === "object") ? v : true; };
-    return (host.connected ? primary() : Promise.reject(new Error("not connected")))
-      .then(keep)
-      .catch(function(){
-        try { var r = fallback(); return Promise.resolve(r).then(function(v){ return v === false ? false : keep(v); }); }
-        catch (e) { return false; }
-      })
-      .catch(function(){ return false; });
+  // Resolves to true when a path accepted the action, false when none did (an isError
+  // result counts as not accepted, so the card can say so).
+  function attempt(primary, fallback){
+    return primaryOr(primary, fallback,
+      function(v){ return !(v && typeof v === "object" && v.isError === true); },
+      function(){ return false; });
   }
   function displayMode(mode){
     return attempt(
@@ -253,10 +259,19 @@ export const CARD_BRIDGE_JS = `
           var w = window.open(url, "_blank", "noopener,noreferrer"); return !!w;
         });
     },
+    // Resolves to the tool's result object (true when a path gave none back), false when
+    // no path exists, or "pending" when the host did not answer in time (the write may
+    // have run, so it is never sent again). A host error comes back as an isError result.
     callTool: function(name, args){
-      return attemptValue(
-        function(){ return request("tools/call", { name: name, arguments: args || {} }, 30000); },
-        function(){ return openaiHost.callTool(name, args); });
+      var keep = function(v){ return (v && typeof v === "object") ? v : true; };
+      return primaryOr(
+        function(){ return request("tools/call", { name: name, arguments: args || {} }, CALL_TIMEOUT_MS); },
+        function(){ return openaiHost.callTool(name, args); },
+        keep,
+        function(err){
+          if (err && err.timeout) return "pending";
+          return { isError: true, content: [{ type: "text", text: (err && err.message) || "error" }] };
+        });
     },
     requestFullscreen: function(){ return displayMode("fullscreen"); },
     requestInline: function(){ return displayMode("inline"); }

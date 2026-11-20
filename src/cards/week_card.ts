@@ -10,8 +10,10 @@
  * completed can move to another day of that week, by drag or by its "Move" button (a
  * day picker, for touch and keyboard). Nothing is written until the athlete confirms;
  * Confirm calls the app-only card_reschedule_session with `{ sessionId, newDate }`
- * through the host bridge, then tells the chat what happened. When the host has no
- * tool call for cards, the request goes to the chat as a message instead.
+ * through the host bridge. Confirm is disabled from the first tap until a definite
+ * answer. Only when the host has no tool call for cards at all does the request go to
+ * the chat as a message instead; a timeout or an error is never sent again (after a
+ * timeout the card says to check Pelaris and offers no way to repeat that move).
  *
  * Which week: both weeks the tool returned (this week, and next week when the server
  * sent next-week sessions), with a plain switch between them. No skip, no rings.
@@ -27,6 +29,9 @@ export const WEEK_CARD_OPEN_ROUTE: HandoffRoute = "program";
 /** The write tool Confirm calls, and the input field it fills. */
 /** The card's only write: the app-only move tool (see modify_training_session.ts). */
 export const WEEK_CARD_MOVE_TOOL = "card_reschedule_session";
+
+/** Shown when the move tool gave no answer in time: the move may have landed, so no retry. */
+export const WEEK_CARD_PENDING_NOTE = "Still checking. Reopen your week in Pelaris to see where it landed.";
 
 export interface WeekCardSession {
   sessionId: string;
@@ -388,6 +393,8 @@ const WEEK_CARD_SCRIPT = `
     if ((to.sessions || []).length > 0) detail += " " + to.dayName + " will have " + ((to.sessions.length + 1) === 2 ? "two" : String(to.sessions.length + 1)) + " sessions.";
     detail += " The rest of your program stays as it is.";
     $("confirm-detail").textContent = detail;
+    // A fresh question: Confirm is enabled again (a session still being checked has no Move).
+    $("confirm-yes").disabled = false; $("confirm-yes").removeAttribute("aria-disabled");
     show("confirm", true); $("confirm-yes").focus();
   }
 
@@ -413,13 +420,21 @@ const WEEK_CARD_SCRIPT = `
 
   function confirmMove(){
     var p = pending; if (!p || busy) return;
-    busy = true; show("confirm", false); note("Moving " + p.label + "...");
+    // Disabled from the first tap until a definite answer, so a double tap sends once.
+    busy = true; $("confirm-yes").disabled = true; $("confirm-yes").setAttribute("aria-disabled", "true");
+    show("confirm", false); note("Moving " + p.label + "...");
     var chatAsk = "Please move my " + p.label + " from " + p.from.dateLabel + " to " + p.to.dateLabel + " (session " + p.sessionId + ").";
     card.callTool(${JSON.stringify(WEEK_CARD_MOVE_TOOL)}, { sessionId: p.sessionId, newDate: p.to.date }).then(function(res){
       if (res === false) {
         return card.sendMessage(chatAsk).then(function(ok){
           note(ok ? "Sent to the chat, so the assistant can make the change." : "Ask in the chat to move this session.");
         });
+      }
+      if (res === "pending") {
+        // No answer in time: the move may have landed. Never send it again from here.
+        var f = find(p.sessionId); if (f) f.session.canMove = false;
+        note(${JSON.stringify(WEEK_CARD_PENDING_NOTE)});
+        return;
       }
       var body = resultBody(res);
       if (res && res.isError) { note(errorText(res) || "That session could not move."); return; }
