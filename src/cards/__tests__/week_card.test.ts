@@ -128,16 +128,19 @@ test("nothing to show means no card", () => {
 
 test("routes and tools: open is a real handoff route; the move tool is the write tool", () => {
   assert.ok((HANDOFF_ROUTES as readonly string[]).includes(WEEK_CARD_OPEN_ROUTE));
-  assert.equal(WEEK_CARD_MOVE_TOOL, "modify_training_session");
+  assert.equal(WEEK_CARD_MOVE_TOOL, "card_reschedule_session");
   const html = WEEK_CARD.html();
-  assert.match(html, /rescheduleSessions: \[\{ sessionId: p\.sessionId, newDate: p\.to\.date \}\]/);
-  assert.match(html, /"modify_training_session"/);
+  assert.match(html, /card\.callTool\("card_reschedule_session", \{ sessionId: p\.sessionId, newDate: p\.to\.date \}\)/);
+  assert.doesNotMatch(html, /modify_training_session|rescheduleSessions/, "the card never calls the model's write tool");
+  assert.equal(html.match(/card\.callTool\(/g)?.length, 1, "one tool call in the card");
+  assert.equal(html.match(/confirmMove(?![A-Za-z])/g)?.length, 2, "confirmMove is defined once and bound only to the Confirm tap");
+  assert.match(html, /\$\("confirm-yes"\)\.addEventListener\("click", confirmMove\)/);
   assert.doesNotMatch(html, /\bSkip\b/, "no Skip action anywhere");
   assert.match(html, /id="confirm-yes">Confirm</);
   assert.ok(html.includes('el("button", "wk-move", "Move")'), "a non-drag Move control");
   const CHATGPT = hostProfileFrom({ assistantClass: "chatgpt" }, {});
-  assert.deepEqual(cardCallableToolMeta({}, CHATGPT), { ui: { visibility: ["model", "app"] }, "openai/widgetAccessible": true });
-  assert.deepEqual(cardCallableToolMeta({}, CLAUDE), { ui: { visibility: ["model", "app"] } });
+  assert.deepEqual(cardCallableToolMeta({}, CHATGPT), { ui: { visibility: ["app"] }, "openai/widgetAccessible": true });
+  assert.deepEqual(cardCallableToolMeta({}, CLAUDE), { ui: { visibility: ["app"] } });
   assert.equal(cardCallableToolMeta({ PELARIS_CARDS: "off" }, CHATGPT), undefined);
 });
 

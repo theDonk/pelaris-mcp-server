@@ -9,7 +9,7 @@
  * Full screen: the days as a list. A planned session dated today or later and not yet
  * completed can move to another day of that week, by drag or by its "Move" button (a
  * day picker, for touch and keyboard). Nothing is written until the athlete confirms;
- * Confirm calls modify_training_session with `rescheduleSessions: [{ sessionId, newDate }]`
+ * Confirm calls the app-only card_reschedule_session with `{ sessionId, newDate }`
  * through the host bridge, then tells the chat what happened. When the host has no
  * tool call for cards, the request goes to the chat as a message instead.
  *
@@ -25,7 +25,8 @@ import { renderCardPage } from "./templates.js";
 export const WEEK_CARD_OPEN_ROUTE: HandoffRoute = "program";
 
 /** The write tool Confirm calls, and the input field it fills. */
-export const WEEK_CARD_MOVE_TOOL = "modify_training_session";
+/** The card's only write: the app-only move tool (see modify_training_session.ts). */
+export const WEEK_CARD_MOVE_TOOL = "card_reschedule_session";
 
 export interface WeekCardSession {
   sessionId: string;
@@ -414,7 +415,7 @@ const WEEK_CARD_SCRIPT = `
     var p = pending; if (!p || busy) return;
     busy = true; show("confirm", false); note("Moving " + p.label + "...");
     var chatAsk = "Please move my " + p.label + " from " + p.from.dateLabel + " to " + p.to.dateLabel + " (session " + p.sessionId + ").";
-    card.callTool(${JSON.stringify(WEEK_CARD_MOVE_TOOL)}, { rescheduleSessions: [{ sessionId: p.sessionId, newDate: p.to.date }] }).then(function(res){
+    card.callTool(${JSON.stringify(WEEK_CARD_MOVE_TOOL)}, { sessionId: p.sessionId, newDate: p.to.date }).then(function(res){
       if (res === false) {
         return card.sendMessage(chatAsk).then(function(ok){
           note(ok ? "Sent to the chat, so the assistant can make the change." : "Ask in the chat to move this session.");

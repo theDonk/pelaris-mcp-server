@@ -130,8 +130,8 @@ export function cardToolMeta(
 
 /**
  * The `_meta` for a tool a card calls itself through the bridge, or `undefined` when
- * cards are off for this host. MCP Apps `visibility` names both the model and the card
- * (the spec's default, stated so it is explicit). Host-specific keys come from the
+ * cards are off for this host. `visibility: ["app"]`: the card may call it, and the spec
+ * says a host MUST NOT include it in the model's tool list. Host-specific keys come from the
  * host adapter (ChatGPT's `openai/widgetAccessible`). The tool's annotations are
  * unchanged, and the host still applies its own approval to a write.
  */
@@ -140,7 +140,7 @@ export function cardCallableToolMeta(
   host: HostProfile = currentHostProfile(env),
 ): Record<string, unknown> | undefined {
   if (!cardsOn(host, env)) return undefined;
-  return { ui: { visibility: ["model", "app"] }, ...host.appToolMeta };
+  return { ui: { visibility: ["app"] }, ...host.appToolMeta };
 }
 
 /** The resource-level `_meta.ui`: strict CSP (no outside origins at all), a border, and the host's sandbox origin when it has one. */

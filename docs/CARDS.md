@@ -35,10 +35,16 @@ what they read before.
   `callTool(name, args)` (`tools/call`; resolves to the tool's result, or `false`),
   `requestFullscreen()` and `requestInline()` (`ui/request-display-mode`), and
   `onContext(fn)` (host context on connect and on each change, for example `displayMode`).
-- A tool a card calls itself spreads `cardCallableToolMeta()` into its `_meta`
-  (`ui.visibility: ["model", "app"]`, plus the host's own keys from the host adapter, for
-  ChatGPT `openai/widgetAccessible`). Its
-  annotations stay as they are; a write keeps `readOnlyHint: false, destructiveHint: true`.
+- A tool a card calls itself is a narrow, app-only tool with `cardCallableToolMeta()` in its
+  `_meta` (`ui.visibility: ["app"]`: the spec says a host MUST NOT offer it to the model,
+  plus the host's own keys from the host adapter, for ChatGPT `openai/widgetAccessible`).
+  It is registered only for a host that draws cards. Today there is one:
+  `card_reschedule_session` (input exactly `{ sessionId, newDate }`, strict; the same
+  reschedule path and claims-derived profile as `modify_training_session`, and the same
+  `moved` / `skipped` / `needsAthlete` / `failed` / `message` reply). The model's
+  `modify_training_session` is not callable from a card. The card tool is a write:
+  `readOnlyHint: false, destructiveHint: true`, and `idempotentHint: true` (a repeat of
+  the same move finds the session already on that day and leaves it).
 - `src/cards/registry.ts` lists every card; `src/index.ts` calls `registerCards(server)`.
 
 ### The host adapter
@@ -74,7 +80,7 @@ sends none).
 
 | Card | Tool | Shows | Actions |
 |---|---|---|---|
-| Week (`ui://pelaris/cards/week-v1.html`) | `get_active_program` | the primary program's week as seven tiles, Monday to Sunday (the session's own `focus`, else `slotType`, cut short by CSS; minutes only when the server sent a stored `durationMinutes`), the date range, a This week / Next week switch when next-week sessions came back. Full screen: the days as a list; a planned session dated today or later and not completed moves by drag or by its Move button (a day picker); a confirm panel shows the session and both dates before anything is written. No Skip. | Rearrange this week (full screen; Confirm calls `modify_training_session` with `rescheduleSessions: [{ sessionId, newDate }]`, updates the tiles from `moved`, shows the reason or `message` otherwise, then sends the chat a one-line note; with no card tool call it sends the request as a chat message), Open in Pelaris (signed link, `program` route) |
+| Week (`ui://pelaris/cards/week-v1.html`) | `get_active_program` | the primary program's week as seven tiles, Monday to Sunday (the session's own `focus`, else `slotType`, cut short by CSS; minutes only when the server sent a stored `durationMinutes`), the date range, a This week / Next week switch when next-week sessions came back. Full screen: the days as a list; a planned session dated today or later and not completed moves by drag or by its Move button (a day picker); a confirm panel shows the session and both dates before anything is written. No Skip. | Rearrange this week (full screen; Confirm calls the app-only `card_reschedule_session` with `{ sessionId, newDate }`, updates the tiles from `moved`, shows the reason or `message` otherwise, then sends the chat a one-line note; with no card tool call it sends the request as a chat message), Open in Pelaris (signed link, `program` route) |
 | Debrief (`ui://pelaris/cards/debrief-v1.html`) | `get_weekly_debrief` | week label, "N of M sessions" with a plain bar, the bonus line, a record line only when `newPrs` has exactly one entry (stated as data, no unit: the tool gives none), next week's focus, the tagline. No headline win or watch line is picked in code (a judgement: the assistant's message carries it). An empty week gets no card. | Save as image (a square canvas picture: week, sessions, the record line, focus, tagline; no name, no account details; then shown in the card, and the action becomes Copy text), Open in Pelaris (signed link, `program` route) |
 | Body (`ui://pelaris/cards/body-v1.html`) | `get_body_analysis` | the latest scan's date; waist, hips and shoulders with the change since the previous scan (plain signed numbers with the unit); shoulder to waist when returned; "Measurements are estimates from the scan, not exact." Full screen: a slider with one stop per scan in `history` (newest at the right), or two stops from the latest values and `comparisonToPrevious` (the earlier one is the latest minus the change); rows for waist, hips, shoulders and weight (when present) with the change since the first stop; a plain schematic outline in inline SVG whose shoulder, waist and hip widths follow the numbers (clamped), the first stop dashed behind it. No photo, ever; no red or green; nothing called a record or a best. Centimetres and kilograms (the tool carries no unit preference). No analysis, or none of waist, hips and shoulders (a profile weight only), means no card. | Compare scans (full screen; hidden with a single scan), Open in Pelaris (the tool's own signed `scanLink`; no link, no button) |
 | Session (`ui://pelaris/cards/session-v1.html`) | `get_session_details` | title, date, length, warm-up line (only blocks typed `warm_up`), main-set rows (sets x reps with load or RPE; cardio distance or time) | Start in Pelaris (signed one-tap link, route in `SESSION_CARD_START_ROUTE`), Swap an exercise (sends a chat message; the assistant runs `swap_exercise`, which asks before it changes anything) |
@@ -148,7 +154,7 @@ outline): one `<svg>` of plain `path` and `circle` shapes, no links, no `xmlns`,
 - **Week card, every host:** checked in a local browser at 320 px, light and dark, with
   a stub host: full screen request, Move, day picker, confirm, the tool call's exact
   arguments, the tile update and the follow-up message. Not checked live: whether a
-  host lets the card call `modify_training_session` (a write; Claude and ChatGPT may ask
+  host lets the card call `card_reschedule_session` (a write; Claude and ChatGPT may ask
   the athlete first), whether ChatGPT honours `openai/widgetAccessible` on this server,
   whether a host reports `displayMode` back, and drag in a host's sandboxed frame on
   touch (the Move button is the path that does not need drag).
