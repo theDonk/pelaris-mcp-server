@@ -138,7 +138,7 @@ const MESSAGES = {
   birth_year_required: "Photo scans are for adults, so Pelaris needs your birth year first. Add it on the scan screen with this link.",
   age_restricted: "Photo scans are for 18 and over. You can still add your measurements by hand or upload your results in Pelaris.",
   busy: "The scan is busy right now. Give it a minute and try again.",
-  photo_not_usable: "Pelaris can read JPG photos of up to about 900 KB each from a chat, and this photo is a different type or larger. Take the scan in Pelaris with this link, where your photos are resized for you.",
+  photo_not_usable: "Pelaris could not read this photo from the chat. Take the scan in Pelaris with this link, and your photos will work there.",
   retake: "Pelaris couldn't read these photos clearly. Good light, head to feet in the frame, and try again.",
 } as const;
 
