@@ -30,6 +30,7 @@ import {
   unwrapBridgeResult,
 } from "../shared/core_adapter.js";
 import { buildModifyTrainingOperations } from "./session_modify_mapping.js";
+import { cardCallableToolMeta } from "../../cards/card_shell.js";
 
 export function registerModifyTrainingSession(server: McpServer): void {
   server.registerTool(
@@ -85,6 +86,8 @@ export function registerModifyTrainingSession(server: McpServer): void {
           .describe("Move several planned sessions in one call, across any built weeks. The result lists which moved, which stayed and why, and which need the athlete to choose a day. Sessions the athlete moved by hand stay where they put them."),
       },
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Modify Training Session" },
+      // The Week card's Confirm calls this tool (a write: the host still asks the athlete as it does for any write).
+      ...(cardCallableToolMeta() ? { _meta: cardCallableToolMeta() } : {}),
     },
     async (params) => {
       const requestId = generateRequestId();

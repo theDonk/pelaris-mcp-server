@@ -249,6 +249,23 @@ test("shapeActiveProgram passes the next-week fields through when the server sen
   assert.equal(next[0].hasCoachNote, true);
 });
 
+test("shapeActiveProgram passes a stored session length through and never adds one", () => {
+  const out = shapeActiveProgram(
+    hybrid({
+      currentWeekSessions: [
+        { sessionId: "s1", focus: "Tempo Run", slotType: "run", scheduledDate: "2026-10-19", isCompleted: false, durationMinutes: 50 },
+        { sessionId: "s2", focus: "Swim", slotType: "swim", scheduledDate: "2026-10-23", isCompleted: false },
+      ],
+      nextWeekSessions: [{ sessionId: "s3", focus: "Long Run", slotType: "run", scheduledDate: "2026-10-27", isCompleted: false, durationMinutes: 75 }],
+    }),
+    undefined,
+  );
+  const sessions = out.currentWeekSessions as Array<Record<string, unknown>>;
+  assert.equal(sessions[0].durationMinutes, 50);
+  assert.ok(!("durationMinutes" in sessions[1]), "absent stays absent");
+  assert.equal((out.nextWeekSessions as Array<Record<string, unknown>>)[0].durationMinutes, 75);
+});
+
 test("shapeActiveProgram omits the next-week fields when the server does not send them", () => {
   const out = shapeActiveProgram(hybrid(), undefined);
   assert.ok(!("nextWeekNumber" in out));

@@ -19,6 +19,9 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
+import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
+import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, buildWeekCardData } from "../../cards/week_card.js";
 import {
   TRUTH_UNAVAILABLE_MESSAGE,
   WEEK_MEANING_NOTE,
@@ -31,6 +34,30 @@ import {
 } from "../shared/training_truth.js";
 
 type Raw = Record<string, unknown>;
+
+type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
+
+/**
+ * Adds the Week card to a successful reply. The text stays exactly as it was; the card's
+ * data rides in the result's _meta. The one-tap link is minted only when a card is
+ * drawn, and any failure leaves the plain text reply.
+ */
+export async function withWeekCard(
+  reply: TextReply,
+  result: Record<string, unknown>,
+  claims: HandoffClaimsLike | null | undefined,
+  mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+): Promise<TextReply> {
+  if (!cardsEnabled()) return reply;
+  try {
+    const data = buildWeekCardData(result, null);
+    if (!data) return reply;
+    const openUrl = await mint(WEEK_CARD_OPEN_ROUTE, claims).catch(() => null);
+    return withCard(reply, WEEK_CARD, { ...data, openUrl });
+  } catch {
+    return reply;
+  }
+}
 
 /** The reads this tool makes, injectable for tests. */
 export interface ActiveProgramDeps {
@@ -61,6 +88,8 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
       slotType: s.slotType,
       isCompleted: s.isCompleted,
       scheduledDate: s.scheduledDate,
+      // Only when the server sent a stored length (mostly absent); never estimated here.
+      ...(typeof s.durationMinutes === "number" && Number.isFinite(s.durationMinutes) ? { durationMinutes: s.durationMinutes } : {}),
       hasCoachNote: !!flags?.coach_note,
       adaptationApplied: (flags?.adaptation_applied as boolean | undefined) ?? false,
     };
@@ -95,6 +124,7 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
         "Weeks are Monday to Sunday in your own timezone, \"Week N\" is the number the Pelaris app shows, and next week is the following Monday to Sunday.",
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Active Program" },
+      ...(cardToolMeta(WEEK_CARD) ? { _meta: cardToolMeta(WEEK_CARD) } : {}),
     },
     async () => {
       const requestId = generateRequestId();
@@ -146,9 +176,11 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withWeekCard(
+          { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] },
+          result,
+          claims,
+        );
       } catch (error) {
         logToolCall({
           requestId,

@@ -49,8 +49,10 @@ for (const card of CARDS) {
     assert.doesNotMatch(html, /\bring\b|streak|<svg|<canvas|photo/i);
   });
 
-  test(`${card.id}: at most two actions`, () => {
-    const actions = html.match(/class="pc-btn\b/g) ?? [];
+  test(`${card.id}: at most two actions inline`, () => {
+    // Markup between <!--full--> and <!--/full--> shows only in full screen.
+    const inline = html.replace(/<!--full-->[\s\S]*?<!--\/full-->/g, "");
+    const actions = inline.match(/class="pc-btn\b/g) ?? [];
     assert.ok(actions.length <= 2, `${actions.length} actions`);
   });
 }

@@ -94,10 +94,14 @@ body{font:14px/1.45 var(--pc-font);color:var(--pc-text);min-width:280px}
  * reports `ui/notifications/size-changed`. Actions, each with a graceful fallback:
  * - sendMessage(text): `ui/message`, else `window.openai.sendFollowUpMessage`
  * - openLink(url): `ui/open-link`, else `window.openai.openExternal`, else a new tab
- * - callTool(name, args): `tools/call`, else `window.openai.callTool`
- * - requestFullscreen(): `ui/request-display-mode`, else `window.openai.requestDisplayMode`
- * Each action resolves to true when some path accepted it and false when none did,
- * so a card can show a plain note instead of a dead button.
+ * - callTool(name, args): `tools/call`, else `window.openai.callTool`; resolves to the
+ *   tool's result object (or true when a path gave none back), false when none accepted
+ * - requestFullscreen() / requestInline(): `ui/request-display-mode`, else
+ *   `window.openai.requestDisplayMode`
+ * - onContext(fn): called with the host context on connect and on every change
+ *   (for example `displayMode` moving between inline and fullscreen)
+ * Each other action resolves to true when some path accepted it and false when none
+ * did, so a card can show a plain note instead of a dead button.
  */
 export const CARD_BRIDGE_JS = `
 (function(){
@@ -108,6 +112,7 @@ export const CARD_BRIDGE_JS = `
   var nextId = 1;
   var pending = {};
   var listeners = [];
+  var contextListeners = [];
   var lastData = null;
   var host = { connected: false, capabilities: {}, context: {} };
   var parentWin = window.parent && window.parent !== window ? window.parent : null;
@@ -129,6 +134,7 @@ export const CARD_BRIDGE_JS = `
   function applyContext(ctx){
     if (!ctx || typeof ctx !== "object") return;
     host.context = Object.assign({}, host.context, ctx);
+    contextListeners.forEach(function(fn){ try { fn(host.context); } catch (e) { /* never breaks the bridge */ } });
     var root = document.documentElement;
     if (ctx.theme === "light" || ctx.theme === "dark") root.setAttribute("data-theme", ctx.theme);
     var vars = ctx.styles && ctx.styles.variables;
@@ -201,9 +207,26 @@ export const CARD_BRIDGE_JS = `
       })
       .catch(function(){ return false; });
   }
+  // Like attempt, but resolves to the value a path gave back (true when it gave none).
+  function attemptValue(primary, fallback){
+    var keep = function(v){ return (v && typeof v === "object") ? v : true; };
+    return (host.connected ? primary() : Promise.reject(new Error("not connected")))
+      .then(keep)
+      .catch(function(){
+        try { var r = fallback(); return Promise.resolve(r).then(function(v){ return v === false ? false : keep(v); }); }
+        catch (e) { return false; }
+      })
+      .catch(function(){ return false; });
+  }
+  function displayMode(mode){
+    return attempt(
+      function(){ return request("ui/request-display-mode", { mode: mode }); },
+      function(){ var o = oa(); if (o && o.requestDisplayMode) return o.requestDisplayMode({ mode: mode }); return false; });
+  }
 
   window.PelarisCard = {
     onData: function(fn){ listeners.push(fn); if (lastData) fn(lastData); },
+    onContext: function(fn){ contextListeners.push(fn); fn(host.context); },
     hostContext: function(){ return host.context; },
     sendMessage: function(text){
       return attempt(
@@ -219,15 +242,12 @@ export const CARD_BRIDGE_JS = `
         });
     },
     callTool: function(name, args){
-      return attempt(
+      return attemptValue(
         function(){ return request("tools/call", { name: name, arguments: args || {} }, 30000); },
         function(){ var o = oa(); if (o && o.callTool) return o.callTool(name, args || {}); return false; });
     },
-    requestFullscreen: function(){
-      return attempt(
-        function(){ return request("ui/request-display-mode", { mode: "fullscreen" }); },
-        function(){ var o = oa(); if (o && o.requestDisplayMode) return o.requestDisplayMode({ mode: "fullscreen" }); return false; });
-    }
+    requestFullscreen: function(){ return displayMode("fullscreen"); },
+    requestInline: function(){ return displayMode("inline"); }
   };
   connect();
 })();

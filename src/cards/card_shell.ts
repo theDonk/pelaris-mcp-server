@@ -114,6 +114,19 @@ export function cardToolMeta(
   };
 }
 
+/**
+ * The `_meta` for a tool a card calls itself through the bridge (for example the Week
+ * card's Confirm calling modify_training_session), or `undefined` when cards are off.
+ * MCP Apps `visibility` names both the model and the card (the spec's default, stated
+ * so it is explicit); ChatGPT asks for `openai/widgetAccessible` before a card may call
+ * a tool. The tool's own annotations (read-only or destructive) are unchanged, and the
+ * host still applies its own approval to a write.
+ */
+export function cardCallableToolMeta(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> | undefined {
+  if (!cardsEnabled(env)) return undefined;
+  return { ui: { visibility: ["model", "app"] }, "openai/widgetAccessible": true };
+}
+
 /** The resource-level `_meta.ui`: strict CSP (no outside origins at all) and a border. */
 export function cardResourceMeta(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
   const domain = (env[CARDS_UI_DOMAIN_ENV] ?? "").trim();
