@@ -25,7 +25,6 @@
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
 import { defineCard } from "./card_shell.js";
-import { renderCardPage } from "./templates.js";
 
 /** Where "Open in Pelaris" lands. */
 export const WEEK_CARD_OPEN_ROUTE: HandoffRoute = "program";
@@ -500,8 +499,9 @@ const WEEK_CARD_SCRIPT = `
 })();
 `;
 
-export const WEEK_CARD = defineCard({
+export const WEEK_CARD = defineCard<WeekCardData>({
   id: "week",
+  v: 1,
   title: "Pelaris week card",
   description: "The program week, Monday to Sunday, with Rearrange (move a session after you confirm) and Open in Pelaris.",
   fields: {
@@ -523,12 +523,11 @@ export const WEEK_CARD = defineCard({
     },
     openUrl: true,
   },
-  page: () =>
-    renderCardPage({
-      title: "Pelaris week",
-      css: WEEK_CARD_CSS,
-      body: WEEK_CARD_BODY,
-      script: WEEK_CARD_SCRIPT,
-      displayModes: ["inline", "fullscreen"],
-    }),
+  page: {
+    title: "Pelaris week",
+    css: WEEK_CARD_CSS,
+    body: WEEK_CARD_BODY,
+    script: WEEK_CARD_SCRIPT,
+    displayModes: ["inline", "fullscreen"],
+  },
 });

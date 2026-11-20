@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 const { CARD_DATA_META_KEY } = await import("../card_shell.js");
 const { DEBRIEF_CARD, DEBRIEF_CARD_OPEN_ROUTE, DEBRIEF_CARD_TAGLINE, buildDebriefCardData, recordRowsFrom } = await import("../debrief_card.js");
-const { openCardPage } = await import("./card_dom_harness.js");
+const { envelope, openCardPage } = await import("./card_dom_harness.js");
 const { HANDOFF_ROUTES } = await import("../../tools/shared/entry_links.js");
 const { withDebriefCard, shapeDebrief } = await import("../../tools/user/get_weekly_debrief.js");
 
@@ -77,7 +77,7 @@ test("page: every record drawn as a row under New records; no section when empty
   (debrief.metrics as Record<string, unknown>).newPrs = [pr("Back squat", 80, 77.5), pr("Row", 60, null), pr("5 km run", 1500, 1520)];
   const data = buildDebriefCardData(debrief, "https://example.invalid/open");
   const page = await openCardPage(DEBRIEF_CARD.html(), { host: () => ({ result: {} }) });
-  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: data } });
+  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: envelope(DEBRIEF_CARD, data) } });
   await page.settle();
   assert.ok(page.$("record-section").shown);
   assert.deepEqual(
@@ -85,7 +85,7 @@ test("page: every record drawn as a row under New records; no section when empty
     [["Back squat", "80, was 77.5"], ["Row", "60"], ["5 km run", "1500, was 1520"]],
   );
   const none = buildDebriefCardData(shapeDebrief({ weekStarting: "2026-11-09", metrics: { sessionsCompleted: 2, sessionsPlanned: 3 } }, null), null);
-  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: none } });
+  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: envelope(DEBRIEF_CARD, none) } });
   await page.settle();
   assert.equal(page.$("record-section").shown, false);
   assert.equal(page.$("records").children.length, 0);
@@ -96,7 +96,7 @@ test("saved image: the first record rows that fit, then 'and N more'; never a wa
   (debrief.metrics as Record<string, unknown>).newPrs = Array.from({ length: 30 }, (_, i) => pr(`Lift ${i + 1}`, 100 + i, null));
   const data = buildDebriefCardData(debrief, null);
   const page = await openCardPage(DEBRIEF_CARD.html(), { host: () => ({ result: {} }) });
-  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: data } });
+  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: envelope(DEBRIEF_CARD, data) } });
   await page.settle();
   assert.equal(page.$("records").children.length, 30, "the card lists all 30");
   page.$("save").click();
@@ -115,7 +115,7 @@ test("saved image: a short list is drawn whole, with no 'and N more'", async () 
   const debrief = fullDebrief();
   (debrief.metrics as Record<string, unknown>).newPrs = [pr("Back squat", 80, 77.5)];
   const page = await openCardPage(DEBRIEF_CARD.html(), { host: () => ({ result: {} }) });
-  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: buildDebriefCardData(debrief, null) } });
+  page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: envelope(DEBRIEF_CARD, buildDebriefCardData(debrief, null)) } });
   await page.settle();
   page.$("save").click();
   assert.ok(page.canvasTexts.includes("Back squat: 80, was 77.5"));
@@ -171,8 +171,10 @@ test("withDebriefCard: text unchanged, data allow-listed, link minted; empty wee
   }, CLAUDE);
   assert.deepEqual(routes, ["program"]);
   assert.deepEqual(out.content, text.content);
-  const card = out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
-  assert.equal(card.card, "debrief");
+  const envelope = out._meta?.[CARD_DATA_META_KEY] as { card: string; v: number; data: Record<string, unknown> };
+  assert.equal(envelope.card, "debrief");
+  assert.equal(envelope.v, 1);
+  const card = envelope.data;
   assert.equal(card.openUrl, "https://example.invalid/open/program?h=sample");
 
   const empty = { weekStarting: "2026-11-16", message: "No weekly debriefs available yet." };

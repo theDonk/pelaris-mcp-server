@@ -133,12 +133,14 @@ test("the tool reply's text is unchanged; card data rides in _meta and passes th
   const text = JSON.stringify(result, null, 2);
   const reply = withBodyCard({ content: [{ type: "text", text }] }, result, CLAUDE);
   assert.equal(reply.content[0].text, text);
-  const meta = reply._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
-  assert.equal(meta.card, BODY_CARD.id);
+  const envelope = reply._meta?.[CARD_DATA_META_KEY] as { card: string; v: number; data: Record<string, unknown> };
+  assert.equal(envelope.card, BODY_CARD.id);
+  assert.equal(envelope.v, BODY_CARD.v);
+  const meta = envelope.data;
   const flat = JSON.stringify(meta);
   assert.ok(!flat.includes("Private assessment"), "the card never gets the assessment");
   assert.ok(!/photo|image|img/i.test(flat), "nothing image-shaped");
-  assert.deepEqual(Object.keys(meta).sort(), ["card", ...Object.keys(BODY_CARD.fields)].sort());
+  assert.deepEqual(Object.keys(meta).sort(), Object.keys(BODY_CARD.fields).sort());
 });
 
 test("no analysis means no card, and the reply is untouched", () => {

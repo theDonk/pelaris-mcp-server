@@ -85,6 +85,9 @@ body{font:14px/1.45 var(--pc-font);color:var(--pc-text);min-width:280px}
 .pc-hidden{display:none}
 `;
 
+/** What a card shows when it gets a payload it does not know (another card, another version). */
+export const CARD_FALLBACK_LINE = "Open in Pelaris to see this.";
+
 /**
  * The host bridge, exposed to card scripts as `window.PelarisCard`.
  *
@@ -114,6 +117,8 @@ export const CARD_BRIDGE_JS = `
   var PROTOCOL_VERSION = "2026-01-26";
   var DATA_KEY = "pelaris/card";
   var DISPLAY_MODES = Array.isArray(window.PELARIS_CARD_DISPLAY_MODES) ? window.PELARIS_CARD_DISPLAY_MODES : ["inline"];
+  // The one payload this page draws: { card, v, data } with its own card id and version.
+  var ACCEPTS = window.PELARIS_CARD_ACCEPTS || {};
   var CALL_TIMEOUT_MS = 30000;
   var nextId = 1;
   var pending = {};
@@ -156,8 +161,20 @@ export const CARD_BRIDGE_JS = `
       });
     }
   }
-  function deliver(data){
-    if (!data || typeof data !== "object") return;
+  // A payload for another card, or a data version this page does not know, is never
+  // drawn: the card shows the plain fallback line instead of guessing at the data.
+  function fallbackLine(){
+    var main = document.querySelector("main") || document.body;
+    var p = document.createElement("p"); p.className = "pc-line";
+    p.textContent = ${JSON.stringify(CARD_FALLBACK_LINE)};
+    main.replaceChildren(p);
+  }
+  function deliver(payload){
+    if (!payload || typeof payload !== "object") return;
+    var data = payload.data;
+    if (payload.card !== ACCEPTS.card || payload.v !== ACCEPTS.v || !data || typeof data !== "object") {
+      lastData = null; fallbackLine(); return;
+    }
     lastData = data;
     listeners.forEach(function(fn){ try { fn(data); } catch (e) { /* a card error never breaks the bridge */ } });
   }
@@ -305,6 +322,8 @@ export interface CardPageParts {
   body: string;
   /** The card's script: reads `window.PelarisCard`, draws with textContent. */
   script: string;
+  /** The payload the page accepts: its card id and data version (added by the shell's `defineCard`). */
+  card: { id: string; v: number };
   /** Display modes the card supports (MCP Apps `availableDisplayModes`). Default inline only. */
   displayModes?: ReadonlyArray<"inline" | "fullscreen" | "pip">;
 }
@@ -324,7 +343,8 @@ export function renderCardPage(parts: CardPageParts): string {
     "</head>",
     "<body>",
     parts.body,
-    `<script>window.PELARIS_CARD_DISPLAY_MODES=${JSON.stringify(parts.displayModes ?? ["inline"])};</script>`,
+    `<script>window.PELARIS_CARD_DISPLAY_MODES=${JSON.stringify(parts.displayModes ?? ["inline"])};` +
+      `window.PELARIS_CARD_ACCEPTS=${JSON.stringify({ card: parts.card.id, v: parts.card.v })};</script>`,
     `<script>${CARD_BRIDGE_JS}</script>`,
     `<script>${parts.script}</script>`,
     "</body>",

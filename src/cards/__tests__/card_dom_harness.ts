@@ -149,6 +149,11 @@ function parseBody(markup: string): FakeElement {
   return root;
 }
 
+/** The `{ card, v, data }` payload a card's page accepts, for a test to send as is (no allow-list). */
+export function envelope(card: { id: string; v: number }, data: unknown): { card: string; v: number; data: unknown } {
+  return { card: card.id, v: card.v, data };
+}
+
 export type HostReply = { result: unknown } | { error: { code: number; message: string } } | "silent";
 
 export interface PageOptions {
@@ -205,6 +210,7 @@ export async function openCardPage(html: string, opts: PageOptions = {}): Promis
       if (tag === "a" || tag === "img") Object.assign(e, { remove: () => undefined });
       return e;
     },
+    querySelector: (sel: string) => body.all().find((e) => e.tagName === sel.toUpperCase()) ?? null,
     querySelectorAll: (sel: string) => {
       const cls = sel.startsWith(".") ? sel.slice(1) : null;
       return cls ? body.all().filter((e) => e.classList.contains(cls)) : [];

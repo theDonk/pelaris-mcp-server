@@ -12,7 +12,6 @@
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
 import { defineCard } from "./card_shell.js";
-import { renderCardPage } from "./templates.js";
 
 /**
  * Where "Start in Pelaris" lands. Today the Train tab; change this one constant when a
@@ -247,8 +246,9 @@ const SESSION_CARD_SCRIPT = `
 })();
 `;
 
-export const SESSION_CARD = defineCard({
+export const SESSION_CARD = defineCard<SessionCardData>({
   id: "session",
+  v: 1,
   title: "Pelaris session card",
   description: "One planned session: its exercises, with Start in Pelaris and Swap an exercise.",
   fields: {
@@ -260,10 +260,9 @@ export const SESSION_CARD = defineCard({
     startUrl: true,
     swapPrompt: true,
   },
-  page: () =>
-    renderCardPage({
-      title: "Pelaris session",
-      body: SESSION_CARD_BODY,
-      script: SESSION_CARD_SCRIPT,
-    }),
+  page: {
+    title: "Pelaris session",
+    body: SESSION_CARD_BODY,
+    script: SESSION_CARD_SCRIPT,
+  },
 });

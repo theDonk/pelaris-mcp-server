@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 const { WEEK_CARD, buildWeekCardData } = await import("../week_card.js");
 const { BODY_CARD, buildBodyCardData } = await import("../body_card.js");
 const { bodyAnalysisFromCore } = await import("../../tools/user/get_body_analysis.js");
-const { openCardPage } = await import("./card_dom_harness.js");
+const { envelope, openCardPage } = await import("./card_dom_harness.js");
 type HostReply = import("./card_dom_harness.js").HostReply;
 type CardPage = import("./card_dom_harness.js").CardPage;
 
@@ -52,9 +52,9 @@ const bodyData = () =>
 
 const calls = (page: CardPage, method: string) => page.sent.filter((m) => m.method === method);
 
-async function load(html: string, data: unknown, hostContext: Record<string, unknown>, host: (m: string, p: Record<string, unknown>) => HostReply) {
-  const page = await openCardPage(html, { host, hostContext });
-  page.notify("ui/notifications/tool-result", { _meta: { "pelaris/card": data } });
+async function load(card: { id: string; v: number; html: () => string }, data: unknown, hostContext: Record<string, unknown>, host: (m: string, p: Record<string, unknown>) => HostReply) {
+  const page = await openCardPage(card.html(), { host, hostContext });
+  page.notify("ui/notifications/tool-result", { _meta: { "pelaris/card": envelope(card, data) } });
   await page.settle();
   return page;
 }
@@ -63,7 +63,7 @@ const INLINE_ONLY = { availableDisplayModes: ["inline"], displayMode: "inline" }
 const BOTH = { availableDisplayModes: ["inline", "fullscreen"], displayMode: "inline" };
 
 test("week: the host kept the card inline (mode returned is inline), so the card says so and moves in place", async () => {
-  const page = await load(WEEK_CARD.html(), weekData(), BOTH, (m) =>
+  const page = await load(WEEK_CARD, weekData(), BOTH, (m) =>
     m === "ui/request-display-mode" ? { result: { mode: "inline" } } : { result: {} },
   );
   assert.equal(page.$("rearrange").textContent, "Rearrange this week");
@@ -77,7 +77,7 @@ test("week: the host kept the card inline (mode returned is inline), so the card
 });
 
 test("week: full screen not offered, so the first action is Move a session and opens the picker in the card", async () => {
-  const page = await load(WEEK_CARD.html(), weekData(), INLINE_ONLY, () => ({ result: {} }));
+  const page = await load(WEEK_CARD, weekData(), INLINE_ONLY, () => ({ result: {} }));
   assert.equal(page.$("rearrange").textContent, "Move a session");
   page.$("rearrange").click();
   await page.settle();
@@ -90,7 +90,7 @@ test("week: full screen not offered, so the first action is Move a session and o
 });
 
 test("week: host-context-changed that offers full screen brings Rearrange back", async () => {
-  const page = await load(WEEK_CARD.html(), weekData(), INLINE_ONLY, () => ({ result: {} }));
+  const page = await load(WEEK_CARD, weekData(), INLINE_ONLY, () => ({ result: {} }));
   assert.equal(page.$("rearrange").textContent, "Move a session");
   page.notify("ui/notifications/host-context-changed", { availableDisplayModes: ["inline", "fullscreen"] });
   await page.settle();
@@ -98,17 +98,17 @@ test("week: host-context-changed that offers full screen brings Rearrange back",
 });
 
 test("body: Compare scans shows only where the host offers full screen", async () => {
-  const off = await load(BODY_CARD.html(), bodyData(), INLINE_ONLY, () => ({ result: {} }));
+  const off = await load(BODY_CARD, bodyData(), INLINE_ONLY, () => ({ result: {} }));
   assert.equal(off.$("compare").shown, false, "hidden without full screen");
   off.notify("ui/notifications/host-context-changed", { availableDisplayModes: ["inline", "fullscreen"] });
   await off.settle();
   assert.equal(off.$("compare").shown, true, "shown once the host offers it");
-  const on = await load(BODY_CARD.html(), bodyData(), BOTH, () => ({ result: {} }));
+  const on = await load(BODY_CARD, bodyData(), BOTH, () => ({ result: {} }));
   assert.equal(on.$("compare").shown, true);
 });
 
 test("ui/message with isError: the card shows a note instead of assuming it was sent", async () => {
-  const page = await load(WEEK_CARD.html(), weekData(), BOTH, (m, p) => {
+  const page = await load(WEEK_CARD, weekData(), BOTH, (m, p) => {
     if (m === "ui/request-display-mode") return { result: { mode: p.mode } };
     if (m === "tools/call") return { error: { code: -32601, message: "Method not found" } };
     if (m === "ui/message") return { result: { isError: true } };

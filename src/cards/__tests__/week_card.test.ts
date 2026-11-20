@@ -154,10 +154,12 @@ test("withWeekCard: text unchanged, card data allow-listed, link minted for the 
   }, CLAUDE);
   assert.deepEqual(routes, ["program"]);
   assert.deepEqual(out.content, text.content);
-  const card = out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
-  assert.equal(card.card, "week");
+  const envelope = out._meta?.[CARD_DATA_META_KEY] as { card: string; v: number; data: Record<string, unknown> };
+  assert.equal(envelope.card, "week");
+  assert.equal(envelope.v, 1);
+  const card = envelope.data;
   assert.equal(card.openUrl, "https://example.invalid/open/program?h=sample");
-  assert.deepEqual(Object.keys(card).sort(), ["card", "openUrl", "programTitle", "today", "weeks"]);
+  assert.deepEqual(Object.keys(card).sort(), ["openUrl", "programTitle", "today", "weeks"]);
   assert.ok(!JSON.stringify(card).includes("hasCoachNote"));
 });
 
@@ -165,7 +167,7 @@ test("withWeekCard: a failed mint still draws the card; off and empty leave the 
   const result = reply();
   const text = { content: [{ type: "text" as const, text: "x" }] };
   const out = await withWeekCard(text, result, null, async () => { throw new Error("store down"); }, CLAUDE);
-  assert.equal((out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>).openUrl, null);
+  assert.equal((out._meta?.[CARD_DATA_META_KEY] as { data: Record<string, unknown> }).data.openUrl, null);
   const before = process.env.PELARIS_CARDS;
   process.env.PELARIS_CARDS = "off";
   try {

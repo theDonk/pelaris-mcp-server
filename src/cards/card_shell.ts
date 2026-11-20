@@ -6,7 +6,7 @@
  * - registers each card's `ui://` HTML resource with the MCP server;
  * - gives a tool definition the `_meta.ui.resourceUri` that links it to its card;
  * - adds the card's data to a tool result under `_meta["pelaris/card"]`, keeping only
- *   the fields the card's allow-list names.
+ *   the fields the card's allow-list names, inside a `{ card, v, data }` envelope.
  *
  * The result's `content` text (and `structuredContent`, where a tool has it) is never
  * changed, so hosts without card support, and the assistant itself, see exactly what
@@ -24,6 +24,7 @@
 
 import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { renderCardPage, type CardPageParts } from "./templates.js";
 import {
   CARDS_UI_DOMAIN_ENV,
   MCP_APP_MIME_TYPE,
@@ -52,9 +53,37 @@ export const CARDS_ENV_FLAG = "PELARIS_CARDS";
 export type CardFieldSpec = true | { [key: string]: CardFieldSpec };
 export type CardAllowList = { [key: string]: CardFieldSpec };
 
-export interface CardDefinition {
-  /** Short id, also used in the resource name. */
+/**
+ * The allow-list a card's data type needs: every key of `T`, no more and no fewer.
+ * A scalar key is `true`; an object, or an array of objects, carries its own nested
+ * list. An array of scalars is `never`, because the picker drops it (no card has one).
+ * So a field added to a card's data interface but not to its `fields`, or a field in
+ * `fields` the interface does not have, is a compile error at the card's `defineCard`.
+ */
+export type CardFields<T> = { [K in keyof T]-?: CardFieldFor<NonNullable<T[K]>> };
+type CardFieldFor<V> = V extends ReadonlyArray<infer E>
+  ? NonNullable<E> extends string | number | boolean
+    ? never
+    : CardFields<NonNullable<E>>
+  : V extends string | number | boolean
+    ? true
+    : CardFields<V>;
+
+/** The payload under `_meta["pelaris/card"]`: which card, which data version, and the allow-listed data. */
+export interface CardPayload {
+  card: string;
+  v: number;
+  data: Record<string, unknown>;
+}
+
+export interface CardDefinition<T = any> {
+  /** Short id, also used in the resource name and the payload's `card`. */
   id: string;
+  /**
+   * The data contract version, sent as the payload's `v`. Raise it when the data's shape
+   * changes in a way an older page would draw wrongly; the page draws only the `v` it knows.
+   */
+  v: number;
   /**
    * `ui://` URI, derived from the page's content (see `cardResourceUri`). Hosts treat it as
    * a cache key, so any change to the page, the shared CSS or the bridge gives a new URI.
@@ -64,16 +93,16 @@ export interface CardDefinition {
   title: string;
   /** One line: what the card shows. */
   description: string;
-  /** The fields the card is allowed to receive. */
-  fields: CardAllowList;
+  /** The fields the card is allowed to receive: exactly the keys of its data type. */
+  fields: CardFields<T>;
   /** The full HTML page (see templates.ts `renderCardPage`), built once at module load. */
   html: () => string;
 }
 
-/** What a card declares; the shell adds the content-derived `resourceUri`. */
-export type CardSpec = Omit<CardDefinition, "resourceUri" | "html"> & {
-  /** Builds the full HTML page. Called once, when the card is defined. */
-  page: () => string;
+/** What a card declares; the shell builds the page and adds the content-derived `resourceUri`. */
+export type CardSpec<T> = Omit<CardDefinition<T>, "resourceUri" | "html"> & {
+  /** The card's page parts. The shell adds the card id and version the page accepts. */
+  page: Omit<CardPageParts, "card">;
 };
 
 /** `ui://pelaris/cards/<name>-<first 10 hex of sha256(html)>.html`: the one place a card URI is made. */
@@ -83,9 +112,9 @@ export function cardResourceUri(name: string, html: string): string {
 }
 
 /** Builds a card's definition: the page once, and its URI from the page's content. */
-export function defineCard(spec: CardSpec): CardDefinition {
+export function defineCard<T>(spec: CardSpec<T>): CardDefinition<T> {
   const { page, ...rest } = spec;
-  const html = page();
+  const html = renderCardPage({ ...page, card: { id: spec.id, v: spec.v } });
   return { ...rest, resourceUri: cardResourceUri(spec.id, html), html: () => html };
 }
 
@@ -220,10 +249,15 @@ export function withCard<T extends { content: unknown[]; isError?: boolean; _met
   host: HostProfile = currentHostProfile(env),
 ): T & { _meta?: Record<string, unknown> } {
   if (!cardsOn(host, env) || !data || result.isError) return result;
-  const picked = pickCardFields(data, card.fields);
-  if (Object.keys(picked).length === 0) return result;
+  const payload = cardPayload(card, data);
+  if (Object.keys(payload.data).length === 0) return result;
   return {
     ...result,
-    _meta: { ...(result._meta ?? {}), [CARD_DATA_META_KEY]: { card: card.id, ...picked } },
+    _meta: { ...(result._meta ?? {}), [CARD_DATA_META_KEY]: payload },
   };
+}
+
+/** The envelope a card's page reads: `{ card, v, data }`, with only the allow-listed fields in `data`. */
+export function cardPayload(card: CardDefinition, data: Record<string, unknown>): CardPayload {
+  return { card: card.id, v: card.v, data: pickCardFields(data, card.fields as CardAllowList) };
 }

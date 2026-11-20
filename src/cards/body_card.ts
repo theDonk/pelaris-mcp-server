@@ -23,7 +23,6 @@
  */
 
 import { defineCard } from "./card_shell.js";
-import { renderCardPage } from "./templates.js";
 import { weekDateLabel } from "./week_card.js";
 
 /** The line every view of the card shows, exactly. */
@@ -377,8 +376,9 @@ const BODY_CARD_SCRIPT = `
 })();
 `;
 
-export const BODY_CARD = defineCard({
+export const BODY_CARD = defineCard<BodyCardData>({
   id: "body",
+  v: 1,
   title: "Pelaris body card",
   description: "Waist, hips and shoulders from the latest scan with the change since the one before, and a slider to compare scans.",
   fields: {
@@ -393,12 +393,11 @@ export const BODY_CARD = defineCard({
     estimateLine: true,
     openUrl: true,
   },
-  page: () =>
-    renderCardPage({
-      title: "Pelaris body",
-      css: BODY_CARD_CSS,
-      body: BODY_CARD_BODY,
-      script: BODY_CARD_SCRIPT,
-      displayModes: ["inline", "fullscreen"],
-    }),
+  page: {
+    title: "Pelaris body",
+    css: BODY_CARD_CSS,
+    body: BODY_CARD_BODY,
+    script: BODY_CARD_SCRIPT,
+    displayModes: ["inline", "fullscreen"],
+  },
 });

@@ -171,11 +171,13 @@ test("withSessionCard: text unchanged, card data allow-listed, link minted for t
   }, CLAUDE);
   assert.deepEqual(routes, ["train"]);
   assert.deepEqual(out.content, reply.content);
-  const card = out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
-  assert.equal(card.card, "session");
+  const envelope = out._meta?.[CARD_DATA_META_KEY] as { card: string; v: number; data: Record<string, unknown> };
+  assert.equal(envelope.card, "session");
+  assert.equal(envelope.v, 1);
+  const card = envelope.data;
   assert.equal(card.startUrl, "https://example.invalid/start/train?h=sample");
   assert.deepEqual(Object.keys(card).sort(), [
-    "card", "dateLabel", "durationLabel", "rows", "startUrl", "swapPrompt", "title", "warmUp",
+    "dateLabel", "durationLabel", "rows", "startUrl", "swapPrompt", "title", "warmUp",
   ]);
   assert.ok(!JSON.stringify(card).includes("private note"));
   assert.ok(!JSON.stringify(card).includes("session_sample_1"));
@@ -186,7 +188,7 @@ test("withSessionCard: a failed mint still draws the card, without a link", asyn
   const out = await withSessionCard(reply, strengthSession, null, async () => {
     throw new Error("store down");
   }, CLAUDE);
-  assert.equal((out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>).startUrl, null);
+  assert.equal((out._meta?.[CARD_DATA_META_KEY] as { data: Record<string, unknown> }).data.startUrl, null);
 });
 
 test("withSessionCard: off switch and an empty session leave the plain reply", async () => {

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { WEEK_CARD, WEEK_CARD_PENDING_NOTE, buildWeekCardData } = await import("../week_card.js");
-const { openCardPage } = await import("./card_dom_harness.js");
+const { envelope, openCardPage } = await import("./card_dom_harness.js");
 type HostReply = import("./card_dom_harness.js").HostReply;
 type CardPage = import("./card_dom_harness.js").CardPage;
 
@@ -27,7 +27,7 @@ const DATA = buildWeekCardData(
   },
   "https://example.test/open",
 )!;
-const toolResult = () => ({ _meta: { "pelaris/card": structuredClone(DATA) } });
+const toolResult = () => ({ _meta: { "pelaris/card": envelope(WEEK_CARD, structuredClone(DATA)) } });
 const MOVED = { content: [{ type: "text", text: JSON.stringify({ moved: [{ sessionId: "s1", newDate: "2026-11-27" }], message: "Done" }) }] };
 const FULL_CONTEXT = { availableDisplayModes: ["inline", "fullscreen"], displayMode: "inline" };
 

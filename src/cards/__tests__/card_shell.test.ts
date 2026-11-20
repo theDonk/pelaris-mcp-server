@@ -164,9 +164,12 @@ test("withCard adds only allow-listed fields under _meta and leaves the text alo
   assert.deepEqual(out.content, reply.content, "text unchanged");
   assert.deepEqual(out._meta?.[CARD_DATA_META_KEY], {
     card: "session",
-    title: "Sample",
-    rows: [{ name: "Goblet squat", detail: "3 x 8" }],
-    startUrl: "https://example.invalid/start",
+    v: SESSION_CARD.v,
+    data: {
+      title: "Sample",
+      rows: [{ name: "Goblet squat", detail: "3 x 8" }],
+      startUrl: "https://example.invalid/start",
+    },
   });
 });
 
@@ -191,16 +194,18 @@ test("a card's URI comes from its page: a changed page gives a new URI", async (
   assert.match(a, /^ui:\/\/pelaris\/cards\/sample-[0-9a-f]{10}\.html$/);
   assert.equal(cardResourceUri("sample", "<p>one</p>"), a, "same page, same URI");
   assert.notEqual(cardResourceUri("sample", "<p>two</p>"), a, "changed page, new URI");
-  const def = defineCard({ id: "sample", title: "t", description: "d", fields: {}, page: () => "<p>one</p>" });
-  assert.equal(def.resourceUri, a);
-  assert.equal(def.html(), "<p>one</p>");
+  const page = { title: "t", body: "<main></main>", script: "" };
+  const def = defineCard<{ x: string }>({ id: "sample", v: 1, title: "t", description: "d", fields: { x: true }, page });
+  assert.equal(def.resourceUri, cardResourceUri("sample", def.html()));
+  const changed = defineCard<{ x: string }>({ id: "sample", v: 1, title: "t", description: "d", fields: { x: true }, page: { ...page, script: ";" } });
+  assert.notEqual(changed.resourceUri, def.resourceUri, "a changed script gives a new URI");
 });
 
 test("all four card URIs are distinct and stable across two loads", async () => {
   const first = CARDS.map((c) => c.resourceUri);
   assert.equal(new Set(first).size, CARDS.length, "distinct");
   for (const card of CARDS) {
-    assert.match(card.resourceUri, new RegExp(`^ui://pelaris/cards/${card.id}-[0-9a-f]{10}\.html$`));
+    assert.match(card.resourceUri, new RegExp(`^ui://pelaris/cards/${card.id}-[0-9a-f]{10}[.]html$`));
   }
   // A second load in a fresh Node process (new module instances) gives the same URIs.
   const { spawnSync } = await import("node:child_process");
@@ -209,4 +214,22 @@ test("all four card URIs are distinct and stable across two loads", async () => 
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(JSON.parse(run.stdout.trim().split("\n").pop() ?? "[]"), first, "stable");
+});
+
+test("the allow-list is typed as the complete key set of the card's data (compile-time check)", async () => {
+  const { defineCard } = await import("../card_shell.js");
+  type Sample = { title: string; rows: Array<{ name: string; detail: string }>; link: string | null };
+  const page = { title: "t", body: "<main></main>", script: "" };
+  const base = { id: "sample", v: 1, title: "t", description: "d", page };
+  // Complete: compiles.
+  defineCard<Sample>({ ...base, fields: { title: true, rows: { name: true, detail: true }, link: true } });
+  // A key in the data type but not in `fields` is a compile error here, at defineCard.
+  // @ts-expect-error missing `link`
+  defineCard<Sample>({ ...base, fields: { title: true, rows: { name: true, detail: true } } });
+  // A nested key missing is a compile error too.
+  // @ts-expect-error missing `rows.detail`
+  defineCard<Sample>({ ...base, fields: { title: true, rows: { name: true }, link: true } });
+  // A key in `fields` the data type does not have is a compile error.
+  // @ts-expect-error extra `photoUrl`
+  defineCard<Sample>({ ...base, fields: { title: true, rows: { name: true, detail: true }, link: true, photoUrl: true } });
 });

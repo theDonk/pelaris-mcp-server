@@ -77,3 +77,26 @@ for (const card of CARDS) {
     assert.ok(actions.length <= 2, `${actions.length} actions`);
   });
 }
+
+// The data contract: each page draws only its own card id and data version.
+const { CARD_FALLBACK_LINE } = await import("../templates.js");
+const { CARD_DATA_META_KEY } = await import("../card_shell.js");
+const { openCardPage } = await import("./card_dom_harness.js");
+
+for (const card of CARDS) {
+  for (const [why, payload] of [
+    ["a wrong v", { card: card.id, v: card.v + 1, data: { title: "Garbage" } }],
+    ["another card's id", { card: `${card.id}-other`, v: card.v, data: { title: "Garbage" } }],
+    ["no envelope at all (the old flat shape)", { card: card.id, title: "Garbage" }],
+  ] as const) {
+    test(`${card.id} page: ${why} draws nothing but the fallback line`, async () => {
+      const page = await openCardPage(card.html(), { host: () => ({ result: {} }) });
+      page.notify("ui/notifications/tool-result", { _meta: { [CARD_DATA_META_KEY]: payload } });
+      await page.settle();
+      const main = page.body.all().find((e) => e.tagName === "MAIN");
+      assert.ok(main, "the card's main element");
+      assert.deepEqual(main.children.map((c) => c.textContent), [CARD_FALLBACK_LINE]);
+      assert.ok(!JSON.stringify(page.body.all().map((e) => e.textContent)).includes("Garbage"));
+    });
+  }
+}
