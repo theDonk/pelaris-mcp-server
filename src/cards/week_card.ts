@@ -12,7 +12,9 @@
  * completed can move to another day of that week, by drag or by its "Move" button (a
  * day picker, for touch and keyboard). Nothing is written until the athlete confirms;
  * Confirm calls the app-only card_reschedule_session with `{ sessionId, newDate }`
- * through the host bridge. Confirm is disabled from the first tap until a definite
+ * through the host bridge. A move shows its result line in the card and sends nothing to
+ * the chat by itself; "Tell the coach" (shown after a move, in the move view) sends a
+ * one-line note when the athlete taps it. Confirm is disabled from the first tap until a definite
  * answer. Only when the host has no tool call for cards at all does the request go to
  * the chat as a message instead; a timeout or an error is never sent again (after a
  * timeout the card says to check Pelaris and offers no way to repeat that move).
@@ -275,7 +277,10 @@ const WEEK_CARD_BODY = `
         <button type="button" class="pc-btn pc-btn-secondary" id="confirm-no">Cancel</button>
       </div>
     </div>
-    <div class="pc-actions"><button type="button" class="pc-btn pc-btn-secondary" id="done">Done</button></div>
+    <div class="pc-actions">
+      <button type="button" class="pc-btn pc-btn-secondary pc-hidden" id="tell">Tell the coach</button>
+      <button type="button" class="pc-btn pc-btn-secondary" id="done">Done</button>
+    </div>
   </section>
   <!--/full-->
   <p class="pc-note" id="note" role="status"></p>
@@ -287,6 +292,7 @@ const WEEK_CARD_SCRIPT = `
   "use strict";
   var card = window.PelarisCard;
   var $ = function(id){ return document.getElementById(id); };
+  var tellText = null;
   var data = null, weekIdx = 0, full = false, inPlace = false, pending = null, movingId = null, busy = false, dragId = null;
   function el(tag, cls, txt){ var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function show(id, on){ $(id).classList.toggle("pc-hidden", !on); }
@@ -448,8 +454,10 @@ const WEEK_CARD_SCRIPT = `
         var to = dayByDate(newDate) || p.to;
         var line = "Moved: " + p.label + ", " + p.from.dateLabel + " to " + to.dateLabel;
         $("moved-line").textContent = line; note(line);
+        // Nothing goes to the chat by itself: the athlete can tell the coach with a tap.
+        tellText = "I moved my " + p.label + " from " + p.from.dateLabel + " to " + to.dateLabel + " in the week card.";
+        show("tell", true);
         draw();
-        card.sendMessage("I moved my " + p.label + " from " + p.from.dateLabel + " to " + to.dateLabel + " in the week card.");
         return;
       }
       if (res === true) { note("Sent. Check the week in Pelaris to see the change."); return; }
@@ -473,6 +481,11 @@ const WEEK_CARD_SCRIPT = `
   $("picker-cancel").addEventListener("click", function(){ closePanels(); note(""); });
   $("confirm-no").addEventListener("click", function(){ closePanels(); note("Nothing changed."); });
   $("confirm-yes").addEventListener("click", confirmMove);
+  $("tell").addEventListener("click", function(){
+    var t = tellText; if (!t) return;
+    tellText = null; show("tell", false);
+    card.sendMessage(t).then(function(ok){ if (!ok) note("Tell the coach in the chat."); });
+  });
   $("open").addEventListener("click", function(ev){
     ev.preventDefault();
     if (!data || typeof data.openUrl !== "string" || !/^https:\\/\\//.test(data.openUrl)) { note("Open Pelaris to see your week."); return; }
@@ -483,7 +496,7 @@ const WEEK_CARD_SCRIPT = `
     else if (ctx && ctx.displayMode === "inline" && full && !inPlace) setFull(false);
     else if (data) draw();
   });
-  card.onData(function(d){ data = d; weekIdx = 0; draw(); });
+  card.onData(function(d){ data = d; weekIdx = 0; tellText = null; show("tell", false); draw(); });
 })();
 `;
 

@@ -150,3 +150,23 @@ test("method-not-found: the fallback transport is used, once", async () => {
   assert.equal(calls(page, "tools/call").length, 1);
   assert.equal(openaiCalls, 1);
 });
+
+test("a successful move sends no chat message; Tell the coach sends exactly one, on tap", async () => {
+  const page = await load({ host: stubHost(() => ({ result: MOVED })) });
+  await askToMove(page);
+  page.$("confirm-yes").click();
+  await page.settle();
+  assert.equal(calls(page, "ui/message").length, 0, "no model turn nobody asked for");
+  assert.equal(page.$("moved-line").textContent, "Moved: Tempo run, Thu 26 Nov to Fri 27 Nov");
+  assert.ok(page.$("tell").shown, "Tell the coach is offered");
+  page.$("tell").click();
+  page.$("tell").click();
+  await page.settle();
+  const msgs = calls(page, "ui/message");
+  assert.equal(msgs.length, 1);
+  assert.equal(
+    JSON.stringify(msgs[0].params),
+    JSON.stringify({ role: "user", content: [{ type: "text", text: "I moved my Tempo run from Thu 26 Nov to Fri 27 Nov in the week card." }] }),
+  );
+  assert.equal(page.$("tell").shown, false);
+});
