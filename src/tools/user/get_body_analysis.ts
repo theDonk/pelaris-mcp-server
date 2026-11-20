@@ -18,6 +18,25 @@ import { plainDay } from "../shared/training_truth.js";
 import { mintSignedEntryLink } from "../shared/entry_links.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { bridgeFailureResponse } from "../shared/core_adapter.js";
+import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { BODY_CARD, buildBodyCardData } from "../../cards/body_card.js";
+
+type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
+
+/**
+ * Adds the Body card to a successful reply. The text stays exactly as it was; the card's
+ * data rides in the result's _meta. No analysis, or none of waist, hips and shoulders,
+ * means no card. Any failure leaves the plain text reply. Pure (exported for tests).
+ */
+export function withBodyCard(reply: TextReply, result: Record<string, unknown>): TextReply {
+  if (!cardsEnabled()) return reply;
+  try {
+    const data = buildBodyCardData(result, typeof result.scanLink === "string" ? result.scanLink : null);
+    return data ? withCard(reply, BODY_CARD, { ...data }) : reply;
+  } catch {
+    return reply;
+  }
+}
 
 /**
  * 1.4.1 D2 (connector truth): the "as of" line. A body analysis is a snapshot from the day it was
@@ -74,6 +93,46 @@ function obj(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
+/** How many scans `history` can list (the core's own limit, the latest included). */
+export const BODY_HISTORY_MAX = 12;
+
+const HISTORY_FIELDS = ["weightKg", "waistCm", "hipsCm", "shouldersCm"] as const;
+
+export interface BodyHistoryEntry {
+  analyzedAt: string;
+  weightKg?: number;
+  waistCm?: number;
+  hipsCm?: number;
+  shouldersCm?: number;
+}
+
+/**
+ * The core's scan history, newest first: a date and up to four numbers per scan. Anything else is
+ * dropped (never a photo, path or free text); an entry without a valid date or without any of the
+ * four numbers is skipped. Null when fewer than two scans remain, matching the core, which sends
+ * no history for a single scan. Pure (exported for tests).
+ */
+export function bodyScanHistory(raw: unknown): BodyHistoryEntry[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: BodyHistoryEntry[] = [];
+  for (const item of raw) {
+    const e = obj(item);
+    if (!e || typeof e.analyzedAt !== "string" || Number.isNaN(Date.parse(e.analyzedAt))) continue;
+    const entry: BodyHistoryEntry = { analyzedAt: e.analyzedAt };
+    let has = false;
+    for (const f of HISTORY_FIELDS) {
+      const v = e[f];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+        entry[f] = v;
+        has = true;
+      }
+    }
+    if (has) out.push(entry);
+    if (out.length >= BODY_HISTORY_MAX) break;
+  }
+  return out.length > 1 ? out : null;
+}
+
 /**
  * Map the core get_body_analysis result to this tool's output. Field by field on purpose: only the
  * fields this tool has always returned cross over, nothing else the core result may carry. The
@@ -127,6 +186,8 @@ export function bodyAnalysisFromCore(core: Record<string, unknown>, scanLink: st
           },
         }
       : null,
+    // Newest first, the latest included; null with a single scan.
+    history: bodyScanHistory(core.history),
   };
 }
 
@@ -135,8 +196,9 @@ export function registerGetBodyAnalysis(server: McpServer): void {
     "get_body_analysis",
     {
       title: "Get Body Analysis",
-      description: "View your latest body composition data — measurements (including limbs and body fat), ratios, symmetry, archetype, and changes since your last analysis. Includes a link to start a new Body scan in Pelaris.",
+      description: "View your latest body composition data — measurements (including limbs and body fat), ratios, symmetry, archetype, and changes since your last analysis, plus `history`: your recent scans, newest first, each with its date and weight, waist, hips and shoulders (null with a single scan). Includes a link to start a new Body scan in Pelaris.",
       inputSchema: {},
+      ...(cardToolMeta(BODY_CARD) ? { _meta: cardToolMeta(BODY_CARD) } : {}),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Body Analysis" },
     },
     async () => {
@@ -186,9 +248,7 @@ export function registerGetBodyAnalysis(server: McpServer): void {
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withBodyCard({ content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }, result);
       } catch (error) {
         logToolCall({
           requestId,

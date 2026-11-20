@@ -52,6 +52,7 @@ the SHA-256 of the server URL, then `.claudemcpcontent.com`), so it is unset by 
 |---|---|---|---|
 | Week (`ui://pelaris/cards/week-v1.html`) | `get_active_program` | the primary program's week as seven tiles, Monday to Sunday (the session's own `focus`, else `slotType`, cut short by CSS; minutes only when the server sent a stored `durationMinutes`), the date range, a This week / Next week switch when next-week sessions came back. Full screen: the days as a list; a planned session dated today or later and not completed moves by drag or by its Move button (a day picker); a confirm panel shows the session and both dates before anything is written. No Skip. | Rearrange this week (full screen; Confirm calls `modify_training_session` with `rescheduleSessions: [{ sessionId, newDate }]`, updates the tiles from `moved`, shows the reason or `message` otherwise, then sends the chat a one-line note; with no card tool call it sends the request as a chat message), Open in Pelaris (signed link, `program` route) |
 | Debrief (`ui://pelaris/cards/debrief-v1.html`) | `get_weekly_debrief` | week label, "N of M sessions" with a plain bar, the bonus line, a record line only when `newPrs` has exactly one entry (stated as data, no unit: the tool gives none), next week's focus, the tagline. No headline win or watch line is picked in code (a judgement: the assistant's message carries it). An empty week gets no card. | Save as image (a square canvas picture: week, sessions, the record line, focus, tagline; no name, no account details; then shown in the card, and the action becomes Copy text), Open in Pelaris (signed link, `program` route) |
+| Body (`ui://pelaris/cards/body-v1.html`) | `get_body_analysis` | the latest scan's date; waist, hips and shoulders with the change since the previous scan (plain signed numbers with the unit); shoulder to waist when returned; "Measurements are estimates from the scan, not exact." Full screen: a slider with one stop per scan in `history` (newest at the right), or two stops from the latest values and `comparisonToPrevious` (the earlier one is the latest minus the change); rows for waist, hips, shoulders and weight (when present) with the change since the first stop; a plain schematic outline in inline SVG whose shoulder, waist and hip widths follow the numbers (clamped), the first stop dashed behind it. No photo, ever; no red or green; nothing called a record or a best. Centimetres and kilograms (the tool carries no unit preference). No analysis, or none of waist, hips and shoulders (a profile weight only), means no card. | Compare scans (full screen; hidden with a single scan), Open in Pelaris (the tool's own signed `scanLink`; no link, no button) |
 | Session (`ui://pelaris/cards/session-v1.html`) | `get_session_details` | title, date, length, warm-up line (only blocks typed `warm_up`), main-set rows (sets x reps with load or RPE; cardio distance or time) | Start in Pelaris (signed one-tap link, route in `SESSION_CARD_START_ROUTE`), Swap an exercise (sends a chat message; the assistant runs `swap_exercise`, which asks before it changes anything) |
 
 ## Add a card
@@ -72,7 +73,9 @@ the SHA-256 of the server URL, then `.claudemcpcontent.com`), so it is unset by 
    `<!--full-->` and `<!--/full-->`: the two-action limit counts the inline markup only.
 
 Never pass a card more than it shows, never send a body photo, never draw a progress ring
-or streak, and keep the text reply complete on its own.
+or streak, and keep the text reply complete on its own. Inline SVG is allowed only for the
+cards named in `INLINE_SVG_CARDS` in `card_templates.test.ts` (today the Body card's
+outline): one `<svg>` of plain `path` and `circle` shapes, no links, no `xmlns`, no images.
 
 ## Verified against (read Fri 20 Nov 2026)
 
@@ -109,9 +112,18 @@ or streak, and keep the text reply complete on its own.
   the athlete first), whether ChatGPT honours `openai/widgetAccessible` on this server,
   whether a host reports `displayMode` back, and drag in a host's sandboxed frame on
   touch (the Move button is the path that does not need drag).
-- **Debrief card:** not drawn in a browser or a host yet. Not verified: whether any host
+- **Debrief card:** drawn in a local browser at 320 px, light and dark, with a stub host
+  and sample data: the card, Save as image (the picture shown in the card, the action
+  becoming Copy text, the fallback note). Not verified: whether any host
   lets the sandboxed card download the picture (not claimed for ChatGPT), and whether
   clipboard writes work there; the fallbacks are the picture shown in the card and a
   select-to-copy note.
+- **Body card:** drawn in a local browser at 320 px, light and dark, with a stub host and
+  sample data (three scans): inline rows and changes, the full screen request, the slider
+  and the Earlier and Later buttons at each stop, the outline and the rows. Not checked
+  live: whether a host shows full screen for it, the range input under touch inside a
+  host's sandboxed frame (the Earlier and Later buttons do not need it), and whether
+  the scan link opens without a confirm prompt. With real data the outline moves by a
+  few pixels for a change of a few centimetres: honest, and small.
 - Units: rows show kilograms and metric distances; the athlete's preferred units are
   not read by this tool.

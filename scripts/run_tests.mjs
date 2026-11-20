@@ -61,6 +61,7 @@ export const TEST_FILES = [
   "dist/cards/__tests__/session_card.test.js",
   "dist/cards/__tests__/week_card.test.js",
   "dist/cards/__tests__/debrief_card.test.js",
+  "dist/cards/__tests__/body_card.test.js",
   "dist/cards/__tests__/card_templates.test.js",
 ];
 

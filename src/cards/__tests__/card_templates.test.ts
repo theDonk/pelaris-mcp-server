@@ -11,6 +11,12 @@ import assert from "node:assert/strict";
 
 const { CARDS } = await import("../registry.js");
 
+/**
+ * Cards allowed one inline SVG diagram (the Body card's schematic outline). Their SVG may
+ * hold only plain shapes: no links, no embedded images or documents, no styles that load.
+ */
+const INLINE_SVG_CARDS = new Set(["body"]);
+
 for (const card of CARDS) {
   const html = card.html();
 
@@ -49,7 +55,19 @@ for (const card of CARDS) {
   });
 
   test(`${card.id}: no ring, streak or photo`, () => {
-    assert.doesNotMatch(html, /\bring\b|streak|<svg|<canvas|photo/i);
+    assert.doesNotMatch(html, /\bring\b|streak|<canvas|photo/i);
+    if (!INLINE_SVG_CARDS.has(card.id)) {
+      assert.doesNotMatch(html, /<svg/i);
+      return;
+    }
+    const svgs = html.match(/<svg\b[\s\S]*?<\/svg>/gi) ?? [];
+    assert.equal(svgs.length, 1, "one inline diagram");
+    assert.equal((html.match(/<svg\b/gi) ?? []).length, 1);
+    for (const svg of svgs) {
+      assert.doesNotMatch(svg, /href|xmlns|<(image|use|foreignObject|script|style|a|text)\b|url\(|https?:/i);
+      const tags = (svg.match(/<\/?([a-z]+)/gi) ?? []).map((t) => t.replace(/[</]/g, "").toLowerCase());
+      assert.ok(tags.every((t) => ["svg", "path", "circle"].includes(t)), tags.join(","));
+    }
   });
 
   test(`${card.id}: at most two actions inline`, () => {

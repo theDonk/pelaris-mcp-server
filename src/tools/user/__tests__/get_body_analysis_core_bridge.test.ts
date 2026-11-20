@@ -28,7 +28,7 @@ await new Promise<void>((resolve) => bridgeStub.listen(0, "127.0.0.1", resolve))
 process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
 process.env.CF_BASE_URL = `http://127.0.0.1:${(bridgeStub.address() as AddressInfo).port}`;
 
-const { bodyAnalysisFromCore, registerGetBodyAnalysis } = await import("../get_body_analysis.js");
+const { bodyAnalysisFromCore, bodyScanHistory, registerGetBodyAnalysis } = await import("../get_body_analysis.js");
 const { runWithAuth } = await import("../../../request-context.js");
 
 after(() => {
@@ -85,11 +85,12 @@ test("a scan with its own weight and height reads through unchanged, in the exis
   assert.equal(out.scanLink, LINK);
   assert.deepEqual(out.ratios, { shoulderToWaist: null, waistToHip: null, waistToHeight: 0.47 });
   assert.equal(out.comparisonToPrevious, null, "one scan: no comparison");
+  assert.equal(out.history, null, "one scan: no history");
   assert.deepEqual(
     Object.keys(out).sort(),
     [
       "analyzedAt", "archetype", "areasOfFocus", "asOf", "asOfNote", "assessment", "bodyFatRangePercent",
-      "comparisonToPrevious", "confidence", "measurements", "ratios", "scanLink", "source", "symmetry",
+      "comparisonToPrevious", "confidence", "history", "measurements", "ratios", "scanLink", "source", "symmetry",
       "trainingRecommendation",
     ],
     "only the fields the tool has always returned",
@@ -132,6 +133,36 @@ test("changes since the previous scan keep the server's sign: newer minus older"
   assert.deepEqual(cmp.changes.waistCm, { value: 0.4, direction: "up" });
   assert.equal(cmp.changes.hipsCm, null);
   assert.equal(cmp.changes.shouldersCm, null);
+});
+
+test("scan history passes through as dates and numbers only, newest first", () => {
+  const out = bodyAnalysisFromCore(
+    {
+      ...scanWithOwnMetrics,
+      history: [
+        { analyzedAt: "2026-01-10T08:00:00.000Z", weightKg: 80, waistCm: 84, hipsCm: 99, shouldersCm: 117, photoPath: "scans/a.jpg", note: "free text" },
+        { analyzedAt: "2025-12-01T08:00:00.000Z", waistCm: "85", hipsCm: 100 },
+        { analyzedAt: "not a date", waistCm: 86 },
+        { analyzedAt: "2025-11-01T08:00:00.000Z", waistCm: Number.NaN, weightKg: -2 },
+        "a string",
+        null,
+      ],
+    },
+    LINK,
+  );
+  assert.deepEqual(out.history, [
+    { analyzedAt: "2026-01-10T08:00:00.000Z", weightKg: 80, waistCm: 84, hipsCm: 99, shouldersCm: 117 },
+    { analyzedAt: "2025-12-01T08:00:00.000Z", hipsCm: 100 },
+  ]);
+  assert.ok(!JSON.stringify(out.history).includes("jpg"));
+});
+
+test("history: not an array, or fewer than two good scans, is null; at most twelve", () => {
+  assert.equal(bodyScanHistory(undefined), null);
+  assert.equal(bodyScanHistory({ analyzedAt: "2026-01-10" }), null);
+  assert.equal(bodyScanHistory([{ analyzedAt: "2026-01-10T00:00:00.000Z", waistCm: 80 }]), null);
+  const many = Array.from({ length: 20 }, (_, i) => ({ analyzedAt: `2026-01-${String(20 - i).padStart(2, "0")}T00:00:00.000Z`, waistCm: 80 + i }));
+  assert.equal(bodyScanHistory(many)?.length, 12);
 });
 
 test("the handler asks the bridge for the core tool with the profile from the claims", async () => {
