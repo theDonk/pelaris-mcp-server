@@ -93,7 +93,7 @@ test("a scan with its own weight and height reads through unchanged, in the exis
       "comparisonToPrevious", "confidence", "history", "measurements", "ratios", "scanLink", "source", "symmetry",
       "trainingRecommendation",
     ],
-    "only the fields the tool has always returned",
+    "the documented contract: the fields the tool has always returned, plus history (numbers and dates only), which stays whether or not cards are on",
   );
   assert.ok(!JSON.stringify(out).includes("photo.jpg"), "nothing photo-shaped crosses over");
 });

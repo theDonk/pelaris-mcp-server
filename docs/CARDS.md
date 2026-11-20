@@ -79,6 +79,18 @@ sends none).
 | Body (`ui://pelaris/cards/body-v1.html`) | `get_body_analysis` | the latest scan's date; waist, hips and shoulders with the change since the previous scan (plain signed numbers with the unit); shoulder to waist when returned; "Measurements are estimates from the scan, not exact." Full screen: a slider with one stop per scan in `history` (newest at the right), or two stops from the latest values and `comparisonToPrevious` (the earlier one is the latest minus the change); rows for waist, hips, shoulders and weight (when present) with the change since the first stop; a plain schematic outline in inline SVG whose shoulder, waist and hip widths follow the numbers (clamped), the first stop dashed behind it. No photo, ever; no red or green; nothing called a record or a best. Centimetres and kilograms (the tool carries no unit preference). No analysis, or none of waist, hips and shoulders (a profile weight only), means no card. | Compare scans (full screen; hidden with a single scan), Open in Pelaris (the tool's own signed `scanLink`; no link, no button) |
 | Session (`ui://pelaris/cards/session-v1.html`) | `get_session_details` | title, date, length, warm-up line (only blocks typed `warm_up`), main-set rows (sets x reps with load or RPE; cardio distance or time) | Start in Pelaris (signed one-tap link, route in `SESSION_CARD_START_ROUTE`), Swap an exercise (sends a chat message; the assistant runs `swap_exercise`, which asks before it changes anything) |
 
+## Tool contract changes on this branch
+
+What the assistant reads is the same with cards on, off, or on a text-only host, except
+for these deliberate, additive changes (tested in `cards_off_parity.test.ts`):
+
+- `get_body_analysis` returns `history`: recent scans, newest first, each with its date
+  and weight, waist, hips and shoulders (numbers and dates only; null with one scan).
+- `get_active_program` passes a session's stored `durationMinutes` through when it has
+  one (never estimated).
+- `modify_training_session` is now `idempotentHint: false`: reduceVolume and
+  increaseIntensity scale the stored values, so a repeat compounds.
+
 ## Add a card
 
 1. Create `src/cards/<name>_card.ts` exporting a `CardDefinition`: `id`, a versioned

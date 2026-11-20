@@ -201,7 +201,7 @@ export function registerGetBodyAnalysis(server: McpServer): void {
     "get_body_analysis",
     {
       title: "Get Body Analysis",
-      description: "View your latest body composition data — measurements (including limbs and body fat), ratios, symmetry, archetype, and changes since your last analysis, plus `history`: your recent scans, newest first, each with its date and weight, waist, hips and shoulders (null with a single scan). Includes a link to start a new Body scan in Pelaris.",
+      description: "View your latest body composition data: measurements (including limbs and body fat), ratios, symmetry, archetype, and changes since your last analysis. `history` lists your recent scans, newest first, each with its date and weight, waist, hips and shoulders in numbers only (null with a single scan), so you can talk through the trend. Includes a link to start a new Body scan in Pelaris.",
       inputSchema: {},
       ...(cardToolMeta(BODY_CARD) ? { _meta: cardToolMeta(BODY_CARD) } : {}),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Body Analysis" },

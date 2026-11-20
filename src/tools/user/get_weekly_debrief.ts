@@ -126,7 +126,7 @@ export function registerGetWeeklyDebrief(
     "get_weekly_debrief",
     {
       title: "Get Weekly Debrief",
-      description: "View your weekly training summary — session completion, highlights, areas for improvement, and next week's focus.",
+      description: "View your weekly training summary: session completion, highlights, areas for improvement, and next week's focus.",
       inputSchema: {
         weekDate: z
           .string()

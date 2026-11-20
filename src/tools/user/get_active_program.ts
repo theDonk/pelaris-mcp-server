@@ -124,7 +124,8 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
       title: "Get Active Program",
       description:
         "View your current training programs with progress, phase, weekly structure, and session details. " +
-        "Weeks are Monday to Sunday in your own timezone, \"Week N\" is the number the Pelaris app shows, and next week is the following Monday to Sunday.",
+        "Weeks are Monday to Sunday in your own timezone, \"Week N\" is the number the Pelaris app shows, and next week is the following Monday to Sunday. " +
+        "A session carries durationMinutes only when Pelaris has a stored length for it; it is never estimated.",
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Active Program" },
       ...(cardToolMeta(WEEK_CARD) ? { _meta: cardToolMeta(WEEK_CARD) } : {}),
