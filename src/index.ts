@@ -70,6 +70,7 @@ import { registerGetWeeklyDebrief } from "./tools/user/get_weekly_debrief.js";
 // Resources
 import { registerCoachPersonalityResource } from "./resources/coach_personality.js";
 import { registerMethodologiesResource } from "./resources/methodologies.js";
+import { registerCards } from "./cards/registry.js";
 
 // Prompts
 import { registerWeeklyPlanReviewPrompt } from "./prompts/weekly_plan_review.js";
@@ -301,6 +302,8 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     // ─── Resources ──────────────────────────────────────────────
     registerCoachPersonalityResource(server);
     registerMethodologiesResource(server);
+    // Cards (MCP Apps ui:// resources). Off when PELARIS_CARDS=off; see docs/CARDS.md.
+    registerCards(server);
 
     // ─── Prompts ────────────────────────────────────────────────
     registerWeeklyPlanReviewPrompt(server);

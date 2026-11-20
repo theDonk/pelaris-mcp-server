@@ -57,6 +57,9 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/swap_exercise_core_input.test.js",
   "dist/tools/user/__tests__/cardio_calibration_and_intake_handoff.test.js",
   "dist/__tests__/server_info.test.js",
+  "dist/cards/__tests__/card_shell.test.js",
+  "dist/cards/__tests__/session_card.test.js",
+  "dist/cards/__tests__/card_templates.test.js",
 ];
 
 /** Script tests (plain .mjs, not compiled). */

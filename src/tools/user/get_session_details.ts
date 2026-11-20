@@ -14,6 +14,33 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { sessionSourcesFromLinkedEntries } from "../shared/session_sources.js";
+import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
+import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { SESSION_CARD, SESSION_CARD_START_ROUTE, buildSessionCardData } from "../../cards/session_card.js";
+
+type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
+
+/**
+ * Adds the Session card to a successful reply. The text stays exactly as it was; the
+ * card's data rides in the result's _meta. The one-tap link is minted only when a card
+ * is drawn, and any failure leaves the plain text reply.
+ */
+export async function withSessionCard(
+  reply: TextReply,
+  session: Record<string, unknown>,
+  claims: HandoffClaimsLike | null | undefined,
+  mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+): Promise<TextReply> {
+  if (!cardsEnabled()) return reply;
+  try {
+    const data = buildSessionCardData(session, null);
+    if (!data) return reply;
+    const startUrl = await mint(SESSION_CARD_START_ROUTE, claims).catch(() => null);
+    return withCard(reply, SESSION_CARD, { ...data, startUrl });
+  } catch {
+    return reply;
+  }
+}
 
 export function mapDiarySessionSet(s: Record<string, unknown>): Record<string, unknown> {
   if (s.type === "strength") {
@@ -71,6 +98,7 @@ export function registerGetSessionDetails(server: McpServer): void {
         sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Session Details" },
+      ...(cardToolMeta(SESSION_CARD) ? { _meta: cardToolMeta(SESSION_CARD) } : {}),
     },
     async ({ sessionId }) => {
       const requestId = generateRequestId();
@@ -110,9 +138,11 @@ export function registerGetSessionDetails(server: McpServer): void {
                 latencyMs: Date.now() - start,
                 success: true,
               });
-              return {
-                content: [{ type: "text" as const, text: JSON.stringify(resolved, null, 2) }],
-              };
+              return withSessionCard(
+                { content: [{ type: "text" as const, text: JSON.stringify(resolved, null, 2) }] },
+                resolved,
+                claims,
+              );
             }
           } catch (bridgeErr) {
             console.warn(
@@ -257,9 +287,11 @@ export function registerGetSessionDetails(server: McpServer): void {
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withSessionCard(
+          { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] },
+          result,
+          claims,
+        );
       } catch (error) {
         logToolCall({
           requestId,
