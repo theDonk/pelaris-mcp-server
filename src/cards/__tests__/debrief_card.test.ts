@@ -10,6 +10,9 @@ const { DEBRIEF_CARD, DEBRIEF_CARD_OPEN_ROUTE, DEBRIEF_CARD_TAGLINE, buildDebrie
 const { HANDOFF_ROUTES } = await import("../../tools/shared/entry_links.js");
 const { withDebriefCard, shapeDebrief } = await import("../../tools/user/get_weekly_debrief.js");
 
+const { hostProfileFrom } = await import("../host.js");
+const CLAUDE = hostProfileFrom({ assistantClass: "claude" }, {});
+
 const pr = (name: string, value: number, previousValue: number | null) => ({ exerciseName: name, value, previousValue, date: "2026-11-18" });
 
 const fullDebrief = () =>
@@ -108,7 +111,7 @@ test("withDebriefCard: text unchanged, data allow-listed, link minted; empty wee
   const out = await withDebriefCard(text, result, null, async (route) => {
     routes.push(route);
     return `https://example.invalid/open/${route}?h=sample`;
-  });
+  }, CLAUDE);
   assert.deepEqual(routes, ["program"]);
   assert.deepEqual(out.content, text.content);
   const card = out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
@@ -117,12 +120,12 @@ test("withDebriefCard: text unchanged, data allow-listed, link minted; empty wee
 
   const empty = { weekStarting: "2026-11-16", message: "No weekly debriefs available yet." };
   const emptyText = { content: [{ type: "text" as const, text: JSON.stringify(empty) }] };
-  assert.equal(await withDebriefCard(emptyText, empty, null, async () => "x"), emptyText);
+  assert.equal(await withDebriefCard(emptyText, empty, null, async () => "x", CLAUDE), emptyText);
 
   const before = process.env.PELARIS_CARDS;
   process.env.PELARIS_CARDS = "off";
   try {
-    assert.equal(await withDebriefCard(text, result, null, async () => "x"), text);
+    assert.equal(await withDebriefCard(text, result, null, async () => "x", CLAUDE), text);
   } finally {
     if (before === undefined) delete process.env.PELARIS_CARDS;
     else process.env.PELARIS_CARDS = before;

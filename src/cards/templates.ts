@@ -173,16 +173,28 @@ export const CARD_BRIDGE_JS = `
     notify("ui/notifications/size-changed", { width: Math.ceil(el.scrollWidth), height: Math.ceil(el.scrollHeight) });
   }
 
+  // ── Host section: ChatGPT's own runtime (window.openai) ─────────────────────
+  // The only host-specific code in the bridge. The standard MCP Apps path above is
+  // always tried first; these run only where that path is not there.
+  var openaiHost = {
+    watch: function(){
+      var read = function(){
+        var g = oa();
+        if (g && g.toolResponseMetadata) deliver(g.toolResponseMetadata[DATA_KEY]);
+        if (g && g.theme) applyContext({ theme: g.theme });
+      };
+      read();
+      window.addEventListener("openai:set_globals", read);
+    },
+    sendMessage: function(text){ var o = oa(); if (o && o.sendFollowUpMessage) return o.sendFollowUpMessage({ prompt: text }); return false; },
+    openLink: function(url){ var o = oa(); if (o && o.openExternal) return o.openExternal({ href: url }); return false; },
+    callTool: function(name, args){ var o = oa(); if (o && o.callTool) return o.callTool(name, args || {}); return false; },
+    displayMode: function(mode){ var o = oa(); if (o && o.requestDisplayMode) return o.requestDisplayMode({ mode: mode }); return false; }
+  };
+  // ── End of host section ─────────────────────────────────────────────────────
+
   function connect(){
-    // ChatGPT's own runtime may already hold the result metadata.
-    var o = oa();
-    if (o && o.toolResponseMetadata) deliver(o.toolResponseMetadata[DATA_KEY]);
-    if (o && o.theme) applyContext({ theme: o.theme });
-    window.addEventListener("openai:set_globals", function(){
-      var g = oa();
-      if (g && g.toolResponseMetadata) deliver(g.toolResponseMetadata[DATA_KEY]);
-      if (g && g.theme) applyContext({ theme: g.theme });
-    });
+    openaiHost.watch();
     if (!parentWin) return;
     request("ui/initialize", {
       protocolVersion: PROTOCOL_VERSION,
@@ -221,7 +233,7 @@ export const CARD_BRIDGE_JS = `
   function displayMode(mode){
     return attempt(
       function(){ return request("ui/request-display-mode", { mode: mode }); },
-      function(){ var o = oa(); if (o && o.requestDisplayMode) return o.requestDisplayMode({ mode: mode }); return false; });
+      function(){ return openaiHost.displayMode(mode); });
   }
 
   window.PelarisCard = {
@@ -231,20 +243,20 @@ export const CARD_BRIDGE_JS = `
     sendMessage: function(text){
       return attempt(
         function(){ return request("ui/message", { role: "user", content: [{ type: "text", text: text }] }); },
-        function(){ var o = oa(); if (o && o.sendFollowUpMessage) return o.sendFollowUpMessage({ prompt: text }); return false; });
+        function(){ return openaiHost.sendMessage(text); });
     },
     openLink: function(url){
       return attempt(
         function(){ return request("ui/open-link", { url: url }); },
         function(){
-          var o = oa(); if (o && o.openExternal) return o.openExternal({ href: url });
+          var r = openaiHost.openLink(url); if (r !== false) return r;
           var w = window.open(url, "_blank", "noopener,noreferrer"); return !!w;
         });
     },
     callTool: function(name, args){
       return attemptValue(
         function(){ return request("tools/call", { name: name, arguments: args || {} }, 30000); },
-        function(){ var o = oa(); if (o && o.callTool) return o.callTool(name, args || {}); return false; });
+        function(){ return openaiHost.callTool(name, args); });
     },
     requestFullscreen: function(){ return displayMode("fullscreen"); },
     requestInline: function(){ return displayMode("inline"); }

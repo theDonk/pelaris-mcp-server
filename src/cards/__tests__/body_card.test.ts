@@ -10,6 +10,9 @@ const { CARD_BASE_CSS } = await import("../templates.js");
 const { BODY_CARD, BODY_CARD_ESTIMATE_LINE, buildBodyCardData } = await import("../body_card.js");
 const { bodyAnalysisFromCore, withBodyCard } = await import("../../tools/user/get_body_analysis.js");
 
+const { hostProfileFrom } = await import("../host.js");
+const CLAUDE = hostProfileFrom({ assistantClass: "claude" }, {});
+
 const LINK = "https://example.invalid/scan";
 
 const core = (extra: Record<string, unknown> = {}) => ({
@@ -128,7 +131,7 @@ test("bad types are dropped: strings, negatives, objects, bad dates and links", 
 test("the tool reply's text is unchanged; card data rides in _meta and passes the allow-list", () => {
   const result = bodyAnalysisFromCore(core({ comparisonToPrevious: comparison, assessment: "Private assessment text." }), LINK);
   const text = JSON.stringify(result, null, 2);
-  const reply = withBodyCard({ content: [{ type: "text", text }] }, result);
+  const reply = withBodyCard({ content: [{ type: "text", text }] }, result, CLAUDE);
   assert.equal(reply.content[0].text, text);
   const meta = reply._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
   assert.equal(meta.card, BODY_CARD.id);
@@ -141,7 +144,7 @@ test("the tool reply's text is unchanged; card data rides in _meta and passes th
 test("no analysis means no card, and the reply is untouched", () => {
   const empty = { analysis: null, message: "No body analysis data found", scanLink: LINK };
   const reply = { content: [{ type: "text" as const, text: JSON.stringify(empty) }] };
-  assert.equal(withBodyCard(reply, empty), reply);
+  assert.equal(withBodyCard(reply, empty, CLAUDE), reply);
 });
 
 test("card copy: never a record, best or win; the estimate line exactly", () => {

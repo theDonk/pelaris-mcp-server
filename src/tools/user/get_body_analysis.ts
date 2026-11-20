@@ -18,7 +18,8 @@ import { plainDay } from "../shared/training_truth.js";
 import { mintSignedEntryLink } from "../shared/entry_links.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { bridgeFailureResponse } from "../shared/core_adapter.js";
-import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { BODY_CARD, buildBodyCardData } from "../../cards/body_card.js";
 
 type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
@@ -28,11 +29,15 @@ type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boo
  * data rides in the result's _meta. No analysis, or none of waist, hips and shoulders,
  * means no card. Any failure leaves the plain text reply. Pure (exported for tests).
  */
-export function withBodyCard(reply: TextReply, result: Record<string, unknown>): TextReply {
-  if (!cardsEnabled()) return reply;
+export function withBodyCard(
+  reply: TextReply,
+  result: Record<string, unknown>,
+  host: HostProfile = currentHostProfile(),
+): TextReply {
+  if (!cardsOn(host)) return reply;
   try {
     const data = buildBodyCardData(result, typeof result.scanLink === "string" ? result.scanLink : null);
-    return data ? withCard(reply, BODY_CARD, { ...data }) : reply;
+    return data ? withCard(reply, BODY_CARD, { ...data }, process.env, host) : reply;
   } catch {
     return reply;
   }

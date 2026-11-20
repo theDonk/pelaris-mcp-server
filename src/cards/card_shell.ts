@@ -16,15 +16,23 @@
  * The switch: `PELARIS_CARDS=off` (or `0`, `false`, `no`) turns every card off. It is
  * read each time a server is built and each time a result is shaped, so changing the
  * environment value is enough; no code path changes. Unset means on.
+ *
+ * The host: cards are on for a request only when the switch is on AND the host draws
+ * MCP Apps (`cardsOn`, from the host adapter in host.ts). A text-only host gets no card
+ * resources, no `_meta.ui` on tools, no card data and no signed link minted for a card.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  CARDS_UI_DOMAIN_ENV,
+  MCP_APP_MIME_TYPE,
+  MCP_APPS_EXTENSION_ID,
+  currentHostProfile,
+  type HostProfile,
+} from "./host.js";
 
-/** MIME type the MCP Apps spec requires for an HTML card resource. */
-export const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
-
-/** Extension id hosts negotiate MCP Apps under. */
-export const MCP_APPS_EXTENSION_ID = "io.modelcontextprotocol/ui";
+export { CARDS_UI_DOMAIN_ENV, MCP_APP_MIME_TYPE, MCP_APPS_EXTENSION_ID };
+export type { HostProfile };
 
 /** MCP Apps spec version the shell was built against. */
 export const MCP_APPS_SPEC_VERSION = "2026-01-26";
@@ -34,9 +42,6 @@ export const CARD_DATA_META_KEY = "pelaris/card";
 
 /** Environment switch. */
 export const CARDS_ENV_FLAG = "PELARIS_CARDS";
-
-/** Optional sandbox origin for hosts that ask for one (each host has its own format). */
-export const CARDS_UI_DOMAIN_ENV = "PELARIS_CARDS_UI_DOMAIN";
 
 /**
  * Allow-list for card data. `true` keeps a scalar value as it is. A nested spec keeps
@@ -64,6 +69,14 @@ export interface CardDefinition {
 export function cardsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = (env[CARDS_ENV_FLAG] ?? "").trim().toLowerCase();
   return !["off", "0", "false", "no"].includes(raw);
+}
+
+/**
+ * The one gate for card work on a request: the switch is on and the host draws cards.
+ * Every card helper and every mint of a card's link goes through it.
+ */
+export function cardsOn(host: HostProfile = currentHostProfile(), env: NodeJS.ProcessEnv = process.env): boolean {
+  return cardsEnabled(env) && host.supportsCards;
 }
 
 function pickValue(value: unknown, spec: CardFieldSpec): unknown {
@@ -99,53 +112,59 @@ export function pickCardFields(
 }
 
 /**
- * The `_meta` to spread into a tool definition so hosts link the tool to its card,
- * or `undefined` when cards are off. Carries the standard nested key and the flat
- * `ui/resourceUri` key that the official SDK helper also writes for older hosts.
+ * The `_meta` to spread into a tool definition so hosts link the tool to its card, or
+ * `undefined` when cards are off for this host. Only the standard nested key: the flat
+ * `ui/resourceUri` key is deprecated in the spec (to be removed before GA) and no host
+ * this server supports documents needing it. Tools are registered per request (the
+ * transport is stateless), so a text-only host lists the tool as a plain tool, which the
+ * spec allows ("Servers MAY register different tool variants based on host capabilities").
  */
 export function cardToolMeta(
   card: CardDefinition,
   env: NodeJS.ProcessEnv = process.env,
+  host: HostProfile = currentHostProfile(env),
 ): Record<string, unknown> | undefined {
-  if (!cardsEnabled(env)) return undefined;
-  return {
-    ui: { resourceUri: card.resourceUri },
-    "ui/resourceUri": card.resourceUri,
-  };
+  if (!cardsOn(host, env)) return undefined;
+  return { ui: { resourceUri: card.resourceUri } };
 }
 
 /**
- * The `_meta` for a tool a card calls itself through the bridge (for example the Week
- * card's Confirm calling modify_training_session), or `undefined` when cards are off.
- * MCP Apps `visibility` names both the model and the card (the spec's default, stated
- * so it is explicit); ChatGPT asks for `openai/widgetAccessible` before a card may call
- * a tool. The tool's own annotations (read-only or destructive) are unchanged, and the
- * host still applies its own approval to a write.
+ * The `_meta` for a tool a card calls itself through the bridge, or `undefined` when
+ * cards are off for this host. MCP Apps `visibility` names both the model and the card
+ * (the spec's default, stated so it is explicit). Host-specific keys come from the
+ * host adapter (ChatGPT's `openai/widgetAccessible`). The tool's annotations are
+ * unchanged, and the host still applies its own approval to a write.
  */
-export function cardCallableToolMeta(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> | undefined {
-  if (!cardsEnabled(env)) return undefined;
-  return { ui: { visibility: ["model", "app"] }, "openai/widgetAccessible": true };
+export function cardCallableToolMeta(
+  env: NodeJS.ProcessEnv = process.env,
+  host: HostProfile = currentHostProfile(env),
+): Record<string, unknown> | undefined {
+  if (!cardsOn(host, env)) return undefined;
+  return { ui: { visibility: ["model", "app"] }, ...host.appToolMeta };
 }
 
-/** The resource-level `_meta.ui`: strict CSP (no outside origins at all) and a border. */
-export function cardResourceMeta(env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
-  const domain = (env[CARDS_UI_DOMAIN_ENV] ?? "").trim();
+/** The resource-level `_meta.ui`: strict CSP (no outside origins at all), a border, and the host's sandbox origin when it has one. */
+export function cardResourceMeta(
+  env: NodeJS.ProcessEnv = process.env,
+  host: HostProfile = currentHostProfile(env),
+): Record<string, unknown> {
   return {
     ui: {
       csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] },
       prefersBorder: true,
-      ...(domain ? { domain } : {}),
+      ...(host.uiDomain ? { domain: host.uiDomain } : {}),
     },
   };
 }
 
-/** Registers every card's `ui://` resource. Does nothing when cards are off. */
+/** Registers every card's `ui://` resource. Does nothing when cards are off for this host. */
 export function registerCardResources(
   server: McpServer,
   cards: readonly CardDefinition[],
   env: NodeJS.ProcessEnv = process.env,
+  host: HostProfile = currentHostProfile(env),
 ): void {
-  if (!cardsEnabled(env)) return;
+  if (!cardsOn(host, env)) return;
   for (const card of cards) {
     server.registerResource(
       `card_${card.id}`,
@@ -157,7 +176,7 @@ export function registerCardResources(
             uri: card.resourceUri,
             mimeType: MCP_APP_MIME_TYPE,
             text: card.html(),
-            _meta: cardResourceMeta(env),
+            _meta: cardResourceMeta(env, host),
           },
         ],
       }),
@@ -167,15 +186,17 @@ export function registerCardResources(
 
 /**
  * Returns `result` with the card's data added under `_meta["pelaris/card"]`. Leaves the
- * result untouched when cards are off, when there is no data, or when it is an error.
+ * result untouched when cards are off for this host, when there is no data, or when it
+ * is an error.
  */
 export function withCard<T extends { content: unknown[]; isError?: boolean; _meta?: Record<string, unknown> }>(
   result: T,
   card: CardDefinition,
   data: Record<string, unknown> | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
+  host: HostProfile = currentHostProfile(env),
 ): T & { _meta?: Record<string, unknown> } {
-  if (!cardsEnabled(env) || !data || result.isError) return result;
+  if (!cardsOn(host, env) || !data || result.isError) return result;
   const picked = pickCardFields(data, card.fields);
   if (Object.keys(picked).length === 0) return result;
   return {

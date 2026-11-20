@@ -24,6 +24,12 @@ const {
 } = await import("../card_shell.js");
 const { CARDS, registerCards } = await import("../registry.js");
 const { SESSION_CARD } = await import("../session_card.js");
+const { hostProfileFrom, TEXT_ONLY_HOST } = await import("../host.js");
+const { runWithConnectorFacts } = await import("../../connector/connector_use.js");
+
+/** A card host with no sandbox domain (the override set to none), and ChatGPT. */
+const CARD_HOST = hostProfileFrom({ assistantClass: "chatgpt" }, {});
+const CLAUDE = hostProfileFrom({ assistantClass: "claude" }, {});
 const { registerGetSessionDetails } = await import("../../tools/user/get_session_details.js");
 
 const ON: NodeJS.ProcessEnv = {};
@@ -51,7 +57,7 @@ test("the switch: on by default, off for off/0/false/no", () => {
 });
 
 test("every card's ui:// resource is registered with the MCP Apps MIME type and strict CSP", async () => {
-  const { client, close } = await connect((server) => registerCards(server, ON));
+  const { client, close } = await connect((server) => registerCards(server, ON, CARD_HOST));
   try {
     const { resources } = await client.listResources();
     for (const card of CARDS) {
@@ -66,16 +72,21 @@ test("every card's ui:// resource is registered with the MCP Apps MIME type and 
       const ui = content._meta?.ui as { csp: Record<string, unknown[]>; prefersBorder: boolean; domain?: string };
       assert.deepEqual(ui.csp, { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] });
       assert.equal(ui.prefersBorder, true);
-      assert.equal(ui.domain, undefined, "no sandbox domain unless one is configured");
+      assert.equal(ui.domain, undefined, "ChatGPT gets no sandbox domain");
     }
   } finally {
     await close();
   }
 });
 
-test("a configured sandbox domain is passed through", () => {
-  const meta = cardResourceMeta({ PELARIS_CARDS_UI_DOMAIN: "example-sandbox.invalid" });
-  assert.equal((meta.ui as { domain: string }).domain, "example-sandbox.invalid");
+test("the sandbox domain is per host; the env value overrides it, and none removes it", () => {
+  const claudeDomain = (cardResourceMeta({}, CLAUDE).ui as { domain?: string }).domain;
+  assert.match(claudeDomain ?? "", /^[0-9a-f]{32}\.claudemcpcontent\.com$/, "Claude's documented format");
+  assert.equal((cardResourceMeta({}, CARD_HOST).ui as { domain?: string }).domain, undefined);
+  const env = { PELARIS_CARDS_UI_DOMAIN: "example-sandbox.invalid" };
+  assert.equal((cardResourceMeta(env, hostProfileFrom({ assistantClass: "claude" }, env)).ui as { domain: string }).domain, "example-sandbox.invalid");
+  const none = { PELARIS_CARDS_UI_DOMAIN: "none" };
+  assert.equal((cardResourceMeta(none, hostProfileFrom({ assistantClass: "claude" }, none)).ui as { domain?: string }).domain, undefined);
 });
 
 test("off: no card resources are registered", async () => {
@@ -84,7 +95,7 @@ test("off: no card resources are registered", async () => {
     server.registerResource("other", "pelaris://test/other", { mimeType: "text/plain" }, async () => ({
       contents: [{ uri: "pelaris://test/other", text: "x" }],
     }));
-    registerCards(server, OFF);
+    registerCards(server, OFF, CARD_HOST);
   });
   try {
     const { resources } = await client.listResources();
@@ -94,22 +105,43 @@ test("off: no card resources are registered", async () => {
   }
 });
 
-test("tool meta names the card resource (nested and flat keys), and is absent when off", () => {
-  assert.deepEqual(cardToolMeta(SESSION_CARD, ON), {
-    ui: { resourceUri: SESSION_CARD.resourceUri },
-    "ui/resourceUri": SESSION_CARD.resourceUri,
-  });
-  assert.equal(cardToolMeta(SESSION_CARD, OFF), undefined);
+test("tool meta names the card resource (nested key only), and is absent when off or for a text-only host", () => {
+  assert.deepEqual(cardToolMeta(SESSION_CARD, ON, CARD_HOST), { ui: { resourceUri: SESSION_CARD.resourceUri } });
+  assert.equal(cardToolMeta(SESSION_CARD, OFF, CARD_HOST), undefined);
+  assert.equal(cardToolMeta(SESSION_CARD, ON, TEXT_ONLY_HOST), undefined);
 });
 
 test("get_session_details is listed with the Session card's resourceUri", async () => {
-  const { client, close } = await connect((server) => registerGetSessionDetails(server));
+  const { client, close } = await connect((server) =>
+    runWithConnectorFacts({ profileId: "profile_test", clientClass: "claude" }, () => registerGetSessionDetails(server)));
   try {
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === "get_session_details") as { _meta?: { ui?: { resourceUri?: string } } };
     assert.equal(tool._meta?.ui?.resourceUri, SESSION_CARD.resourceUri);
   } finally {
     await close();
+  }
+});
+
+test("a text-only host lists get_session_details as a plain tool and gets no card resources", async () => {
+  for (const clientClass of ["other", "unknown", "grok"] as const) {
+    const { client, close } = await connect((server) =>
+      runWithConnectorFacts({ profileId: "profile_test", clientClass }, () => {
+        server.registerResource("other", "pelaris://test/other", { mimeType: "text/plain" }, async () => ({
+          contents: [{ uri: "pelaris://test/other", text: "x" }],
+        }));
+        registerGetSessionDetails(server);
+        registerCards(server);
+      }));
+    try {
+      const { tools } = await client.listTools();
+      const tool = tools.find((t) => t.name === "get_session_details") as { _meta?: Record<string, unknown> };
+      assert.equal(tool._meta, undefined, clientClass);
+      const { resources } = await client.listResources();
+      assert.deepEqual(resources.map((r) => r.uri), ["pelaris://test/other"], clientClass);
+    } finally {
+      await close();
+    }
   }
 });
 
@@ -127,6 +159,7 @@ test("withCard adds only allow-listed fields under _meta and leaves the text alo
       nested: { anything: true },
     },
     ON,
+    CARD_HOST,
   );
   assert.deepEqual(out.content, reply.content, "text unchanged");
   assert.deepEqual(out._meta?.[CARD_DATA_META_KEY], {
@@ -139,11 +172,13 @@ test("withCard adds only allow-listed fields under _meta and leaves the text alo
 
 test("withCard does nothing when off, with no data, or on an error", () => {
   const reply = { content: [{ type: "text" as const, text: "x" }] };
-  assert.equal(withCard(reply, SESSION_CARD, { title: "Sample" }, OFF), reply);
-  assert.equal(withCard(reply, SESSION_CARD, null, ON), reply);
-  assert.equal(withCard(reply, SESSION_CARD, { unknown: 1 }, ON), reply);
+  assert.equal(withCard(reply, SESSION_CARD, { title: "Sample" }, OFF, CARD_HOST), reply);
+  assert.equal(withCard(reply, SESSION_CARD, { title: "Sample" }, ON, TEXT_ONLY_HOST), reply, "text-only host");
+  assert.equal(withCard(reply, SESSION_CARD, { title: "Sample" }, ON), reply, "no request facts: no cards");
+  assert.equal(withCard(reply, SESSION_CARD, null, ON, CARD_HOST), reply);
+  assert.equal(withCard(reply, SESSION_CARD, { unknown: 1 }, ON, CARD_HOST), reply);
   const err = { ...reply, isError: true };
-  assert.equal(withCard(err, SESSION_CARD, { title: "Sample" }, ON), err);
+  assert.equal(withCard(err, SESSION_CARD, { title: "Sample" }, ON, CARD_HOST), err);
 });
 
 test("pickCardFields never lets an object through a scalar spec", () => {

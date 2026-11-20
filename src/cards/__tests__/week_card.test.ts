@@ -10,6 +10,9 @@ const { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, WEEK_CARD_MOVE_TOOL, buildWeekCardData,
 const { HANDOFF_ROUTES } = await import("../../tools/shared/entry_links.js");
 const { withWeekCard } = await import("../../tools/user/get_active_program.js");
 
+const { hostProfileFrom } = await import("../host.js");
+const CLAUDE = hostProfileFrom({ assistantClass: "claude" }, {});
+
 const session = (id: string, date: string, focus: string | null, extra: Record<string, unknown> = {}) => ({
   sessionId: id,
   focus,
@@ -132,8 +135,10 @@ test("routes and tools: open is a real handoff route; the move tool is the write
   assert.doesNotMatch(html, /\bSkip\b/, "no Skip action anywhere");
   assert.match(html, /id="confirm-yes">Confirm</);
   assert.ok(html.includes('el("button", "wk-move", "Move")'), "a non-drag Move control");
-  assert.deepEqual(cardCallableToolMeta({}), { ui: { visibility: ["model", "app"] }, "openai/widgetAccessible": true });
-  assert.equal(cardCallableToolMeta({ PELARIS_CARDS: "off" }), undefined);
+  const CHATGPT = hostProfileFrom({ assistantClass: "chatgpt" }, {});
+  assert.deepEqual(cardCallableToolMeta({}, CHATGPT), { ui: { visibility: ["model", "app"] }, "openai/widgetAccessible": true });
+  assert.deepEqual(cardCallableToolMeta({}, CLAUDE), { ui: { visibility: ["model", "app"] } });
+  assert.equal(cardCallableToolMeta({ PELARIS_CARDS: "off" }, CHATGPT), undefined);
 });
 
 test("withWeekCard: text unchanged, card data allow-listed, link minted for the program route", async () => {
@@ -143,7 +148,7 @@ test("withWeekCard: text unchanged, card data allow-listed, link minted for the 
   const out = await withWeekCard(text, result, null, async (route) => {
     routes.push(route);
     return `https://example.invalid/open/${route}?h=sample`;
-  });
+  }, CLAUDE);
   assert.deepEqual(routes, ["program"]);
   assert.deepEqual(out.content, text.content);
   const card = out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
@@ -156,15 +161,15 @@ test("withWeekCard: text unchanged, card data allow-listed, link minted for the 
 test("withWeekCard: a failed mint still draws the card; off and empty leave the plain reply", async () => {
   const result = reply();
   const text = { content: [{ type: "text" as const, text: "x" }] };
-  const out = await withWeekCard(text, result, null, async () => { throw new Error("store down"); });
+  const out = await withWeekCard(text, result, null, async () => { throw new Error("store down"); }, CLAUDE);
   assert.equal((out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>).openUrl, null);
   const before = process.env.PELARIS_CARDS;
   process.env.PELARIS_CARDS = "off";
   try {
-    assert.equal(await withWeekCard(text, result, null, async () => "https://example.invalid"), text);
+    assert.equal(await withWeekCard(text, result, null, async () => "https://example.invalid", CLAUDE), text);
   } finally {
     if (before === undefined) delete process.env.PELARIS_CARDS;
     else process.env.PELARIS_CARDS = before;
   }
-  assert.equal(await withWeekCard(text, { programs: [] }, null, async () => "x"), text);
+  assert.equal(await withWeekCard(text, { programs: [] }, null, async () => "x", CLAUDE), text);
 });

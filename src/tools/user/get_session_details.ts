@@ -15,7 +15,8 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { sessionSourcesFromLinkedEntries } from "../shared/session_sources.js";
 import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
-import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { SESSION_CARD, SESSION_CARD_START_ROUTE, buildSessionCardData } from "../../cards/session_card.js";
 
 type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
@@ -30,13 +31,15 @@ export async function withSessionCard(
   session: Record<string, unknown>,
   claims: HandoffClaimsLike | null | undefined,
   mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+  host: HostProfile = currentHostProfile(),
 ): Promise<TextReply> {
-  if (!cardsEnabled()) return reply;
+  // No card work at all (no link minted) for a text-only host or with the switch off.
+  if (!cardsOn(host)) return reply;
   try {
     const data = buildSessionCardData(session, null);
     if (!data) return reply;
     const startUrl = await mint(SESSION_CARD_START_ROUTE, claims).catch(() => null);
-    return withCard(reply, SESSION_CARD, { ...data, startUrl });
+    return withCard(reply, SESSION_CARD, { ...data, startUrl }, process.env, host);
   } catch {
     return reply;
   }

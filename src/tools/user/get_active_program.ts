@@ -20,7 +20,8 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
 import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
-import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, buildWeekCardData } from "../../cards/week_card.js";
 import {
   TRUTH_UNAVAILABLE_MESSAGE,
@@ -47,13 +48,15 @@ export async function withWeekCard(
   result: Record<string, unknown>,
   claims: HandoffClaimsLike | null | undefined,
   mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+  host: HostProfile = currentHostProfile(),
 ): Promise<TextReply> {
-  if (!cardsEnabled()) return reply;
+  // No card work at all (no link minted) for a text-only host or with the switch off.
+  if (!cardsOn(host)) return reply;
   try {
     const data = buildWeekCardData(result, null);
     if (!data) return reply;
     const openUrl = await mint(WEEK_CARD_OPEN_ROUTE, claims).catch(() => null);
-    return withCard(reply, WEEK_CARD, { ...data, openUrl });
+    return withCard(reply, WEEK_CARD, { ...data, openUrl }, process.env, host);
   } catch {
     return reply;
   }

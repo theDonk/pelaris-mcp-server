@@ -10,8 +10,9 @@ what they read before.
 - `src/cards/card_shell.ts` is the one shell every card goes through:
   - `registerCardResources` registers each card's `ui://` HTML resource
     (MIME `text/html;profile=mcp-app`, `_meta.ui.csp` with no outside origins, `prefersBorder`);
-  - `cardToolMeta(card)` gives a tool definition `_meta.ui.resourceUri` (plus the flat
-    `ui/resourceUri` key the official SDK helper also writes);
+  - `cardToolMeta(card)` gives a tool definition `_meta.ui.resourceUri` (the nested key
+    only: the flat `ui/resourceUri` key is deprecated in the spec, to be removed before GA,
+    and neither Claude's nor ChatGPT's docs ask for it);
   - `withCard(result, card, data)` adds the card's data to the result under
     `_meta["pelaris/card"]`, keeping only the fields in the card's allow-list (`fields`).
     The data rides in `_meta`, not `structuredContent`, because some hosts hand
@@ -27,24 +28,47 @@ what they read before.
 - The bridge speaks MCP Apps JSON-RPC over `postMessage`: `ui/initialize`, then
   `ui/notifications/initialized`; it reads `ui/notifications/tool-result` and
   `ui/notifications/host-context-changed`, and reports `ui/notifications/size-changed`.
-  Actions, each falling back to the ChatGPT runtime (`window.openai`) and then to a
-  plain result of `false` so the card can show a note:
+  Actions, each falling back to the ChatGPT runtime (`window.openai`, all of it in the
+  bridge's one "Host section") and then to a plain result of `false` so the card can show
+  a note:
   `sendMessage(text)` (`ui/message`), `openLink(url)` (`ui/open-link`),
   `callTool(name, args)` (`tools/call`; resolves to the tool's result, or `false`),
   `requestFullscreen()` and `requestInline()` (`ui/request-display-mode`), and
   `onContext(fn)` (host context on connect and on each change, for example `displayMode`).
 - A tool a card calls itself spreads `cardCallableToolMeta()` into its `_meta`
-  (`ui.visibility: ["model", "app"]` and ChatGPT's `openai/widgetAccessible`). Its
+  (`ui.visibility: ["model", "app"]`, plus the host's own keys from the host adapter, for
+  ChatGPT `openai/widgetAccessible`). Its
   annotations stay as they are; a write keeps `readOnlyHint: false, destructiveHint: true`.
 - `src/cards/registry.ts` lists every card; `src/index.ts` calls `registerCards(server)`.
 
+### The host adapter
+
+`src/cards/host.ts` turns what the request knows about the host into a `HostProfile`
+(`supportsCards`, `name`, `source`, `uiDomain`, `appToolMeta`). Every card helper and every
+mint of a card's signed link goes through `cardsOn(host)`: the switch is on AND the host
+draws cards. A text-only host gets no `ui://` resources, no `_meta.ui` on tools (tools are
+registered per request, and the spec lets a server register different tool variants per
+host), no card data and no link written for a card nobody sees.
+
+How the host is known: the transport is stateless (a new server per POST /mcp), so the
+client's `initialize` capabilities and `clientInfo` reach only the server that answers
+`initialize`, never the one answering `tools/list` or `tools/call`. Every request carries
+the OAuth token, whose stored assistant class was set at consent from the validated
+redirect host. So the adapter takes, in order: a declared
+`extensions["io.modelcontextprotocol/ui"].mimeTypes` naming the card MIME type (when a
+caller has it); else the host's name (the token's class, or `clientInfo.name`) on
+`CARD_HOSTS`, the one allow-list (today `claude` and `chatgpt`); else no cards. Unknown
+or missing means no card work. Admin-authed calls carry no token class and get no cards.
+
+`ui.domain` is per host: Claude's is its documented rule (the first 32 hex characters of
+the SHA-256 of the server URL, then `.claudemcpcontent.com`); ChatGPT gets none.
+
 ### The switch
 
-`PELARIS_CARDS=off` (also `0`, `false`, `no`) turns every card off: no `ui://` resources,
-no `_meta.ui` on tools, no card data on results. Unset means on (tests run with it on).
-Optional: `PELARIS_CARDS_UI_DOMAIN` sets `_meta.ui.domain` for hosts that need a fixed
-sandbox origin. Each host has its own format (for Claude, the first 32 hex characters of
-the SHA-256 of the server URL, then `.claudemcpcontent.com`), so it is unset by default.
+`PELARIS_CARDS=off` (also `0`, `false`, `no`) turns every card off for every host: no
+`ui://` resources, no `_meta.ui` on tools, no card data on results, no card links minted.
+Unset means on. `PELARIS_CARDS_UI_DOMAIN` overrides every host's `ui.domain` (`none`
+sends none).
 
 ## Cards today
 
@@ -103,8 +127,12 @@ outline): one `<svg>` of plain `path` and `circle` shapes, no links, no `xmlns`,
 - **Claude:** whether `ui.domain` is needed for this card (the docs tie it to apps that
   run their own sign-in), and whether a one-tap link opens without a confirm prompt
   (that needs the link origin declared in the directory listing).
-- **Meta Muse:** no primary Meta source found on whether Muse renders MCP Apps. The tool
-  reply reads as plain text there, unchanged.
+- **Meta Muse:** no primary Meta source found on whether Muse renders MCP Apps. It is not
+  on `CARD_HOSTS`, so it gets no card work and the plain tool reply.
+- **Host capability:** neither Claude's nor ChatGPT's docs say whether the host declares
+  the MCP Apps extension in `initialize` (and this stateless server could not see it on a
+  tool call anyway), hence the allow-list. Claude's computed `ui.domain` is not yet
+  checked in a live Claude chat.
 - **Week card, every host:** checked in a local browser at 320 px, light and dark, with
   a stub host: full screen request, Move, day picker, confirm, the tool call's exact
   arguments, the tile update and the follow-up message. Not checked live: whether a

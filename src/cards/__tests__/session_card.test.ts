@@ -15,6 +15,9 @@ const {
 const { HANDOFF_ROUTES } = await import("../../tools/shared/entry_links.js");
 const { withSessionCard } = await import("../../tools/user/get_session_details.js");
 
+const { hostProfileFrom } = await import("../host.js");
+const CLAUDE = hostProfileFrom({ assistantClass: "claude" }, {});
+
 const strengthSet = (reps: number, kg: number | null, rpe: number | null = null) => ({
   type: "strength",
   targetWeightKg: kg,
@@ -165,7 +168,7 @@ test("withSessionCard: text unchanged, card data allow-listed, link minted for t
   const out = await withSessionCard(reply, strengthSession, null, async (route) => {
     routes.push(route);
     return `https://example.invalid/start/${route}?h=sample`;
-  });
+  }, CLAUDE);
   assert.deepEqual(routes, ["train"]);
   assert.deepEqual(out.content, reply.content);
   const card = out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>;
@@ -182,7 +185,7 @@ test("withSessionCard: a failed mint still draws the card, without a link", asyn
   const reply = { content: [{ type: "text" as const, text: "x" }] };
   const out = await withSessionCard(reply, strengthSession, null, async () => {
     throw new Error("store down");
-  });
+  }, CLAUDE);
   assert.equal((out._meta?.[CARD_DATA_META_KEY] as Record<string, unknown>).startUrl, null);
 });
 
@@ -191,10 +194,10 @@ test("withSessionCard: off switch and an empty session leave the plain reply", a
   const before = process.env.PELARIS_CARDS;
   process.env.PELARIS_CARDS = "off";
   try {
-    assert.equal(await withSessionCard(reply, strengthSession, null, async () => "https://example.invalid"), reply);
+    assert.equal(await withSessionCard(reply, strengthSession, null, async () => "https://example.invalid", CLAUDE), reply);
   } finally {
     if (before === undefined) delete process.env.PELARIS_CARDS;
     else process.env.PELARIS_CARDS = before;
   }
-  assert.equal(await withSessionCard(reply, { title: "Empty", blocks: [] }, null, async () => "x"), reply);
+  assert.equal(await withSessionCard(reply, { title: "Empty", blocks: [] }, null, async () => "x", CLAUDE), reply);
 });
