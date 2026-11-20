@@ -26,6 +26,7 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `get_active_program` | View current program with phase, weekly structure, and session details |
 | `get_session_details` | View a specific session's exercises, sets, targets, and feedback |
 | `resolve_exercise_ids` | Resolve exercise names to canonical exercise IDs before planning or logging |
+| `scan_body_photos` | Body scan from photos added to the chat (adults only); photos are analysed and not stored, the scan is saved to the athlete's Pelaris history |
 | `run_calculator` | Run one of 20 sports science calculators, with sources; free to run, saved to benchmarks on Ocean and Horizon |
 | `get_benchmarks` | View benchmark values, progress history, and trends |
 | `get_body_analysis` | View body composition data and measurement trends |

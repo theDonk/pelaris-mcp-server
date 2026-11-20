@@ -53,6 +53,7 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/get_body_analysis_core_bridge.test.js",
   "dist/tools/user/__tests__/resolve_exercise_ids.test.js",
   "dist/tools/user/__tests__/run_calculator.test.js",
+  "dist/tools/user/__tests__/scan_body_photos.test.js",
   "dist/tools/user/__tests__/session_modify_mapping.test.js",
   "dist/tools/user/__tests__/card_reschedule_session.test.js",
   "dist/tools/user/__tests__/card_skip_session.test.js",

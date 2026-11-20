@@ -39,6 +39,7 @@ import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.
 // down, right above its former registration call site.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
 import { registerRunCalculator } from "./tools/user/run_calculator.js";
+import { registerScanBodyPhotos } from "./tools/user/scan_body_photos.js";
 
 // User write tools (OAuth-scoped)
 // generate_weekly_plan (src/tools/user/generate_weekly_plan.ts) is RETIRED
@@ -265,6 +266,8 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     registerResolveExerciseIds(server);
     // Sports science calculators: free to run, saved on plans that include saving.
     registerRunCalculator(server);
+    // Body scan from photos added to the chat. Stands alone: this one line registers it.
+    registerScanBodyPhotos(server);
 
     // ─── User write tools (OAuth-scoped) ────────────────
     // generate_program is a reply-only tool since connector rev 2.1: it builds nothing here and answers with the link that opens
