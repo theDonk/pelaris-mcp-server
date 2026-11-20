@@ -11,7 +11,9 @@
  *  - reading the file references the host passes (`_meta["openai/fileParams"]`);
  *  - asking the server whether this person can scan BEFORE any photo is fetched;
  *  - fetching each photo once, into memory, under a strict guard (https, an allow-listed
- *    host, no redirects, a size cap, a time limit, JPEG only);
+ *    host, no redirects, a size cap, a time limit);
+ *  - preparing each photo the way the Pelaris app does before it uploads (turned
+ *    upright, long edge 1024 px, JPEG, no metadata), so a full-size phone photo works;
  *  - wording each outcome and adding a link into Pelaris where the next step is there.
  *
  * Photos are never stored, never written to disk and never logged, and neither are
@@ -24,6 +26,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import sharp from "sharp";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { scrubDocument } from "../../scrubber.js";
@@ -33,8 +36,42 @@ import { mintSignedEntryLink, type HandoffRoute } from "../shared/entry_links.js
 
 export const SCAN_BODY_PHOTOS_TOOL = "scan_body_photos";
 
-/** The server's per-photo cap (bytes). A larger photo is refused there, so it is refused here first. */
+/** The server's per-photo cap (bytes). A prepared photo over it is refused there, so it is refused here first. */
 export const MAX_PHOTO_BYTES = 900_000;
+/** The largest file fetched from the host (bytes), before it is prepared. */
+export const MAX_DOWNLOAD_BYTES = 20_000_000;
+/** The long edge a photo is scaled down to, the same as the Pelaris app's upload. */
+export const PHOTO_LONG_EDGE_PX = 1024;
+/** The largest image that is decoded (pixels). */
+export const MAX_INPUT_PIXELS = 80_000_000;
+const JPEG_QUALITIES: readonly number[] = [85, 70, 55];
+
+// Photos are held only for the length of one call: no decoded image is kept between calls.
+sharp.cache(false);
+sharp.concurrency(1);
+
+/**
+ * Prepare one photo for the scan, as the Pelaris app does on the phone: turned upright
+ * from its orientation tag, scaled so the long edge is at most 1024 px (never enlarged),
+ * written as a JPEG with no metadata. Returns null when the bytes are not an image that
+ * can be read, or it cannot be brought under the cap. In memory only.
+ */
+export async function preparePhoto(bytes: Buffer): Promise<Buffer | null> {
+  try {
+    for (const quality of JPEG_QUALITIES) {
+      const out = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS, sequentialRead: true })
+        .rotate()
+        .resize({ width: PHOTO_LONG_EDGE_PX, height: PHOTO_LONG_EDGE_PX, fit: "inside", withoutEnlargement: true })
+        .flatten({ background: "#ffffff" })
+        .jpeg({ quality, mozjpeg: false })
+        .toBuffer();
+      if (out.length <= MAX_PHOTO_BYTES) return out;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 export const PHOTO_FETCH_TIMEOUT_MS = 15_000;
 
 /** Hosts a file reference may point at. Any other host is refused. */
@@ -135,7 +172,7 @@ export type PhotoFetchFailure =
   | "redirected"
   | "http_error"
   | "too_large"
-  | "not_jpeg"
+  | "not_image"
   | "timeout"
   | "network";
 
@@ -143,8 +180,8 @@ export type PhotoFetchResult = { ok: true; base64: string } | { ok: false; code:
 
 /**
  * Fetch one photo into memory. https and an allow-listed host only, no redirect is
- * followed, the body is cut off past the cap, and the bytes must start with a JPEG
- * header. Nothing is written anywhere.
+ * followed, the body is cut off past the cap, and the bytes must be an image that can
+ * be prepared for the scan. Nothing is written anywhere.
  */
 export async function fetchPhoto(rawUrl: string, fetchImpl: typeof fetch = fetch): Promise<PhotoFetchResult> {
   const checked = checkDownloadUrl(rawUrl);
@@ -158,7 +195,7 @@ export async function fetchPhoto(rawUrl: string, fetchImpl: typeof fetch = fetch
   if (response.status >= 300 && response.status < 400) return { ok: false, code: "redirected" };
   if (!response.ok || !response.body) return { ok: false, code: "http_error" };
   const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_PHOTO_BYTES) {
+  if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
     await response.body.cancel().catch(() => undefined);
     return { ok: false, code: "too_large" };
   }
@@ -170,7 +207,7 @@ export async function fetchPhoto(rawUrl: string, fetchImpl: typeof fetch = fetch
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_PHOTO_BYTES) {
+      if (total > MAX_DOWNLOAD_BYTES) {
         await reader.cancel().catch(() => undefined);
         return { ok: false, code: "too_large" };
       }
@@ -179,9 +216,9 @@ export async function fetchPhoto(rawUrl: string, fetchImpl: typeof fetch = fetch
   } catch (error) {
     return { ok: false, code: (error as Error).name === "TimeoutError" ? "timeout" : "network" };
   }
-  const bytes = Buffer.concat(chunks, total);
-  if (bytes.length < 3 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return { ok: false, code: "not_jpeg" };
-  return { ok: true, base64: bytes.toString("base64") };
+  const prepared = await preparePhoto(Buffer.concat(chunks, total));
+  if (prepared == null) return { ok: false, code: "not_image" };
+  return { ok: true, base64: prepared.toString("base64") };
 }
 
 /** The server's closed outcome as the reply the assistant relays. Pure (the link is added by the caller). */

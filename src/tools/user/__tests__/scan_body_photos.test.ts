@@ -8,6 +8,7 @@
  * reaches the result or the logs.
  */
 
+import sharp from "sharp";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { McpTokenClaims } from "../../../auth.js";
@@ -17,6 +18,9 @@ process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
 const {
   ALLOWED_FILE_HOST_SUFFIXES,
   MAX_PHOTO_BYTES,
+  MAX_DOWNLOAD_BYTES,
+  PHOTO_LONG_EDGE_PX,
+  preparePhoto,
   OUTCOME_LINK_ROUTE,
   SCAN_BODY_PHOTOS_DESCRIPTION,
   checkDownloadUrl,
@@ -38,8 +42,20 @@ const claims: McpTokenClaims = {
 
 const FRONT_URL = "https://files.oaiusercontent.com/file-front?sig=SECRETSIGNATURE";
 const SIDE_URL = "https://files.oaiusercontent.com/file-side?sig=SECRETSIGNATURE";
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("PHOTOBYTES".repeat(20))]);
+/** A real image of random pixels (random pixels compress badly, like a detailed photo). */
+function noise(width: number, height: number, seed = 7): ReturnType<typeof sharp> {
+  const raw = Buffer.alloc(width * height * 3);
+  let x = seed;
+  for (let i = 0; i < raw.length; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    raw[i] = x >> 16;
+  }
+  return sharp(raw, { raw: { width, height, channels: 3 } });
+}
+const JPEG = await noise(300, 400).jpeg({ quality: 90 }).toBuffer();
+/** Bytes that only look like a picture: a PNG header and nothing behind it. */
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.from("PHOTOBYTES".repeat(20))]);
+const PREPARED = (await preparePhoto(JPEG)) as Buffer;
 
 type Reply = { content: Array<{ type: string; text: string }>; isError?: boolean };
 type Handler = (params: Record<string, unknown>) => Promise<Reply>;
@@ -184,9 +200,9 @@ test("a scan sends front then side to the server and returns the saved reading",
   assert.deepEqual(fetcher.calls, [FRONT_URL, SIDE_URL]);
   assert.equal(bridgeCalls[1].profileId, "profile_test_1");
   assert.equal(bridgeCalls[1].input.mode, "scan");
-  assert.deepEqual(bridgeCalls[1].input.photos, [JPEG.toString("base64"), JPEG.toString("base64")]);
+  assert.deepEqual(bridgeCalls[1].input.photos, [PREPARED.toString("base64"), PREPARED.toString("base64")]);
   // Nothing photo-shaped in the result or the logs: no link, no signature, no bytes.
-  for (const leak of ["oaiusercontent", "SECRETSIGNATURE", JPEG.toString("base64").slice(0, 40), "PHOTOBYTES"]) {
+  for (const leak of ["oaiusercontent", "SECRETSIGNATURE", JPEG.toString("base64").slice(0, 40), PREPARED.toString("base64").slice(0, 40)]) {
     assert.ok(!text.includes(leak), `result leaks ${leak}`);
     assert.ok(!out.includes(leak), `log leaks ${leak}`);
   }
@@ -210,18 +226,49 @@ test("the download guard: https, an allowed host, no redirect, size and type", a
 
   assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(JPEG, { status: 302, headers: { location: "https://example.com/" } }).impl), { ok: false, code: "redirected" });
   assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(JPEG, { status: 404 }).impl), { ok: false, code: "http_error" });
-  assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(PNG).impl), { ok: false, code: "not_jpeg" });
+  assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(PNG).impl), { ok: false, code: "not_image" });
   assert.deepEqual(
-    await fetchPhoto(FRONT_URL, fetchOf(JPEG, { headers: { "content-length": String(MAX_PHOTO_BYTES + 1) } }).impl),
+    await fetchPhoto(FRONT_URL, fetchOf(JPEG, { headers: { "content-length": String(MAX_DOWNLOAD_BYTES + 1) } }).impl),
     { ok: false, code: "too_large" },
   );
-  const big = Buffer.concat([JPEG, Buffer.alloc(MAX_PHOTO_BYTES)]);
+  const big = Buffer.concat([JPEG, Buffer.alloc(MAX_DOWNLOAD_BYTES)]);
   assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(big).impl), { ok: false, code: "too_large" });
   const failing = (async () => {
     throw new Error("boom");
   }) as unknown as typeof fetch;
   assert.deepEqual(await fetchPhoto(FRONT_URL, failing), { ok: false, code: "network" });
-  assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(JPEG).impl), { ok: true, base64: JPEG.toString("base64") });
+  assert.deepEqual(await fetchPhoto(FRONT_URL, fetchOf(JPEG).impl), { ok: true, base64: PREPARED.toString("base64") });
+});
+
+test("a full-size phone photo is prepared like the app's upload: upright, 1024 px long edge, JPEG, no metadata", async () => {
+  // Far over the server's cap as it arrives, and tagged as taken on its side with a place attached.
+  const phone = await noise(3000, 2250)
+    .jpeg({ quality: 92 })
+    .withExif({ IFD0: { Make: "TestPhone" }, IFD3: { GPSLatitudeRef: "N" } })
+    .withMetadata({ orientation: 6 })
+    .toBuffer();
+  assert.ok(phone.length > MAX_PHOTO_BYTES, "the fixture must be over the cap");
+  const fetched = await fetchPhoto(FRONT_URL, fetchOf(phone).impl);
+  assert.equal(fetched.ok, true);
+  if (!fetched.ok) return;
+  const out = Buffer.from(fetched.base64, "base64");
+  assert.ok(out.length <= MAX_PHOTO_BYTES);
+  const meta = await sharp(out).metadata();
+  assert.equal(meta.format, "jpeg");
+  // Turned upright: the landscape frame tagged "rotate 90" comes out portrait.
+  assert.equal(meta.height, PHOTO_LONG_EDGE_PX);
+  assert.equal(meta.width, 768);
+  assert.equal(meta.exif, undefined);
+  assert.ok(meta.orientation === undefined || meta.orientation === 1);
+
+  // Other photo formats are read too, a small photo is never enlarged, and noise is not a photo.
+  const png = await preparePhoto(await noise(200, 300).png().toBuffer());
+  const pngMeta = await sharp(png as Buffer).metadata();
+  assert.deepEqual([pngMeta.format, pngMeta.width, pngMeta.height], ["jpeg", 200, 300]);
+  const webp = await preparePhoto(await noise(200, 300).webp().toBuffer());
+  assert.equal((await sharp(webp as Buffer).metadata()).format, "jpeg");
+  assert.equal(await preparePhoto(PNG), null);
+  assert.equal(await preparePhoto(Buffer.alloc(0)), null);
 });
 
 test("a photo that cannot be used answers with the scan link and never reaches the server's scan", async () => {
