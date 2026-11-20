@@ -46,7 +46,7 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `log_completed_session` | Log a full completed session with exercises, sets, and feedback |
 | `swap_exercise` | Get alternative exercise suggestions |
 | `modify_training_session` | Adjust session volume, intensity, or schedule |
-| `update_session` | Update the details of an existing planned session |
+| `update_session` | Update the details of an existing planned session, mark it done, or skip it |
 | `delete_session` | Delete a single planned session |
 | `delete_sessions` | Delete multiple planned sessions |
 | `record_injury` | Record an injury with body part, severity, and notes |

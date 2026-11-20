@@ -33,11 +33,14 @@ import {
 import {
   buildUpdateSessionCompletionInput,
   buildUpdateSessionMetadataInput,
+  buildUpdateSessionSkipInput,
+  fieldsNotAllowedWithSkip,
   isCompletionRequest,
+  isSkipRequest,
   listProvidedUpdateFields,
 } from "./session_modify_mapping.js";
 
-const VALID_STATUSES = ["planned", "completed"] as const;
+const VALID_STATUSES = ["planned", "completed", "skipped"] as const;
 const VALID_FEEDBACK_TAGS = [
   "felt_strong", "felt_tired", "felt_energetic", "felt_sluggish",
   "good_form", "poor_form", "pain", "injury_flare",
@@ -78,7 +81,10 @@ export function registerUpdateSession(server: McpServer): void {
           .describe(
             "Change session status. Setting 'completed' completes the session: without exercises[], " +
             "the planned targets are recorded as performed; with exercises[], the provided work is " +
-            "recorded as what was actually done.",
+            "recorded as what was actually done. Setting 'skipped' skips a planned session the " +
+            "athlete will not do: it stays in their plan, marked as skipped (nothing is deleted). " +
+            "Send it with feedbackNote holding the athlete's own reason when they gave one, and no " +
+            "other fields. To move a session to another day instead, use modify_training_session.",
           ),
         scheduledDate: z
           .string()
@@ -173,6 +179,46 @@ export function registerUpdateSession(server: McpServer): void {
             error: bridged.error ?? "bridge_error",
           });
         };
+
+        if (isSkipRequest(params)) {
+          const extra = fieldsNotAllowedWithSkip(params);
+          if (extra.length > 0) {
+            // Teaching error: a skip changes nothing else about the session.
+            return {
+              content: [{
+                type: "text" as const,
+                text: `Error: status 'skipped' cannot be combined with ${extra.join(", ")}. Send sessionId, ` +
+                  "status 'skipped' and, when the athlete gave a reason, feedbackNote. Make other " +
+                  "changes in a separate call.",
+              }],
+              isError: true,
+            };
+          }
+          const bridged = await callCoreBridge("skip_session", profileId, buildUpdateSessionSkipInput(params));
+          const failure = bridgeFailureResponse(bridged, "skipping session");
+          if (failure) {
+            logBridgeFailure(bridged);
+            return failure;
+          }
+          const result = unwrapBridgeResult(bridged);
+          logToolCall({
+            requestId,
+            tool: "update_session",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: true,
+          });
+          const output = scrubDocument({
+            sessionId: params.sessionId,
+            title: result.title,
+            status: "skipped",
+            updatedFields: ["status"],
+            message: "Session skipped. It stays in the plan, marked as skipped.",
+          });
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
+          };
+        }
 
         if (isCompletionRequest(params)) {
           if (params.blocks && params.blocks.length > 0) {
