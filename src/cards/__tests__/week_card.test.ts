@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { CARD_DATA_META_KEY, cardCallableToolMeta } = await import("../card_shell.js");
-const { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, WEEK_CARD_MOVE_TOOL, buildWeekCardData, mondayOf, weekDateLabel } = await import("../week_card.js");
+const { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, WEEK_CARD_MOVE_TOOL, WEEK_CARD_SKIP_TOOL, buildWeekCardData, mondayOf, weekDateLabel } = await import("../week_card.js");
 const { HANDOFF_ROUTES } = await import("../../tools/shared/entry_links.js");
 const { withWeekCard } = await import("../../tools/user/get_active_program.js");
 
@@ -69,9 +69,9 @@ test("full data: the primary program, seven days, both weeks, moves only today o
   assert.deepEqual(thisWeek.days.map((d) => d.dayShort), ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
   assert.deepEqual(thisWeek.days.map((d) => d.canReceive), [false, false, false, true, true, true, true]);
   const byDay = Object.fromEntries(thisWeek.days.map((d) => [d.dayShort, d.sessions]));
-  assert.deepEqual(byDay.Mon, [{ sessionId: "s1", label: "Strength", minutes: 45, isCompleted: true, canMove: false }]);
-  assert.deepEqual(byDay.Wed, [{ sessionId: "s2", label: "Easy run", minutes: null, isCompleted: false, canMove: false }], "yesterday cannot move");
-  assert.deepEqual(byDay.Thu, [{ sessionId: "s3", label: "Tempo run", minutes: 50, isCompleted: false, canMove: true }], "today can move");
+  assert.deepEqual(byDay.Mon, [{ sessionId: "s1", label: "Strength", minutes: 45, isCompleted: true, isSkipped: false, canMove: false, canSkip: false }]);
+  assert.deepEqual(byDay.Wed, [{ sessionId: "s2", label: "Easy run", minutes: null, isCompleted: false, isSkipped: false, canMove: false, canSkip: false }], "yesterday cannot move or be skipped");
+  assert.deepEqual(byDay.Thu, [{ sessionId: "s3", label: "Tempo run", minutes: 50, isCompleted: false, isSkipped: false, canMove: true, canSkip: true }], "today can move or be skipped");
   assert.equal(byDay.Sat[0].label, "run", "no focus: the slot's own text, not a mapped label");
   assert.deepEqual(byDay.Tue, []);
   assert.equal(nextWeek.heading, "Next week");
@@ -119,6 +119,16 @@ test("missing fields: no today means nothing can move; sessions without id or da
   assert.ok(data.weeks[0].days.every((d) => !d.canReceive));
 });
 
+test("a skipped session reads skipped, never done, and can neither move nor be skipped again", () => {
+  const source = reply();
+  // What a server sends for a skipped session; `isCompleted` true is the old reading of the same row.
+  source.programs[1].currentWeekSessions![2] = session("s3", "2026-11-19", "Tempo run", { isSkipped: true, isCompleted: true });
+  const data = buildWeekCardData(source, null);
+  assert.ok(data);
+  const thu = data.weeks[0].days[3].sessions[0];
+  assert.deepEqual(thu, { sessionId: "s3", label: "Tempo run", minutes: null, isCompleted: false, isSkipped: true, canMove: false, canSkip: false });
+});
+
 test("nothing to show means no card", () => {
   assert.equal(buildWeekCardData({ programs: [], message: "No program" }, null), null);
   assert.equal(buildWeekCardData({ today: "2026-11-19", programs: [{ kind: "manual_log", currentWeekSessions: [session("m", "2026-11-19", "Walk")] }] }, null), null);
@@ -132,10 +142,14 @@ test("routes and tools: open is a real handoff route; the move tool is the write
   const html = WEEK_CARD.html();
   assert.match(html, /card\.callTool\("card_reschedule_session", \{ sessionId: p\.sessionId, newDate: p\.to\.date \}\)/);
   assert.doesNotMatch(html, /modify_training_session|rescheduleSessions/, "the card never calls the model's write tool");
-  assert.equal(html.match(/card\.callTool\(/g)?.length, 1, "one tool call in the card");
+  assert.equal(WEEK_CARD_SKIP_TOOL, "card_skip_session");
+  assert.match(html, /card\.callTool\("card_skip_session", \{ sessionId: p\.sessionId \}\)/);
+  assert.doesNotMatch(html, /delete_session/, "a skip never deletes");
+  assert.equal(html.match(/card\.callTool\(/g)?.length, 2, "two tool calls in the card: move and skip");
   assert.equal(html.match(/confirmMove(?![A-Za-z])/g)?.length, 2, "confirmMove is defined once and bound only to the Confirm tap");
   assert.match(html, /\$\("confirm-yes"\)\.addEventListener\("click", confirmMove\)/);
-  assert.doesNotMatch(html, /\bSkip\b/, "no Skip action anywhere");
+  assert.match(html, /confirmSkip\(p\)/, "a skip is written only from the Confirm tap");
+  assert.ok(html.includes('el("button", "wk-move wk-skip", "Skip")'), "a Skip control on each open session");
   assert.match(html, /id="confirm-yes">Confirm</);
   assert.ok(html.includes('el("button", "wk-move", "Move")'), "a non-drag Move control");
   const CHATGPT = hostProfileFrom({ assistantClass: "chatgpt" }, {});

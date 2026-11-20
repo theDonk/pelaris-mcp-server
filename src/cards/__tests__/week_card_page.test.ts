@@ -170,3 +170,96 @@ test("a successful move sends no chat message; Tell the coach sends exactly one,
   );
   assert.equal(page.$("tell").shown, false);
 });
+
+const SKIPPED = { content: [{ type: "text", text: JSON.stringify({ skipped: [{ sessionId: "s1" }], message: "Session skipped." }) }] };
+
+/** Opens full screen and taps Skip on the Tempo run. Leaves the confirm panel open. */
+async function askToSkip(page: CardPage): Promise<void> {
+  page.$("rearrange").click();
+  await page.settle();
+  const skip = page.body.all().find((e) => e.classList.contains("wk-skip"));
+  assert.ok(skip, "a Skip button for the Tempo run");
+  assert.equal(skip.textContent, "Skip");
+  skip.click();
+  assert.ok(page.$("confirm").shown, "the confirm panel shows");
+}
+
+test("skip: nothing is sent until Confirm, then one tool call with the session only", async () => {
+  const page = await load({ host: stubHost(() => ({ result: SKIPPED })) });
+  await askToSkip(page);
+  assert.equal(page.$("confirm-title").textContent, "Skip Thursday Tempo run?");
+  assert.match(page.$("confirm-detail").textContent, /It stays in your plan, marked as skipped\./);
+  assert.equal(page.$("confirm-yes").textContent, "Skip session");
+  assert.equal(calls(page, "tools/call").length, 0, "the Skip button alone writes nothing");
+  page.$("confirm-yes").click();
+  page.$("confirm-yes").click(); // a double tap
+  await page.settle();
+  const tc = calls(page, "tools/call");
+  assert.equal(tc.length, 1, "sent once");
+  assert.deepEqual(JSON.parse(JSON.stringify(tc[0].params)), { name: "card_skip_session", arguments: { sessionId: "s1" } });
+  assert.equal(page.$("note").textContent, "Skipped: Tempo run, Thu 26 Nov");
+  assert.ok(!page.body.all().some((e) => e.classList.contains("wk-move")), "a skipped session has no Move or Skip");
+  assert.equal(calls(page, "ui/message").length, 0, "no model turn nobody asked for");
+  page.$("tell").click();
+  await page.settle();
+  const msgs = calls(page, "ui/message");
+  assert.equal(msgs.length, 1);
+  assert.equal(
+    JSON.stringify(msgs[0].params),
+    JSON.stringify({ role: "user", content: [{ type: "text", text: "I skipped my Tempo run on Thu 26 Nov in the week card." }] }),
+  );
+});
+
+test("skip: Cancel changes nothing and sends nothing", async () => {
+  const page = await load({ host: stubHost(() => ({ result: SKIPPED })) });
+  await askToSkip(page);
+  page.$("confirm-no").click();
+  await page.settle();
+  assert.equal(calls(page, "tools/call").length, 0);
+  assert.equal(page.$("note").textContent, "Nothing changed.");
+  assert.ok(page.body.all().some((e) => e.classList.contains("wk-skip")), "Skip is still offered");
+});
+
+test("skip, then a move: the confirm button reads Confirm again", async () => {
+  const page = await load({ host: stubHost(() => ({ result: MOVED })) });
+  await askToSkip(page);
+  page.$("confirm-no").click();
+  const move = page.body.all().find((e) => e.classList.contains("wk-move") && !e.classList.contains("wk-skip"));
+  assert.ok(move);
+  move.click();
+  const fri = page.$("picker-days").children.find((b) => b.textContent === "Fri 27 Nov");
+  assert.ok(fri);
+  fri.click();
+  assert.equal(page.$("confirm-yes").textContent, "Confirm");
+  page.$("confirm-yes").click();
+  await page.settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls(page, "tools/call")[0].params)), { name: "card_reschedule_session", arguments: { sessionId: "s1", newDate: "2026-11-27" } });
+});
+
+test("skip error: shown in the card, never sent again by any path", async () => {
+  let openaiCalls = 0;
+  const page = await load({
+    host: stubHost(() => ({ result: { isError: true, content: [{ type: "text", text: "Error: Session s1 is already skipped" }] } })),
+    openai: { callTool: () => { openaiCalls++; return {}; } },
+  });
+  await askToSkip(page);
+  page.$("confirm-yes").click();
+  await page.settle();
+  assert.equal(calls(page, "tools/call").length, 1);
+  assert.equal(calls(page, "ui/message").length, 0, "no chat message as a second try");
+  assert.equal(openaiCalls, 0, "no fallback transport");
+  assert.equal(page.$("note").textContent, "Session s1 is already skipped");
+});
+
+test("skip timeout: the still-checking note, no second send, and no way to repeat it", async () => {
+  const page = await load({ host: stubHost(() => "silent") });
+  await askToSkip(page);
+  page.$("confirm-yes").click();
+  await page.settle();
+  page.runTimers();
+  await page.settle();
+  assert.equal(page.$("note").textContent, WEEK_CARD_PENDING_NOTE);
+  assert.equal(calls(page, "tools/call").length, 1);
+  assert.equal(calls(page, "ui/message").length, 0);
+  assert.ok(!page.body.all().some((e) => e.classList.contains("wk-move")), "no Move or Skip for the session in doubt");
+});

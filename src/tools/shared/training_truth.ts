@@ -43,6 +43,8 @@ export interface TruthWeekSession {
   slotType: string | null;
   scheduledDate: string | null;
   isCompleted: boolean;
+  /** The session was skipped (it stays in the plan). Absent from an older server. */
+  isSkipped?: boolean;
   /** Whole minutes, only when the app stored a real length for the session. Mostly absent; never estimated. */
   durationMinutes?: number;
 }

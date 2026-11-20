@@ -55,6 +55,7 @@ export const TEST_FILES = [
   "dist/tools/user/__tests__/run_calculator.test.js",
   "dist/tools/user/__tests__/session_modify_mapping.test.js",
   "dist/tools/user/__tests__/card_reschedule_session.test.js",
+  "dist/tools/user/__tests__/card_skip_session.test.js",
   "dist/tools/user/__tests__/swap_exercise_core_input.test.js",
   "dist/tools/user/__tests__/cardio_calibration_and_intake_handoff.test.js",
   "dist/__tests__/server_info.test.js",

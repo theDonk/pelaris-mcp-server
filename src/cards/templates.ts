@@ -82,7 +82,7 @@ body{font:14px/1.45 var(--pc-font);color:var(--pc-text);min-width:280px}
 .pc-btn:focus-visible{outline:2px solid var(--pc-accent);outline-offset:2px}
 .pc-btn[aria-disabled="true"]{opacity:.55;cursor:default}
 .pc-note{font-size:12px;color:var(--pc-text-2);margin:8px 0 0;min-height:1em}
-.pc-hidden{display:none}
+.pc-hidden{display:none!important}
 `;
 
 /** What a card shows when it gets a payload it does not know (another card, another version). */

@@ -83,6 +83,7 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
       focus: s.focus,
       slotType: s.slotType,
       isCompleted: s.isCompleted,
+      isSkipped: s.isSkipped === true,
       scheduledDate: s.scheduledDate,
       // Only when the server sent a stored length (mostly absent); never estimated here.
       ...(typeof s.durationMinutes === "number" && Number.isFinite(s.durationMinutes) ? { durationMinutes: s.durationMinutes } : {}),

@@ -48,6 +48,7 @@ import { registerRunCalculator } from "./tools/user/run_calculator.js";
 import { registerGenerateProgram } from "./tools/user/generate_program.js";
 import { registerCompleteIntake } from "./tools/user/complete_intake.js";
 import { registerCardRescheduleSession, registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
+import { registerCardSkipSession } from "./tools/user/card_skip_session.js";
 import { registerLogWorkout } from "./tools/user/log_workout.js";
 import { registerSwapExercise } from "./tools/user/swap_exercise.js";
 import { registerUpdateUserProfile } from "./tools/user/update_user_profile.js";
@@ -280,6 +281,8 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     registerModifyTrainingSession(server);
     // The Week card's move (app-only; registered only for a host that draws cards).
     registerCardRescheduleSession(server);
+    // The Week card's skip (app-only; registered only for a host that draws cards).
+    registerCardSkipSession(server);
     registerLogWorkout(server);
     registerSwapExercise(server);
     registerUpdateUserProfile(server);
