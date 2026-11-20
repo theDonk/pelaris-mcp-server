@@ -51,6 +51,7 @@ the SHA-256 of the server URL, then `.claudemcpcontent.com`), so it is unset by 
 | Card | Tool | Shows | Actions |
 |---|---|---|---|
 | Week (`ui://pelaris/cards/week-v1.html`) | `get_active_program` | the primary program's week as seven tiles, Monday to Sunday (the session's own `focus`, else `slotType`, cut short by CSS; minutes only when the server sent a stored `durationMinutes`), the date range, a This week / Next week switch when next-week sessions came back. Full screen: the days as a list; a planned session dated today or later and not completed moves by drag or by its Move button (a day picker); a confirm panel shows the session and both dates before anything is written. No Skip. | Rearrange this week (full screen; Confirm calls `modify_training_session` with `rescheduleSessions: [{ sessionId, newDate }]`, updates the tiles from `moved`, shows the reason or `message` otherwise, then sends the chat a one-line note; with no card tool call it sends the request as a chat message), Open in Pelaris (signed link, `program` route) |
+| Debrief (`ui://pelaris/cards/debrief-v1.html`) | `get_weekly_debrief` | week label, "N of M sessions" with a plain bar, the bonus line, a record line only when `newPrs` has exactly one entry (stated as data, no unit: the tool gives none), next week's focus, the tagline. No headline win or watch line is picked in code (a judgement: the assistant's message carries it). An empty week gets no card. | Save as image (a square canvas picture: week, sessions, the record line, focus, tagline; no name, no account details; then shown in the card, and the action becomes Copy text), Open in Pelaris (signed link, `program` route) |
 | Session (`ui://pelaris/cards/session-v1.html`) | `get_session_details` | title, date, length, warm-up line (only blocks typed `warm_up`), main-set rows (sets x reps with load or RPE; cardio distance or time) | Start in Pelaris (signed one-tap link, route in `SESSION_CARD_START_ROUTE`), Swap an exercise (sends a chat message; the assistant runs `swap_exercise`, which asks before it changes anything) |
 
 ## Add a card
@@ -108,5 +109,9 @@ or streak, and keep the text reply complete on its own.
   the athlete first), whether ChatGPT honours `openai/widgetAccessible` on this server,
   whether a host reports `displayMode` back, and drag in a host's sandboxed frame on
   touch (the Move button is the path that does not need drag).
+- **Debrief card:** not drawn in a browser or a host yet. Not verified: whether any host
+  lets the sandboxed card download the picture (not claimed for ChatGPT), and whether
+  clipboard writes work there; the fallbacks are the picture shown in the card and a
+  select-to-copy note.
 - Units: rows show kilograms and metric distances; the athlete's preferred units are
   not read by this tool.

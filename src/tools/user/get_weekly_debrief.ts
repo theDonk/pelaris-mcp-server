@@ -28,6 +28,34 @@ import {
   type TruthDebrief,
   type TruthReader,
 } from "../shared/training_truth.js";
+import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
+import { cardsEnabled, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { DEBRIEF_CARD, DEBRIEF_CARD_OPEN_ROUTE, buildDebriefCardData } from "../../cards/debrief_card.js";
+
+type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
+
+/**
+ * Adds the Debrief card to a successful reply. The text stays exactly as it was; the
+ * card's data rides in the result's _meta. An empty week (a message, no metrics) gets
+ * no card. The one-tap link is minted only when a card is drawn, and any failure
+ * leaves the plain text reply.
+ */
+export async function withDebriefCard(
+  reply: TextReply,
+  result: Record<string, unknown>,
+  claims: HandoffClaimsLike | null | undefined,
+  mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+): Promise<TextReply> {
+  if (!cardsEnabled()) return reply;
+  try {
+    const data = buildDebriefCardData(result, null);
+    if (!data) return reply;
+    const openUrl = await mint(DEBRIEF_CARD_OPEN_ROUTE, claims).catch(() => null);
+    return withCard(reply, DEBRIEF_CARD, { ...data, openUrl });
+  } catch {
+    return reply;
+  }
+}
 
 /** The program truth this tool reads, injectable for tests. */
 export interface WeeklyDebriefDeps {
@@ -104,6 +132,7 @@ export function registerGetWeeklyDebrief(
           .describe("A date within the target week (YYYY-MM-DD). Defaults to the current week."),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true, title: "Get Weekly Debrief" },
+      ...(cardToolMeta(DEBRIEF_CARD) ? { _meta: cardToolMeta(DEBRIEF_CARD) } : {}),
     },
     async (params) => {
       const requestId = generateRequestId();
@@ -143,9 +172,11 @@ export function registerGetWeeklyDebrief(
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withDebriefCard(
+          { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] },
+          result,
+          claims,
+        );
       } catch (error) {
         logToolCall({
           requestId,

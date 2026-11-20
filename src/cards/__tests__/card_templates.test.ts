@@ -20,7 +20,10 @@ for (const card of CARDS) {
     assert.deepEqual(urls, []);
     assert.doesNotMatch(html, /<script[^>]*\bsrc=/i);
     assert.doesNotMatch(html, /<link\b/i);
-    assert.doesNotMatch(html, /@import|url\(/i);
+    // CSS may not load anything: no @import and no url() in the styles.
+    const styles = (html.match(/<style>[\s\S]*?<\/style>/g) ?? []).join("\n");
+    assert.doesNotMatch(styles, /@import|url\(/i);
+    assert.doesNotMatch(html, /@import/i);
     assert.doesNotMatch(html, /<(iframe|img|video|audio|object|embed)\b/i);
   });
 
