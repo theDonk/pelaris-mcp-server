@@ -23,7 +23,7 @@
  */
 
 import { defineCard } from "./card_shell.js";
-import { weekDateLabel } from "./week_card.js";
+import { dateLabelOf as dateLabel, obj, type Raw } from "./format.js";
 
 /** The line every view of the card shows, exactly. */
 export const BODY_CARD_ESTIMATE_LINE = "Measurements are estimates from the scan, not exact.";
@@ -59,15 +59,9 @@ export interface BodyCardData {
   openUrl: string | null;
 }
 
-type Raw = Record<string, unknown>;
-
 const KEYS = ["waistCm", "hipsCm", "shouldersCm"] as const;
 const LABELS: Record<(typeof KEYS)[number], string> = { waistCm: "Waist", hipsCm: "Hips", shouldersCm: "Shoulders" };
 const STOP_KEYS = ["waistCm", "hipsCm", "shouldersCm", "weightKg"] as const;
-
-function obj(v: unknown): Raw | null {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Raw) : null;
-}
 
 function positive(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null;
@@ -75,16 +69,6 @@ function positive(v: unknown): number | null {
 
 function finite(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10) / 10 : null;
-}
-
-/** "2026-11-15T08:00:00Z" to "Sun 15 Nov", or null. */
-function dateLabel(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v.trim());
-  if (!m) return null;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  if (Number.isNaN(d.getTime()) || d.getUTCDate() !== Number(m[3])) return null;
-  return weekDateLabel(`${m[1]}-${m[2]}-${m[3]}`);
 }
 
 /** A change from comparisonToPrevious: `{ value, direction }`, or a plain number. */
@@ -261,12 +245,9 @@ const BODY_CARD_SCRIPT = `
 (function(){
   "use strict";
   var card = window.PelarisCard;
-  var $ = function(id){ return document.getElementById(id); };
+  var $ = card.$, el = card.el, show = card.show, note = card.note;
   var data = null, full = false, pos = 0;
   var NAMES = { waistCm: "Waist", hipsCm: "Hips", shouldersCm: "Shoulders", weightKg: "Weight" };
-  function el(tag, cls, txt){ var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
-  function show(id, on){ $(id).classList.toggle("pc-hidden", !on); }
-  function note(t){ $("note").textContent = t || ""; }
   function num(n){ return typeof n === "number" && isFinite(n) ? String(Math.round(n * 10) / 10) : ""; }
   function unit(k){ return k === "weightKg" ? (data.weightUnit || "kg") : (data.lengthUnit || "cm"); }
   function signed(n, u){
@@ -341,36 +322,24 @@ const BODY_CARD_SCRIPT = `
     $("estimate").textContent = data.estimateLine || "";
     var canCompare = stops().length > 1;
     show("compare", canCompare && card.canFullscreen()); // only where the host offers full screen
-    var open = $("open");
-    var hasLink = typeof data.openUrl === "string" && /^https:\\/\\//.test(data.openUrl);
-    show("open", hasLink);
-    if (hasLink) open.setAttribute("href", data.openUrl); else open.setAttribute("href", "#");
+    card.setLink("open", data.openUrl, { hide: true });
     drawInline();
     if (full) drawFull();
     show("inline-view", !full); show("full-view", full);
   }
 
   function setFull(on){ full = !!on && stops().length > 1; if (full) pos = stops().length - 1; draw(); }
-  $("compare").addEventListener("click", function(){
-    card.requestFullscreen().then(function(ok){
-      setFull(true);
-      if (!ok) note("Comparing here. Your chat app kept the card in place.");
-      $("slider").focus();
-    });
-  });
-  $("done").addEventListener("click", function(){ setFull(false); note(""); card.requestInline(); });
   $("slider").addEventListener("input", function(){ pos = Number($("slider").value) || 0; drawFull(); });
   $("step-back").addEventListener("click", function(){ pos -= 1; drawFull(); });
   $("step-on").addEventListener("click", function(){ pos += 1; drawFull(); });
-  $("open").addEventListener("click", function(ev){
-    ev.preventDefault();
-    if (!data || typeof data.openUrl !== "string" || !/^https:\\/\\//.test(data.openUrl)) return;
-    card.openLink(data.openUrl).then(function(ok){ if (!ok) note("Open Pelaris to see your scans."); });
-  });
-  card.onContext(function(ctx){
-    if (ctx && ctx.displayMode === "fullscreen" && !full) setFull(true);
-    else if (ctx && ctx.displayMode === "inline" && full) setFull(false);
-    else if (data) draw();
+  card.wireLink("open", function(){ return data && data.openUrl; }, "Open Pelaris to see your scans.", { quiet: true });
+  // "Compare scans" shows only where the host offers full screen, so no in-card mode here.
+  card.fullScreen({
+    open: "compare", done: "done",
+    set: setFull, isFull: function(){ return full; },
+    opened: function(ok){ if (!ok) note("Comparing here. Your chat app kept the card in place."); $("slider").focus(); },
+    closed: function(){ note(""); },
+    refresh: function(){ if (data) draw(); }
   });
   card.onData(function(d){ data = d; full = false; draw(); });
 })();

@@ -18,11 +18,9 @@ import { plainDay } from "../shared/training_truth.js";
 import { mintSignedEntryLink } from "../shared/entry_links.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { bridgeFailureResponse } from "../shared/core_adapter.js";
-import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { attachCardNow, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
 import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { BODY_CARD, buildBodyCardData } from "../../cards/body_card.js";
-
-type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
 
 /**
  * Adds the Body card to a successful reply. The text stays exactly as it was; the card's
@@ -30,17 +28,11 @@ type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boo
  * means no card. Any failure leaves the plain text reply. Pure (exported for tests).
  */
 export function withBodyCard(
-  reply: TextReply,
+  reply: CardReply,
   result: Record<string, unknown>,
   host: HostProfile = currentHostProfile(),
-): TextReply {
-  if (!cardsOn(host)) return reply;
-  try {
-    const data = buildBodyCardData(result, typeof result.scanLink === "string" ? result.scanLink : null);
-    return data ? withCard(reply, BODY_CARD, { ...data }, process.env, host) : reply;
-  } catch {
-    return reply;
-  }
+): CardReply {
+  return attachCardNow(reply, BODY_CARD, () => buildBodyCardData(result, typeof result.scanLink === "string" ? result.scanLink : null), host);
 }
 
 /**

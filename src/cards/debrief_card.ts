@@ -22,6 +22,7 @@
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
 import { defineCard } from "./card_shell.js";
+import { MONTHS, text, type Raw } from "./format.js";
 
 /** Where "Open in Pelaris" lands. */
 export const DEBRIEF_CARD_OPEN_ROUTE: HandoffRoute = "program";
@@ -50,16 +51,8 @@ export interface DebriefCardRecord {
   value: string;
 }
 
-type Raw = Record<string, unknown>;
-
-const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-
 function count(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function plainNumber(n: number): string {
@@ -88,7 +81,7 @@ export function recordRowsFrom(newPrs: unknown): DebriefCardRecord[] {
 
 function fileNameFor(weekStarting: unknown): string {
   const m = typeof weekStarting === "string" ? /^(\d{4})-(\d{2})-(\d{2})/.exec(weekStarting) : null;
-  return m ? `pelaris-week-${Number(m[3])}-${MONTHS[Number(m[2]) - 1]}.png` : "pelaris-week.png";
+  return m ? `pelaris-week-${Number(m[3])}-${MONTHS[Number(m[2]) - 1]?.toLowerCase()}.png` : "pelaris-week.png";
 }
 
 /**
@@ -171,11 +164,8 @@ const DEBRIEF_CARD_SCRIPT = `
 (function(){
   "use strict";
   var card = window.PelarisCard;
-  var $ = function(id){ return document.getElementById(id); };
+  var $ = card.$, el = card.el, text = card.text, show = card.show, note = card.note;
   var d = null, copyMode = false;
-  function text(id, v){ $(id).textContent = v || ""; }
-  function show(id, on){ $(id).classList.toggle("pc-hidden", !on); }
-  function note(t){ text("note", t); }
   function draw(data){
     d = data;
     text("week", d.weekLabel);
@@ -191,17 +181,14 @@ const DEBRIEF_CARD_SCRIPT = `
     var recs = Array.isArray(d.records) ? d.records : [];
     var list = $("records"); list.replaceChildren();
     recs.forEach(function(r){
-      var li = document.createElement("li"); li.className = "pc-row";
-      var a = document.createElement("span"); a.textContent = r.exercise;
-      var b = document.createElement("span"); b.textContent = r.value;
-      li.append(a, b); list.append(li);
+      var li = el("li", "pc-row");
+      li.append(el("span", null, r.exercise), el("span", null, r.value));
+      list.append(li);
     });
     show("record-section", recs.length > 0);
     text("focus", d.focus); show("focus-section", !!d.focus);
     text("tagline", d.tagline);
-    var open = $("open");
-    if (typeof d.openUrl === "string" && /^https:\\/\\//.test(d.openUrl)) { open.setAttribute("href", d.openUrl); open.removeAttribute("aria-disabled"); }
-    else { open.setAttribute("href", "#"); open.setAttribute("aria-disabled", "true"); }
+    card.setLink("open", d.openUrl);
   }
 
   function wrap(ctx, str, maxWidth){
@@ -289,11 +276,7 @@ const DEBRIEF_CARD_SCRIPT = `
     copyMode = true; $("save").textContent = "Copy text";
     note(url ? "If no file was saved, your chat app blocks downloads from cards: press and hold the picture, or copy the text." : "Your chat app cannot draw the picture here. Copy the text instead.");
   });
-  $("open").addEventListener("click", function(ev){
-    ev.preventDefault();
-    if (!d || typeof d.openUrl !== "string" || !/^https:\\/\\//.test(d.openUrl)) { note("Open Pelaris to see your week."); return; }
-    card.openLink(d.openUrl).then(function(ok){ if (!ok) note("Open Pelaris to see your week."); });
-  });
+  card.wireLink("open", function(){ return d && d.openUrl; }, "Open Pelaris to see your week.");
   card.onData(draw);
 })();
 `;

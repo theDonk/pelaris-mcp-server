@@ -12,6 +12,7 @@
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
 import { defineCard } from "./card_shell.js";
+import { dateLabelOf, records as asRecords, text } from "./format.js";
 
 /**
  * Where "Start in Pelaris" lands. Today the Train tab; change this one constant when a
@@ -38,17 +39,10 @@ export interface SessionCardData {
   swapPrompt: string;
 }
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2026-11-20" to "Fri 20 Nov". Anything else (no reliable calendar day) gives null. */
+/** "2026-11-20" to "Fri 20 Nov". Anything else (a time on it, or no reliable calendar day) gives null. */
 export function formatSessionDate(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!m) return null;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  if (Number.isNaN(d.getTime()) || d.getUTCDate() !== Number(m[3])) return null;
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return null;
+  return dateLabelOf(value);
 }
 
 function num(value: unknown): number | null {
@@ -115,14 +109,8 @@ export function describeSets(sets: Array<Record<string, unknown>>): string {
   return count > 1 ? `${count} sets` : "";
 }
 
-function asRecords(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value)
-    ? value.filter((v): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v))
-    : [];
-}
-
 function exerciseName(ex: Record<string, unknown>): string | null {
-  return typeof ex.exerciseName === "string" && ex.exerciseName.trim() ? ex.exerciseName.trim() : null;
+  return text(ex.exerciseName);
 }
 
 /**
@@ -157,8 +145,7 @@ export function buildSessionCardData(
 
   if (rows.length === 0 && warmUpNames.length === 0) return null;
 
-  const title =
-    typeof session.title === "string" && session.title.trim() ? session.title.trim() : "Your session";
+  const title = text(session.title) ?? "Your session";
   const minutes = num(session.durationMinutes);
 
   return {
@@ -199,10 +186,8 @@ const SESSION_CARD_SCRIPT = `
 (function(){
   "use strict";
   var card = window.PelarisCard;
-  var $ = function(id){ return document.getElementById(id); };
+  var $ = card.$, el = card.el, text = card.text, show = card.show, note = card.note;
   var current = null;
-  function text(id, value){ $(id).textContent = value || ""; }
-  function show(id, on){ $(id).classList.toggle("pc-hidden", !on); }
   function draw(d){
     current = d;
     text("title", d.title || "Your session");
@@ -214,32 +199,18 @@ const SESSION_CARD_SCRIPT = `
     var list = $("rows");
     list.replaceChildren();
     (Array.isArray(d.rows) ? d.rows : []).forEach(function(r){
-      var li = document.createElement("li"); li.className = "pc-row";
-      var a = document.createElement("span"); a.textContent = r.name || "";
-      var b = document.createElement("span"); b.textContent = r.detail || "";
-      li.append(a, b); list.append(li);
+      var li = el("li", "pc-row");
+      li.append(el("span", null, r.name || ""), el("span", null, r.detail || ""));
+      list.append(li);
     });
     show("main-section", list.children.length > 0);
-    var start = $("start");
-    if (typeof d.startUrl === "string" && /^https:\\/\\//.test(d.startUrl)) {
-      start.setAttribute("href", d.startUrl); start.removeAttribute("aria-disabled");
-    } else {
-      start.setAttribute("href", "#"); start.setAttribute("aria-disabled", "true");
-    }
+    card.setLink("start", d.startUrl);
   }
-  $("start").addEventListener("click", function(ev){
-    ev.preventDefault();
-    if (!current || typeof current.startUrl !== "string" || !/^https:\\/\\//.test(current.startUrl)) {
-      text("note", "Open Pelaris to start this session."); return;
-    }
-    card.openLink(current.startUrl).then(function(ok){
-      if (!ok) text("note", "Open Pelaris to start this session.");
-    });
-  });
+  card.wireLink("start", function(){ return current && current.startUrl; }, "Open Pelaris to start this session.");
   $("swap").addEventListener("click", function(){
     var prompt = (current && current.swapPrompt) || "I'd like to swap an exercise in this session.";
     card.sendMessage(prompt).then(function(ok){
-      text("note", ok ? "" : "Ask in the chat to swap an exercise.");
+      note(ok ? "" : "Ask in the chat to swap an exercise.");
     });
   });
   card.onData(draw);

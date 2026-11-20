@@ -24,6 +24,7 @@
 
 import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { HandoffClaimsLike, HandoffRoute } from "../tools/shared/entry_links.js";
 import { renderCardPage, type CardPageParts } from "./templates.js";
 import {
   CARDS_UI_DOMAIN_ENV,
@@ -260,4 +261,56 @@ export function withCard<T extends { content: unknown[]; isError?: boolean; _met
 /** The envelope a card's page reads: `{ card, v, data }`, with only the allow-listed fields in `data`. */
 export function cardPayload(card: CardDefinition, data: Record<string, unknown>): CardPayload {
   return { card: card.id, v: card.v, data: pickCardFields(data, card.fields as CardAllowList) };
+}
+
+/** The text reply a card-carrying tool returns: its content is never changed by a card. */
+export type CardReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
+
+/** Mints a signed one-tap link for a route (the shape of `mintSignedEntryLink`). */
+export type CardLinkMint = (route: HandoffRoute, claims: HandoffClaimsLike | null | undefined) => Promise<string | null>;
+
+/**
+ * Adds a card to a successful reply, with no link to mint. `build` maps the tool's result to
+ * the card's data, or null for "no card". The text stays exactly as it was, and any failure
+ * leaves the plain reply. No card work at all for a text-only host or with the switch off.
+ */
+export function attachCardNow<T, R extends CardReply>(
+  reply: R,
+  card: CardDefinition<T>,
+  build: () => T | null,
+  host: HostProfile = currentHostProfile(),
+): R {
+  if (!cardsOn(host) || reply.isError) return reply;
+  try {
+    const data = build();
+    return data ? withCard(reply, card, { ...data }, process.env, host) : reply;
+  } catch {
+    return reply;
+  }
+}
+
+/**
+ * Adds a card to a successful reply, with a signed one-tap link in the field `link.field`.
+ * The link is minted only when the card will be drawn (cards on for this host, a successful
+ * reply, and data to show); a failed mint still draws the card, with the link field null.
+ */
+export async function attachCard<T, R extends CardReply>(
+  reply: R,
+  card: CardDefinition<T>,
+  opts: {
+    build: () => T | null;
+    link: { field: keyof T & string; route: HandoffRoute; claims: HandoffClaimsLike | null | undefined; mint: CardLinkMint };
+    host?: HostProfile;
+  },
+): Promise<R> {
+  const host = opts.host ?? currentHostProfile();
+  if (!cardsOn(host) || reply.isError) return reply;
+  try {
+    const data = opts.build();
+    if (!data) return reply;
+    const url = await opts.link.mint(opts.link.route, opts.link.claims).catch(() => null);
+    return withCard(reply, card, { ...data, [opts.link.field]: url }, process.env, host);
+  } catch {
+    return reply;
+  }
 }

@@ -25,6 +25,10 @@
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
 import { defineCard } from "./card_shell.js";
+import { WEEKDAYS, WEEKDAY_NAMES, addDays, dayKey, mondayOf, records, shortDateLabel, text, toDate, type Raw } from "./format.js";
+
+/** Kept for callers and tests: the shared date helpers, under the names this card first exported. */
+export { mondayOf, shortDateLabel as weekDateLabel };
 
 /** Where "Open in Pelaris" lands. */
 export const WEEK_CARD_OPEN_ROUTE: HandoffRoute = "program";
@@ -69,60 +73,8 @@ export interface WeekCardData {
   openUrl: string | null;
 }
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-type Raw = Record<string, unknown>;
-
-function dayKey(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
-  if (!m) return null;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  if (Number.isNaN(d.getTime()) || d.getUTCDate() !== Number(m[3])) return null;
-  return `${m[1]}-${m[2]}-${m[3]}`;
-}
-
-function toDate(key: string): Date {
-  const [y, m, d] = key.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
-function keyOf(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function addDays(key: string, n: number): string {
-  const d = toDate(key);
-  d.setUTCDate(d.getUTCDate() + n);
-  return keyOf(d);
-}
-
-/** The Monday on or before a day (weeks run Monday to Sunday). */
-export function mondayOf(key: string): string {
-  const dow = toDate(key).getUTCDay();
-  return addDays(key, dow === 0 ? -6 : 1 - dow);
-}
-
-/** "2026-11-23" to "Mon 23 Nov". */
-export function weekDateLabel(key: string): string {
-  const d = toDate(key);
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 function wholeMinutes(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
-}
-
-function records(value: unknown): Raw[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is Raw => v !== null && typeof v === "object" && !Array.isArray(v))
-    : [];
 }
 
 function buildWeek(
@@ -140,7 +92,7 @@ function buildWeek(
       date,
       dayShort: WEEKDAYS[d.getUTCDay()],
       dayName: WEEKDAY_NAMES[d.getUTCDay()],
-      dateLabel: weekDateLabel(date),
+      dateLabel: shortDateLabel(date),
       canReceive: today != null && date >= today,
       sessions: [],
     });
@@ -166,7 +118,7 @@ function buildWeek(
     key,
     heading: key === "this" ? "This week" : "Next week",
     weekLine,
-    rangeLabel: `${weekDateLabel(monday)} to ${weekDateLabel(sunday)}`,
+    rangeLabel: `${shortDateLabel(monday)} to ${shortDateLabel(sunday)}`,
     days,
   };
 }
@@ -290,12 +242,9 @@ const WEEK_CARD_SCRIPT = `
 (function(){
   "use strict";
   var card = window.PelarisCard;
-  var $ = function(id){ return document.getElementById(id); };
+  var $ = card.$, el = card.el, show = card.show, note = card.note;
   var tellText = null;
-  var data = null, weekIdx = 0, full = false, inPlace = false, pending = null, movingId = null, busy = false, dragId = null;
-  function el(tag, cls, txt){ var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
-  function show(id, on){ $(id).classList.toggle("pc-hidden", !on); }
-  function note(t){ $("note").textContent = t || ""; }
+  var data = null, weekIdx = 0, full = false, pending = null, movingId = null, busy = false, dragId = null;
   function week(){ return data && Array.isArray(data.weeks) ? (data.weeks[weekIdx] || data.weeks[0]) : null; }
   function mins(s){ return typeof s.minutes === "number" ? s.minutes + " min" : ""; }
   function find(id){
@@ -370,9 +319,7 @@ const WEEK_CARD_SCRIPT = `
     $("rearrange").textContent = !card.canFullscreen() ? "Move a session" : weekIdx === 1 ? "Rearrange next week" : "Rearrange this week";
     drawTiles(w); drawDays(w);
     show("inline-view", !full); show("full-view", full);
-    var open = $("open");
-    if (typeof data.openUrl === "string" && /^https:\\/\\//.test(data.openUrl)) { open.setAttribute("href", data.openUrl); open.removeAttribute("aria-disabled"); }
-    else { open.setAttribute("href", "#"); open.setAttribute("aria-disabled", "true"); }
+    card.setLink("open", data.openUrl);
   }
   function closePanels(){ pending = null; movingId = null; show("picker", false); show("confirm", false); }
 
@@ -465,16 +412,7 @@ const WEEK_CARD_SCRIPT = `
     }).then(function(){ busy = false; pending = null; draw(); }, function(){ busy = false; pending = null; note("That session could not move."); draw(); });
   }
 
-  function setFull(on){ full = !!on; if (!full) { closePanels(); inPlace = false; } draw(); }
-  $("rearrange").addEventListener("click", function(){
-    if (!card.canFullscreen()) { inPlace = true; setFull(true); return; }
-    card.requestFullscreen().then(function(ok){
-      inPlace = !ok;
-      setFull(true);
-      if (!ok) note("Rearranging here. Your chat app kept the card in place.");
-    });
-  });
-  $("done").addEventListener("click", function(){ var wasInPlace = inPlace; setFull(false); if (!wasInPlace) card.requestInline(); });
+  function setFull(on){ full = !!on; if (!full) closePanels(); draw(); }
   $("sw-this").addEventListener("click", function(){ weekIdx = 0; closePanels(); draw(); });
   $("sw-next").addEventListener("click", function(){ weekIdx = 1; closePanels(); draw(); });
   $("picker-cancel").addEventListener("click", function(){ closePanels(); note(""); });
@@ -485,15 +423,13 @@ const WEEK_CARD_SCRIPT = `
     tellText = null; show("tell", false);
     card.sendMessage(t).then(function(ok){ if (!ok) note("Tell the coach in the chat."); });
   });
-  $("open").addEventListener("click", function(ev){
-    ev.preventDefault();
-    if (!data || typeof data.openUrl !== "string" || !/^https:\\/\\//.test(data.openUrl)) { note("Open Pelaris to see your week."); return; }
-    card.openLink(data.openUrl).then(function(ok){ if (!ok) note("Open Pelaris to see your week."); });
-  });
-  card.onContext(function(ctx){
-    if (ctx && ctx.displayMode === "fullscreen" && !full) { inPlace = false; setFull(true); }
-    else if (ctx && ctx.displayMode === "inline" && full && !inPlace) setFull(false);
-    else if (data) draw();
+  card.wireLink("open", function(){ return data && data.openUrl; }, "Open Pelaris to see your week.");
+  // Where the host offers no full screen, or keeps the card inline, the move happens in the card.
+  card.fullScreen({
+    open: "rearrange", done: "done", inPlace: true,
+    set: setFull, isFull: function(){ return full; },
+    opened: function(ok){ if (!ok) note("Rearranging here. Your chat app kept the card in place."); },
+    refresh: function(){ if (data) draw(); }
   });
   card.onData(function(d){ data = d; weekIdx = 0; tellText = null; show("tell", false); draw(); });
 })();

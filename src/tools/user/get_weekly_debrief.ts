@@ -29,11 +29,9 @@ import {
   type TruthReader,
 } from "../shared/training_truth.js";
 import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
-import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { attachCard, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
 import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { DEBRIEF_CARD, DEBRIEF_CARD_OPEN_ROUTE, buildDebriefCardData } from "../../cards/debrief_card.js";
-
-type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
 
 /**
  * Adds the Debrief card to a successful reply. The text stays exactly as it was; the
@@ -42,22 +40,17 @@ type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boo
  * leaves the plain text reply.
  */
 export async function withDebriefCard(
-  reply: TextReply,
+  reply: CardReply,
   result: Record<string, unknown>,
   claims: HandoffClaimsLike | null | undefined,
   mint: typeof mintSignedEntryLink = mintSignedEntryLink,
   host: HostProfile = currentHostProfile(),
-): Promise<TextReply> {
-  // No card work at all (no link minted) for a text-only host or with the switch off.
-  if (!cardsOn(host)) return reply;
-  try {
-    const data = buildDebriefCardData(result, null);
-    if (!data) return reply;
-    const openUrl = await mint(DEBRIEF_CARD_OPEN_ROUTE, claims).catch(() => null);
-    return withCard(reply, DEBRIEF_CARD, { ...data, openUrl }, process.env, host);
-  } catch {
-    return reply;
-  }
+): Promise<CardReply> {
+  return attachCard(reply, DEBRIEF_CARD, {
+    build: () => buildDebriefCardData(result, null),
+    link: { field: "openUrl", route: DEBRIEF_CARD_OPEN_ROUTE, claims, mint },
+    host,
+  });
 }
 
 /** The program truth this tool reads, injectable for tests. */

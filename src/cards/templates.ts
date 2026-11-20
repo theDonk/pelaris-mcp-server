@@ -274,7 +274,65 @@ export const CARD_BRIDGE_JS = `
     return (!host.connected && o && typeof o.requestDisplayMode === "function") ? ["inline", "fullscreen"] : ["inline"];
   }
 
-  window.PelarisCard = {
+  // ── Page helpers every card shares ──────────────────────────────────────────
+  function byId(id){ return document.getElementById(id); }
+  function isHttps(url){ return typeof url === "string" && /^https:\\/\\//.test(url); }
+  var api;
+
+  api = window.PelarisCard = {
+    // DOM: by id; a new element with a class and text; show or hide; the card's #note line.
+    $: byId,
+    el: function(tag, cls, txt){ var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; },
+    text: function(id, value){ byId(id).textContent = value || ""; },
+    show: function(id, on){ byId(id).classList.toggle("pc-hidden", !on); },
+    note: function(t){ byId("note").textContent = t || ""; },
+    isHttps: isHttps,
+    // "Open in Pelaris": an https link only. Sets the link's href (a missing link is
+    // aria-disabled, or hidden with { hide: true }).
+    setLink: function(id, url, opts){
+      var a = byId(id), ok = isHttps(url);
+      if (opts && opts.hide) { api.show(id, ok); a.setAttribute("href", ok ? url : "#"); return; }
+      if (ok) { a.setAttribute("href", url); a.removeAttribute("aria-disabled"); }
+      else { a.setAttribute("href", "#"); a.setAttribute("aria-disabled", "true"); }
+    },
+    // The click: opens the link through the host; shows \`failNote\` when it cannot (and when
+    // there is no link, unless { quiet: true }).
+    wireLink: function(id, getUrl, failNote, opts){
+      byId(id).addEventListener("click", function(ev){
+        ev.preventDefault();
+        var url = getUrl();
+        if (!isHttps(url)) { if (!(opts && opts.quiet)) api.note(failNote); return; }
+        api.openLink(url).then(function(ok){ if (!ok) api.note(failNote); });
+      });
+    },
+    // The full-screen toggle: \`open\` asks the host for full screen, \`done\` goes back inline,
+    // and the host's own display mode changes are followed. o.set(on) draws the card's view;
+    // o.isFull() says which view is up. With o.inPlace, the full view opens in the card
+    // itself where the host offers no full screen or keeps the card inline, and Done then
+    // asks nothing of the host. o.opened(ok) runs after the host answers; o.closed() after Done;
+    // o.refresh() on any other context change.
+    fullScreen: function(o){
+      var inPlace = false;
+      function enter(place){ inPlace = !!place; o.set(true); }
+      function leave(){ inPlace = false; o.set(false); }
+      byId(o.open).addEventListener("click", function(){
+        if (o.inPlace && !api.canFullscreen()) { enter(true); return; }
+        api.requestFullscreen().then(function(ok){
+          enter(o.inPlace && !ok);
+          if (o.opened) o.opened(ok);
+        });
+      });
+      byId(o.done).addEventListener("click", function(){
+        var wasInPlace = inPlace; leave();
+        if (o.closed) o.closed();
+        if (!wasInPlace) api.requestInline();
+      });
+      api.onContext(function(ctx){
+        if (ctx && ctx.displayMode === "fullscreen" && !o.isFull()) enter(false);
+        else if (ctx && ctx.displayMode === "inline" && o.isFull() && !inPlace) leave();
+        else if (o.refresh) o.refresh();
+      });
+    },
     onData: function(fn){ listeners.push(fn); if (lastData) fn(lastData); },
     onContext: function(fn){ contextListeners.push(fn); fn(host.context); },
     hostContext: function(){ return host.context; },

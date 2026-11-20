@@ -15,11 +15,9 @@ import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { sessionSourcesFromLinkedEntries } from "../shared/session_sources.js";
 import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
-import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { attachCard, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
 import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { SESSION_CARD, SESSION_CARD_START_ROUTE, buildSessionCardData } from "../../cards/session_card.js";
-
-type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
 
 /**
  * Adds the Session card to a successful reply. The text stays exactly as it was; the
@@ -27,22 +25,17 @@ type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boo
  * is drawn, and any failure leaves the plain text reply.
  */
 export async function withSessionCard(
-  reply: TextReply,
+  reply: CardReply,
   session: Record<string, unknown>,
   claims: HandoffClaimsLike | null | undefined,
   mint: typeof mintSignedEntryLink = mintSignedEntryLink,
   host: HostProfile = currentHostProfile(),
-): Promise<TextReply> {
-  // No card work at all (no link minted) for a text-only host or with the switch off.
-  if (!cardsOn(host)) return reply;
-  try {
-    const data = buildSessionCardData(session, null);
-    if (!data) return reply;
-    const startUrl = await mint(SESSION_CARD_START_ROUTE, claims).catch(() => null);
-    return withCard(reply, SESSION_CARD, { ...data, startUrl }, process.env, host);
-  } catch {
-    return reply;
-  }
+): Promise<CardReply> {
+  return attachCard(reply, SESSION_CARD, {
+    build: () => buildSessionCardData(session, null),
+    link: { field: "startUrl", route: SESSION_CARD_START_ROUTE, claims, mint },
+    host,
+  });
 }
 
 export function mapDiarySessionSet(s: Record<string, unknown>): Record<string, unknown> {

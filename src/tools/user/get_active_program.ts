@@ -20,7 +20,7 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
 import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
-import { cardsOn, cardToolMeta, withCard } from "../../cards/card_shell.js";
+import { attachCard, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
 import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 import { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, buildWeekCardData } from "../../cards/week_card.js";
 import {
@@ -36,30 +36,23 @@ import {
 
 type Raw = Record<string, unknown>;
 
-type TextReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean; _meta?: Record<string, unknown> };
-
 /**
  * Adds the Week card to a successful reply. The text stays exactly as it was; the card's
  * data rides in the result's _meta. The one-tap link is minted only when a card is
  * drawn, and any failure leaves the plain text reply.
  */
 export async function withWeekCard(
-  reply: TextReply,
+  reply: CardReply,
   result: Record<string, unknown>,
   claims: HandoffClaimsLike | null | undefined,
   mint: typeof mintSignedEntryLink = mintSignedEntryLink,
   host: HostProfile = currentHostProfile(),
-): Promise<TextReply> {
-  // No card work at all (no link minted) for a text-only host or with the switch off.
-  if (!cardsOn(host)) return reply;
-  try {
-    const data = buildWeekCardData(result, null);
-    if (!data) return reply;
-    const openUrl = await mint(WEEK_CARD_OPEN_ROUTE, claims).catch(() => null);
-    return withCard(reply, WEEK_CARD, { ...data, openUrl }, process.env, host);
-  } catch {
-    return reply;
-  }
+): Promise<CardReply> {
+  return attachCard(reply, WEEK_CARD, {
+    build: () => buildWeekCardData(result, null),
+    link: { field: "openUrl", route: WEEK_CARD_OPEN_ROUTE, claims, mint },
+    host,
+  });
 }
 
 /** The reads this tool makes, injectable for tests. */
