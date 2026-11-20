@@ -4,7 +4,9 @@
  * Inline: Monday to Sunday tiles (each with the session's own focus or slot text,
  * shortened by CSS, and minutes only when the server stored a length), the date range,
  * and two actions: "Rearrange this week" (asks the host for full screen) and
- * "Open in Pelaris" (the signed one-tap link to the program route).
+ * "Open in Pelaris" (the signed one-tap link to the program route). Where the host's
+ * `availableDisplayModes` does not offer full screen, the first action is "Move a
+ * session" instead, and the move view and day picker open in the card itself.
  *
  * Full screen: the days as a list. A planned session dated today or later and not yet
  * completed can move to another day of that week, by drag or by its "Move" button (a
@@ -285,7 +287,7 @@ const WEEK_CARD_SCRIPT = `
   "use strict";
   var card = window.PelarisCard;
   var $ = function(id){ return document.getElementById(id); };
-  var data = null, weekIdx = 0, full = false, pending = null, movingId = null, busy = false, dragId = null;
+  var data = null, weekIdx = 0, full = false, inPlace = false, pending = null, movingId = null, busy = false, dragId = null;
   function el(tag, cls, txt){ var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function show(id, on){ $(id).classList.toggle("pc-hidden", !on); }
   function note(t){ $("note").textContent = t || ""; }
@@ -359,7 +361,8 @@ const WEEK_CARD_SCRIPT = `
     show("switch", two);
     $("sw-this").setAttribute("aria-pressed", String(weekIdx === 0));
     $("sw-next").setAttribute("aria-pressed", String(weekIdx === 1));
-    $("rearrange").textContent = weekIdx === 1 ? "Rearrange next week" : "Rearrange this week";
+    // Where the host offers no full screen, the move happens in the card itself.
+    $("rearrange").textContent = !card.canFullscreen() ? "Move a session" : weekIdx === 1 ? "Rearrange next week" : "Rearrange this week";
     drawTiles(w); drawDays(w);
     show("inline-view", !full); show("full-view", full);
     var open = $("open");
@@ -455,14 +458,16 @@ const WEEK_CARD_SCRIPT = `
     }).then(function(){ busy = false; pending = null; draw(); }, function(){ busy = false; pending = null; note("That session could not move."); draw(); });
   }
 
-  function setFull(on){ full = !!on; if (!full) closePanels(); draw(); }
+  function setFull(on){ full = !!on; if (!full) { closePanels(); inPlace = false; } draw(); }
   $("rearrange").addEventListener("click", function(){
+    if (!card.canFullscreen()) { inPlace = true; setFull(true); return; }
     card.requestFullscreen().then(function(ok){
+      inPlace = !ok;
       setFull(true);
       if (!ok) note("Rearranging here. Your chat app kept the card in place.");
     });
   });
-  $("done").addEventListener("click", function(){ setFull(false); card.requestInline(); });
+  $("done").addEventListener("click", function(){ var wasInPlace = inPlace; setFull(false); if (!wasInPlace) card.requestInline(); });
   $("sw-this").addEventListener("click", function(){ weekIdx = 0; closePanels(); draw(); });
   $("sw-next").addEventListener("click", function(){ weekIdx = 1; closePanels(); draw(); });
   $("picker-cancel").addEventListener("click", function(){ closePanels(); note(""); });
@@ -474,8 +479,9 @@ const WEEK_CARD_SCRIPT = `
     card.openLink(data.openUrl).then(function(ok){ if (!ok) note("Open Pelaris to see your week."); });
   });
   card.onContext(function(ctx){
-    if (ctx && ctx.displayMode === "fullscreen" && !full) setFull(true);
-    else if (ctx && ctx.displayMode === "inline" && full) setFull(false);
+    if (ctx && ctx.displayMode === "fullscreen" && !full) { inPlace = false; setFull(true); }
+    else if (ctx && ctx.displayMode === "inline" && full && !inPlace) setFull(false);
+    else if (data) draw();
   });
   card.onData(function(d){ data = d; weekIdx = 0; draw(); });
 })();

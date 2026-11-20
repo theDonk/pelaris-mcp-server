@@ -3,8 +3,9 @@
  *
  * Inline: the latest scan's date; waist, hips and shoulders with the change since the
  * previous scan; the shoulder-to-waist ratio when the tool returned it; and two actions:
- * "Compare scans" (asks the host for full screen) and "Open in Pelaris" (the tool's own
- * signed scan link; no link, no button).
+ * "Compare scans" (asks the host for full screen; shown only where the host's
+ * `availableDisplayModes` offers it) and "Open in Pelaris" (the tool's own signed scan
+ * link; no link, no button).
  *
  * Full screen: a slider with one stop per scan, oldest at the left and newest at the
  * right. With the tool's `history` there is a stop per scan in it; without it, two stops:
@@ -340,7 +341,7 @@ const BODY_CARD_SCRIPT = `
     $("since").textContent = data.previousLabel ? "Changes since your previous scan, " + data.previousLabel : "";
     $("estimate").textContent = data.estimateLine || "";
     var canCompare = stops().length > 1;
-    show("compare", canCompare);
+    show("compare", canCompare && card.canFullscreen()); // only where the host offers full screen
     var open = $("open");
     var hasLink = typeof data.openUrl === "string" && /^https:\\/\\//.test(data.openUrl);
     show("open", hasLink);
@@ -370,6 +371,7 @@ const BODY_CARD_SCRIPT = `
   card.onContext(function(ctx){
     if (ctx && ctx.displayMode === "fullscreen" && !full) setFull(true);
     else if (ctx && ctx.displayMode === "inline" && full) setFull(false);
+    else if (data) draw();
   });
   card.onData(function(d){ data = d; full = false; draw(); });
 })();

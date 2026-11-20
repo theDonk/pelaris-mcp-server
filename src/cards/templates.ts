@@ -98,7 +98,9 @@ body{font:14px/1.45 var(--pc-font);color:var(--pc-text);min-width:280px}
  *   tool's result object (or true when a path gave none back), false when no path exists,
  *   "pending" when the host did not answer in time; a host error is an isError result
  * - requestFullscreen() / requestInline(): `ui/request-display-mode`, else
- *   `window.openai.requestDisplayMode`
+ *   `window.openai.requestDisplayMode`; resolve to whether the host set that mode
+ * - canFullscreen(): whether the host offers full screen (`hostContext.availableDisplayModes`)
+ * - sendMessage and openLink resolve to false on an `isError` result
  * A fallback runs only when there is no host connection or the host answers
  * method-not-found (-32601), never after a timeout or an error, so nothing is sent twice.
  * - onContext(fn): called with the host context on connect and on every change
@@ -236,10 +238,23 @@ export const CARD_BRIDGE_JS = `
       function(v){ return !(v && typeof v === "object" && v.isError === true); },
       function(){ return false; });
   }
+  // Resolves to whether the host actually set the mode it was asked for (the result's
+  // \`mode\` is the mode the host chose, which may not be the one requested).
   function displayMode(mode){
-    return attempt(
+    return primaryOr(
       function(){ return request("ui/request-display-mode", { mode: mode }); },
-      function(){ return openaiHost.displayMode(mode); });
+      function(){ return openaiHost.displayMode(mode); },
+      function(v){ return (v && typeof v === "object" && typeof v.mode === "string") ? v.mode === mode : v !== false; },
+      function(){ return false; });
+  }
+  // The modes the host offers: hostContext.availableDisplayModes (from ui/initialize and
+  // host-context-changed). With no MCP Apps host, the ChatGPT runtime's own display mode
+  // call counts as an offer of full screen.
+  function displayModesOffered(){
+    var list = host.context && host.context.availableDisplayModes;
+    if (Array.isArray(list)) return list;
+    var o = oa();
+    return (!host.connected && o && typeof o.requestDisplayMode === "function") ? ["inline", "fullscreen"] : ["inline"];
   }
 
   window.PelarisCard = {
@@ -273,6 +288,7 @@ export const CARD_BRIDGE_JS = `
           return { isError: true, content: [{ type: "text", text: (err && err.message) || "error" }] };
         });
     },
+    canFullscreen: function(){ return displayModesOffered().indexOf("fullscreen") !== -1; },
     requestFullscreen: function(){ return displayMode("fullscreen"); },
     requestInline: function(){ return displayMode("inline"); }
   };
