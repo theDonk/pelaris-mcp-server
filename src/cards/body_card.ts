@@ -22,7 +22,7 @@
  * (the tool carries no unit preference).
  */
 
-import type { CardDefinition } from "./card_shell.js";
+import { defineCard } from "./card_shell.js";
 import { renderCardPage } from "./templates.js";
 import { weekDateLabel } from "./week_card.js";
 
@@ -377,9 +377,8 @@ const BODY_CARD_SCRIPT = `
 })();
 `;
 
-export const BODY_CARD: CardDefinition = {
+export const BODY_CARD = defineCard({
   id: "body",
-  resourceUri: "ui://pelaris/cards/body-v1.html",
   title: "Pelaris body card",
   description: "Waist, hips and shoulders from the latest scan with the change since the one before, and a slider to compare scans.",
   fields: {
@@ -394,7 +393,7 @@ export const BODY_CARD: CardDefinition = {
     estimateLine: true,
     openUrl: true,
   },
-  html: () =>
+  page: () =>
     renderCardPage({
       title: "Pelaris body",
       css: BODY_CARD_CSS,
@@ -402,4 +401,4 @@ export const BODY_CARD: CardDefinition = {
       script: BODY_CARD_SCRIPT,
       displayModes: ["inline", "fullscreen"],
     }),
-};
+});

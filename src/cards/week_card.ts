@@ -24,7 +24,7 @@
  */
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
-import type { CardDefinition } from "./card_shell.js";
+import { defineCard } from "./card_shell.js";
 import { renderCardPage } from "./templates.js";
 
 /** Where "Open in Pelaris" lands. */
@@ -500,9 +500,8 @@ const WEEK_CARD_SCRIPT = `
 })();
 `;
 
-export const WEEK_CARD: CardDefinition = {
+export const WEEK_CARD = defineCard({
   id: "week",
-  resourceUri: "ui://pelaris/cards/week-v1.html",
   title: "Pelaris week card",
   description: "The program week, Monday to Sunday, with Rearrange (move a session after you confirm) and Open in Pelaris.",
   fields: {
@@ -524,7 +523,7 @@ export const WEEK_CARD: CardDefinition = {
     },
     openUrl: true,
   },
-  html: () =>
+  page: () =>
     renderCardPage({
       title: "Pelaris week",
       css: WEEK_CARD_CSS,
@@ -532,4 +531,4 @@ export const WEEK_CARD: CardDefinition = {
       script: WEEK_CARD_SCRIPT,
       displayModes: ["inline", "fullscreen"],
     }),
-};
+});

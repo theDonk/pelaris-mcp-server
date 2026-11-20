@@ -184,3 +184,29 @@ test("withCard does nothing when off, with no data, or on an error", () => {
 test("pickCardFields never lets an object through a scalar spec", () => {
   assert.deepEqual(pickCardFields({ a: { deep: 1 }, b: [1, 2], c: "ok" }, { a: true, b: true, c: true }), { c: "ok" });
 });
+
+test("a card's URI comes from its page: a changed page gives a new URI", async () => {
+  const { cardResourceUri, defineCard } = await import("../card_shell.js");
+  const a = cardResourceUri("sample", "<p>one</p>");
+  assert.match(a, /^ui:\/\/pelaris\/cards\/sample-[0-9a-f]{10}\.html$/);
+  assert.equal(cardResourceUri("sample", "<p>one</p>"), a, "same page, same URI");
+  assert.notEqual(cardResourceUri("sample", "<p>two</p>"), a, "changed page, new URI");
+  const def = defineCard({ id: "sample", title: "t", description: "d", fields: {}, page: () => "<p>one</p>" });
+  assert.equal(def.resourceUri, a);
+  assert.equal(def.html(), "<p>one</p>");
+});
+
+test("all four card URIs are distinct and stable across two loads", async () => {
+  const first = CARDS.map((c) => c.resourceUri);
+  assert.equal(new Set(first).size, CARDS.length, "distinct");
+  for (const card of CARDS) {
+    assert.match(card.resourceUri, new RegExp(`^ui://pelaris/cards/${card.id}-[0-9a-f]{10}\.html$`));
+  }
+  // A second load in a fresh Node process (new module instances) gives the same URIs.
+  const { spawnSync } = await import("node:child_process");
+  const registryUrl = new URL("../registry.js", import.meta.url).href;
+  const script = `const m = await import(${JSON.stringify(registryUrl)}); console.log(JSON.stringify(m.CARDS.map((c) => c.resourceUri)));`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout.trim().split("\n").pop() ?? "[]"), first, "stable");
+});

@@ -21,7 +21,7 @@
  */
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
-import type { CardDefinition } from "./card_shell.js";
+import { defineCard } from "./card_shell.js";
 import { renderCardPage } from "./templates.js";
 
 /** Where "Open in Pelaris" lands. */
@@ -299,9 +299,8 @@ const DEBRIEF_CARD_SCRIPT = `
 })();
 `;
 
-export const DEBRIEF_CARD: CardDefinition = {
+export const DEBRIEF_CARD = defineCard({
   id: "debrief",
-  resourceUri: "ui://pelaris/cards/debrief-v1.html",
   title: "Pelaris weekly debrief card",
   description: "The week's debrief as a share card: sessions, next week's focus, Save as image and Open in Pelaris.",
   fields: {
@@ -317,11 +316,11 @@ export const DEBRIEF_CARD: CardDefinition = {
     shareText: true,
     openUrl: true,
   },
-  html: () =>
+  page: () =>
     renderCardPage({
       title: "Pelaris weekly debrief",
       css: DEBRIEF_CARD_CSS,
       body: DEBRIEF_CARD_BODY,
       script: DEBRIEF_CARD_SCRIPT,
     }),
-};
+});

@@ -22,6 +22,7 @@
  * resources, no `_meta.ui` on tools, no card data and no signed link minted for a card.
  */
 
+import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   CARDS_UI_DOMAIN_ENV,
@@ -54,7 +55,10 @@ export type CardAllowList = { [key: string]: CardFieldSpec };
 export interface CardDefinition {
   /** Short id, also used in the resource name. */
   id: string;
-  /** `ui://` URI. Treat it as a cache key: bump its version after a breaking change. */
+  /**
+   * `ui://` URI, derived from the page's content (see `cardResourceUri`). Hosts treat it as
+   * a cache key, so any change to the page, the shared CSS or the bridge gives a new URI.
+   */
   resourceUri: string;
   /** Human name of the resource. */
   title: string;
@@ -62,8 +66,27 @@ export interface CardDefinition {
   description: string;
   /** The fields the card is allowed to receive. */
   fields: CardAllowList;
-  /** Builds the full HTML page (see templates.ts `renderCardPage`). */
+  /** The full HTML page (see templates.ts `renderCardPage`), built once at module load. */
   html: () => string;
+}
+
+/** What a card declares; the shell adds the content-derived `resourceUri`. */
+export type CardSpec = Omit<CardDefinition, "resourceUri" | "html"> & {
+  /** Builds the full HTML page. Called once, when the card is defined. */
+  page: () => string;
+};
+
+/** `ui://pelaris/cards/<name>-<first 10 hex of sha256(html)>.html`: the one place a card URI is made. */
+export function cardResourceUri(name: string, html: string): string {
+  const hash = createHash("sha256").update(html, "utf8").digest("hex").slice(0, 10);
+  return `ui://pelaris/cards/${name}-${hash}.html`;
+}
+
+/** Builds a card's definition: the page once, and its URI from the page's content. */
+export function defineCard(spec: CardSpec): CardDefinition {
+  const { page, ...rest } = spec;
+  const html = page();
+  return { ...rest, resourceUri: cardResourceUri(spec.id, html), html: () => html };
 }
 
 export function cardsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {

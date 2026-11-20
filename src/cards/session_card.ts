@@ -11,7 +11,7 @@
  */
 
 import type { HandoffRoute } from "../tools/shared/entry_links.js";
-import type { CardDefinition } from "./card_shell.js";
+import { defineCard } from "./card_shell.js";
 import { renderCardPage } from "./templates.js";
 
 /**
@@ -247,9 +247,8 @@ const SESSION_CARD_SCRIPT = `
 })();
 `;
 
-export const SESSION_CARD: CardDefinition = {
+export const SESSION_CARD = defineCard({
   id: "session",
-  resourceUri: "ui://pelaris/cards/session-v1.html",
   title: "Pelaris session card",
   description: "One planned session: its exercises, with Start in Pelaris and Swap an exercise.",
   fields: {
@@ -261,10 +260,10 @@ export const SESSION_CARD: CardDefinition = {
     startUrl: true,
     swapPrompt: true,
   },
-  html: () =>
+  page: () =>
     renderCardPage({
       title: "Pelaris session",
       body: SESSION_CARD_BODY,
       script: SESSION_CARD_SCRIPT,
     }),
-};
+});
