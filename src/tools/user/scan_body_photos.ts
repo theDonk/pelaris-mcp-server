@@ -108,7 +108,8 @@ export type ScanOutcomeStatus =
   | "allowance_spent"
   | "busy"
   | "photo_not_usable"
-  | "retake";
+  | "retake"
+  | "still_saving";
 
 export interface ScanReply {
   status: ScanOutcomeStatus;
@@ -129,6 +130,7 @@ export const OUTCOME_LINK_ROUTE: Readonly<Record<ScanOutcomeStatus, HandoffRoute
   busy: null,
   photo_not_usable: "scan",
   retake: null,
+  still_saving: "body",
 };
 
 const MESSAGES = {
@@ -140,7 +142,14 @@ const MESSAGES = {
   busy: "The scan is busy right now. Give it a minute and try again.",
   photo_not_usable: "Pelaris could not read this photo from the chat. Take the scan in Pelaris with this link, and your photos will work there.",
   retake: "Pelaris couldn't read these photos clearly. Good light, head to feet in the frame, and try again.",
+  still_saving: "Your scan is taking longer than usual and may still be saving. Open Pelaris with this link to see it, and only scan again if it is not there.",
 } as const;
+
+/**
+ * The scan step's wait: the analysis and the save run in one server call, which the server
+ * allows 180 s. A little under that, so the server's own answer arrives first when it can.
+ */
+export const SCAN_BRIDGE_TIMEOUT_MS = 175_000;
 
 /** A file reference the host passed, or null (absent, a bare string, or the wrong shape). Never throws. */
 export function readFileRef(raw: unknown): { downloadUrl: string } | null {
@@ -257,7 +266,12 @@ export interface ScanBodyPhotosParams {
 }
 
 export interface ScanBodyPhotosDeps {
-  bridge: (tool: string, profileId: string, input: Record<string, unknown>) => Promise<BridgeResult>;
+  bridge: (
+    tool: string,
+    profileId: string,
+    input: Record<string, unknown>,
+    options?: { timeoutMs?: number },
+  ) => Promise<BridgeResult>;
   fetchImpl: typeof fetch;
   mintLink: typeof mintSignedEntryLink;
 }
@@ -342,7 +356,17 @@ export function registerScanBodyPhotos(server: McpServer, deps: ScanBodyPhotosDe
           photos.push(fetched.base64);
         }
 
-        const scanned = await deps.bridge(SCAN_BODY_PHOTOS_TOOL, claims.profile_id, { mode: "scan", photos });
+        // The scan step may be charged and saved on the server even when the wait runs out here,
+        // so a wait that runs out never says "try again": it sends the athlete to see it in Pelaris.
+        let scanned: BridgeResult;
+        try {
+          scanned = await deps.bridge(
+            SCAN_BODY_PHOTOS_TOOL, claims.profile_id, { mode: "scan", photos }, { timeoutMs: SCAN_BRIDGE_TIMEOUT_MS },
+          );
+        } catch {
+          log(false, "scan_wait_ran_out");
+          return answer({ status: "still_saving", message: MESSAGES.still_saving });
+        }
         if (!scanned.ok || scanned.result == null) {
           log(false, "bridge_failed");
           return answer({ status: "busy", message: MESSAGES.busy });

@@ -23,6 +23,7 @@ const {
   preparePhoto,
   OUTCOME_LINK_ROUTE,
   SCAN_BODY_PHOTOS_DESCRIPTION,
+  SCAN_BRIDGE_TIMEOUT_MS,
   checkDownloadUrl,
   fetchPhoto,
   readFileRef,
@@ -74,10 +75,12 @@ function fetchOf(body: Buffer, init: { status?: number; headers?: Record<string,
 }
 
 function setup(options: {
-  outcomes?: Array<Record<string, unknown> | "fail">;
+  outcomes?: Array<Record<string, unknown> | "fail" | "timeout">;
   fetchImpl?: typeof fetch;
 }) {
-  const bridgeCalls: Array<{ tool: string; profileId: string; input: Record<string, unknown> }> = [];
+  const bridgeCalls: Array<{
+    tool: string; profileId: string; input: Record<string, unknown>; options?: { timeoutMs?: number };
+  }> = [];
   const queue = [...(options.outcomes ?? [])];
   const minted: string[] = [];
   let config: Record<string, unknown> = {};
@@ -89,9 +92,10 @@ function setup(options: {
     },
   };
   registerScanBodyPhotos(fakeServer as unknown as Parameters<typeof registerScanBodyPhotos>[0], {
-    bridge: async (tool, profileId, input) => {
-      bridgeCalls.push({ tool, profileId, input });
+    bridge: async (tool, profileId, input, options) => {
+      bridgeCalls.push({ tool, profileId, input, options });
       const next = queue.shift();
+      if (next === "timeout") throw new Error("timeout of 175000ms exceeded");
       if (next === undefined || next === "fail") return { ok: false, tool, error: "down" };
       return { ok: true, tool, result: next };
     },
@@ -282,6 +286,21 @@ test("a photo that cannot be used answers with the scan link and never reaches t
   assert.match(out, /"file_host":"example.com"/);
   assert.ok(!out.includes("SECRETSIGNATURE"));
   assert.ok(!out.includes("p.png"));
+});
+
+test("the scan step waits longer than other calls, and a wait that runs out sends the athlete to see the scan", async () => {
+  const { call, bridgeCalls, minted } = setup({ outcomes: [{ outcome: "ready" }, "timeout"] });
+  const reply = await call({ front_photo: file(FRONT_URL) });
+  assert.notEqual(reply.isError, true);
+  const body = JSON.parse(reply.content[0].text);
+  // The scan may be saved and charged on the server, so never "try again".
+  assert.equal(body.status, "still_saving");
+  assert.match(body.message, /may still be saving/);
+  assert.deepEqual(minted, ["body"]);
+  assert.equal(bridgeCalls[0].options, undefined);
+  assert.equal(bridgeCalls[1].input.mode, "scan");
+  assert.equal(bridgeCalls[1].options?.timeoutMs, SCAN_BRIDGE_TIMEOUT_MS);
+  assert.ok(SCAN_BRIDGE_TIMEOUT_MS < 180_000, "the server's own 180 s answer should arrive first");
 });
 
 test("a server failure is a calm busy answer, not an error", async () => {

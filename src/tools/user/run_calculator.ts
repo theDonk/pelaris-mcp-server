@@ -82,8 +82,12 @@ export interface RunCalculatorParams {
 }
 
 /** The bridge input for one call: the id and the inputs, nothing else. */
-export function toBridgeInput(params: RunCalculatorParams): Record<string, unknown> {
-  return { calculatorId: params.calculatorId, inputs: params.inputs ?? {} };
+/**
+ * The bridge input. A connection without `health:write` (the scope `record_benchmark` needs)
+ * tells the server not to save: the athlete still gets the answer.
+ */
+export function toBridgeInput(params: RunCalculatorParams, canSave = true): Record<string, unknown> {
+  return { calculatorId: params.calculatorId, inputs: params.inputs ?? {}, ...(canSave ? {} : { saveAllowed: false }) };
 }
 
 /** True when the server ran the calculator but did not save it on the athlete's plan. */
@@ -137,7 +141,11 @@ export function registerRunCalculator(server: McpServer): void {
           };
         }
 
-        const bridged = await callCoreBridge("run_science_calculator", claims.profile_id, toBridgeInput(params));
+        const bridged = await callCoreBridge(
+          "run_science_calculator",
+          claims.profile_id,
+          toBridgeInput(params, hasScope(claims.scope, "health:write")),
+        );
 
         const failure = bridgeFailureResponse(bridged, "running the calculator");
         if (failure) {

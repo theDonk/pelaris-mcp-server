@@ -139,6 +139,12 @@ test("input mapping: id and inputs only, inputs default to empty", () => {
     calculatorId: "zone2_heart_rate_zones",
     inputs: {},
   });
+  // A connection that may not write health data asks the server for the answer only.
+  assert.deepEqual(toBridgeInput({ calculatorId: "zone2_heart_rate_zones" }, false), {
+    calculatorId: "zone2_heart_rate_zones",
+    inputs: {},
+    saveAllowed: false,
+  });
 });
 
 test("a saved result passes through unchanged", () => {
@@ -177,10 +183,20 @@ test("the handler sends the profile from claims and links a not-saved result", a
   assert.ok(request);
   assert.equal(request.tool, "run_science_calculator");
   assert.equal(request.profileId, "profile_test_1");
-  assert.deepEqual(request.input, { calculatorId: "zone2_heart_rate_zones", inputs: { age: 40 } });
+  // These claims are read-only, so the server is asked for the answer without a save.
+  assert.deepEqual(request.input, { calculatorId: "zone2_heart_rate_zones", inputs: { age: 40 }, saveAllowed: false });
   const parsed = JSON.parse(response.content[0].text) as { saveDenied: Record<string, unknown> };
   assert.equal(parsed.saveDenied.message, "Saving is on paid plans.");
   assert.ok(String(parsed.saveDenied.link).startsWith(plainEntryLink("calculators")));
+});
+
+test("a connection that may write health data lets the server's save rule decide", async () => {
+  const tool = capture();
+  respondWith = { ok: true, tool: "run_science_calculator", result: { saved: true, calculatorResult: { summaryText: "Done" } } };
+  await runWithAuth({ ...claims, scope: "training:read health:write" }, () =>
+    tool.handler({ calculatorId: "zone2_heart_rate_zones", inputs: { age: 40 } }),
+  );
+  assert.deepEqual(capturedRequests.at(-1)?.input, { calculatorId: "zone2_heart_rate_zones", inputs: { age: 40 } });
 });
 
 test("denies without training:read, never touching the bridge", async () => {
