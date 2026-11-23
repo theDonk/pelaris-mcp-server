@@ -90,6 +90,10 @@ export function buildDirectProfileUpdates(params: DirectProfileUpdateParams): {
   }
   if (params.sessionsPerWeek != null) {
     updates["preferences.sessions_per_week"] = params.sessionsPerWeek;
+    // The same number for the next program build, and who recorded it, so the weeks
+    // written from now on follow the athlete's latest request.
+    updates["intakeSummary.sessionsPerWeek"] = params.sessionsPerWeek;
+    updates["field_origins.sessions_per_week"] = "mcp_coach";
     updatedFields.push("sessionsPerWeek");
   }
   if (params.preferredSessionDuration != null) {
@@ -145,7 +149,7 @@ export function registerUpdateUserProfile(server: McpServer): void {
           .min(1)
           .max(14)
           .optional()
-          .describe("Preferred number of sessions per week"),
+          .describe("Preferred number of sessions per week. Save it whenever the athlete says how many sessions a week they want, including asking for more or fewer: the weeks of their program written from then on follow it."),
         preferredSessionDuration: z
           .number()
           .int()
