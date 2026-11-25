@@ -2,17 +2,38 @@
  * MCP Tool: get_body_analysis
  * Scope: health:read
  *
- * Returns the user's latest body analysis data from the biometrics subcollection.
+ * Returns the athlete's latest body analysis. The numbers come from the server's core
+ * get_body_analysis over the core bridge (one producer, shared with the in-app coach): the latest
+ * scan merged with newer weigh-ins, and the athlete's profile weight and height when no scan or
+ * weigh-in has them. This wrapper keeps scope, the scan link, the "as of" line and the scrub, and
+ * maps the core result to this tool's long-standing output shape.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { profileSubcollection } from "../../firestore-client.js";
 import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { plainDay } from "../shared/training_truth.js";
-import { ENTRY_LINK_SCAN } from "../shared/entry_links.js";
+import { mintSignedEntryLink } from "../shared/entry_links.js";
+import { callCoreBridge } from "../shared/bridge_client.js";
+import { bridgeFailureResponse } from "../shared/core_adapter.js";
+import { attachCardNow, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
+import { BODY_CARD, buildBodyCardData } from "../../cards/body_card.js";
+
+/**
+ * Adds the Body card to a successful reply. The text stays exactly as it was; the card's
+ * data rides in the result's _meta. No analysis, or none of waist, hips and shoulders,
+ * means no card. Any failure leaves the plain text reply. Pure (exported for tests).
+ */
+export function withBodyCard(
+  reply: CardReply,
+  result: Record<string, unknown>,
+  host: HostProfile = currentHostProfile(),
+): CardReply {
+  return attachCardNow(reply, BODY_CARD, () => buildBodyCardData(result, typeof result.scanLink === "string" ? result.scanLink : null), host);
+}
 
 /**
  * 1.4.1 D2 (connector truth): the "as of" line. A body analysis is a snapshot from the day it was
@@ -60,13 +81,121 @@ export function bodyFatFields(raw: unknown): { bodyFatPercent: number | null; bo
   return { bodyFatPercent: null, bodyFatRangePercent: null };
 }
 
+const MEASUREMENT_FIELDS = [
+  "weightKg", "waistCm", "hipsCm", "shouldersCm", "heightCm", "chestCm",
+  "muscleMassPercent", "upperArmCm", "thighCm", "calfCm", "bodyFatPercent",
+] as const;
+
+function obj(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+/** How many scans `history` can list (the core's own limit, the latest included). */
+export const BODY_HISTORY_MAX = 12;
+
+const HISTORY_FIELDS = ["weightKg", "waistCm", "hipsCm", "shouldersCm"] as const;
+
+export interface BodyHistoryEntry {
+  analyzedAt: string;
+  weightKg?: number;
+  waistCm?: number;
+  hipsCm?: number;
+  shouldersCm?: number;
+}
+
+/**
+ * The core's scan history, newest first: a date and up to four numbers per scan. Anything else is
+ * dropped (never a photo, path or free text); an entry without a valid date or without any of the
+ * four numbers is skipped. Null when fewer than two scans remain, matching the core, which sends
+ * no history for a single scan. Pure (exported for tests).
+ */
+export function bodyScanHistory(raw: unknown): BodyHistoryEntry[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: BodyHistoryEntry[] = [];
+  for (const item of raw) {
+    const e = obj(item);
+    if (!e || typeof e.analyzedAt !== "string" || Number.isNaN(Date.parse(e.analyzedAt))) continue;
+    const entry: BodyHistoryEntry = { analyzedAt: e.analyzedAt };
+    let has = false;
+    for (const f of HISTORY_FIELDS) {
+      const v = e[f];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+        entry[f] = v;
+        has = true;
+      }
+    }
+    if (has) out.push(entry);
+    if (out.length >= BODY_HISTORY_MAX) break;
+  }
+  return out.length > 1 ? out : null;
+}
+
+/**
+ * Map the core get_body_analysis result to this tool's output. Field by field on purpose: only the
+ * fields this tool has always returned cross over, nothing else the core result may carry. The
+ * merge and fallback (scan, newer weigh-ins, profile weight and height) and the changes since the
+ * previous scan are the core's; this only reshapes. Pure (exported for tests).
+ */
+export function bodyAnalysisFromCore(core: Record<string, unknown>, scanLink: string): Record<string, unknown> {
+  const analyzedAt = typeof core.analyzedAt === "string" ? core.analyzedAt : null;
+  const source = typeof core.source === "string" && core.source ? core.source : null;
+  const m = obj(core.measurements) ?? {};
+  const measurements: Record<string, unknown> = {};
+  for (const f of MEASUREMENT_FIELDS) measurements[f] = m[f] ?? null;
+  const ratios = obj(core.ratios) ?? {};
+  const symmetry = obj(core.symmetry);
+  const comparison = obj(core.comparisonToPrevious);
+  const changes = obj(comparison?.changes) ?? {};
+  return {
+    analyzedAt,
+    source,
+    confidence: core.confidence || null,
+    ...bodyAnalysisAsOf(analyzedAt, source),
+    measurements,
+    bodyFatRangePercent: obj(core.bodyFatRangePercent) ?? null,
+    symmetry: symmetry
+      ? {
+          upperToLowerRatio: symmetry.upperToLowerRatio ?? null,
+          armToWaistRatio: symmetry.armToWaistRatio ?? null,
+          thighToWaistRatio: symmetry.thighToWaistRatio ?? null,
+          calfToThighRatio: symmetry.calfToThighRatio ?? null,
+        }
+      : null,
+    // Where to start a new scan: the connector never takes photos, the app does.
+    scanLink,
+    ratios: {
+      shoulderToWaist: ratios.shoulderToWaist ?? null,
+      waistToHip: ratios.waistToHip ?? null,
+      waistToHeight: ratios.waistToHeight ?? null,
+    },
+    archetype: core.archetype || null,
+    assessment: core.assessment || null,
+    trainingRecommendation: core.trainingRecommendation || null,
+    areasOfFocus: Array.isArray(core.areasOfFocus) ? core.areasOfFocus : [],
+    comparisonToPrevious: comparison
+      ? {
+          previousAnalyzedAt: comparison.previousAnalyzedAt ?? null,
+          changes: {
+            weightKg: changes.weightKg ?? null,
+            waistCm: changes.waistCm ?? null,
+            hipsCm: changes.hipsCm ?? null,
+            shouldersCm: changes.shouldersCm ?? null,
+          },
+        }
+      : null,
+    // Newest first, the latest included; null with a single scan.
+    history: bodyScanHistory(core.history),
+  };
+}
+
 export function registerGetBodyAnalysis(server: McpServer): void {
   server.registerTool(
     "get_body_analysis",
     {
       title: "Get Body Analysis",
-      description: "View your latest body composition data — measurements (including limbs and body fat), ratios, symmetry, archetype, and changes since your last analysis. Includes a link to start a new Body scan in Pelaris.",
+      description: "View your latest body composition data: measurements (including limbs and body fat), ratios, symmetry, archetype, and changes since your last analysis. `history` lists your recent scans, newest first, each with its date and weight, waist, hips and shoulders in numbers only (null with a single scan), so you can talk through the trend. Includes a link to start a new Body scan in Pelaris.",
       inputSchema: {},
+      ...(cardToolMeta(BODY_CARD) ? { _meta: cardToolMeta(BODY_CARD) } : {}),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Body Analysis" },
     },
     async () => {
@@ -82,76 +211,31 @@ export function registerGetBodyAnalysis(server: McpServer): void {
           };
         }
 
-        const profileId = claims.profile_id;
+        const bridged = await callCoreBridge("get_body_analysis", claims.profile_id, {});
 
-        // Get latest biometrics (CRITICAL: use orderBy analyzedAt, not doc('baseline'))
-        const biometricsSnap = await profileSubcollection(profileId, "biometrics")
-          .orderBy("analyzedAt", "desc")
-          .limit(2)
-          .get();
-
-        if (biometricsSnap.empty) {
+        // The core answers null when there is no scan, weigh-in or profile measurement at all.
+        if (bridged.ok && bridged.result == null) {
+          logToolCall({ requestId, tool: "get_body_analysis", userPseudonym: claims.sub, latencyMs: Date.now() - start, success: true });
           return {
-            content: [{ type: "text" as const, text: JSON.stringify({ analysis: null, message: "No body analysis data found", scanLink: ENTRY_LINK_SCAN }) }],
+            content: [{ type: "text" as const, text: JSON.stringify({ analysis: null, message: "No body analysis data found", scanLink: await mintSignedEntryLink("scan", claims) }) }],
           };
         }
 
-        const latest = biometricsSnap.docs[0].data();
-        const previous = biometricsSnap.docs.length > 1 ? biometricsSnap.docs[1].data() : null;
+        const failure = bridgeFailureResponse(bridged, "reading body analysis");
+        if (failure) {
+          logToolCall({
+            requestId,
+            tool: "get_body_analysis",
+            userPseudonym: claims.sub,
+            latencyMs: Date.now() - start,
+            success: false,
+            error: bridged.error ?? "unknown error",
+          });
+          return failure;
+        }
 
-        const bodyFat = bodyFatFields(latest.bodyFatPercent);
-        const analyzedAtIso: string | null = latest.analyzedAt?.toDate?.()?.toISOString?.() || null;
-        const analysis = {
-          analyzedAt: analyzedAtIso,
-          source: latest.source || null,
-          confidence: latest.confidence || null,
-          ...bodyAnalysisAsOf(analyzedAtIso, (latest.source as string | undefined) || null),
-
-          // Measurements
-          measurements: {
-            weightKg: latest.weightKg ?? null,
-            waistCm: latest.waistCm ?? null,
-            hipsCm: latest.hipsCm ?? null,
-            shouldersCm: latest.shouldersCm ?? null,
-            heightCm: latest.heightCm ?? null,
-            chestCm: latest.chestCm ?? null,
-            muscleMassPercent: latest.muscleMassPercent ?? null,
-            upperArmCm: latest.upperArmCm ?? null,
-            thighCm: latest.thighCm ?? null,
-            calfCm: latest.calfCm ?? null,
-            bodyFatPercent: bodyFat.bodyFatPercent,
-          },
-          bodyFatRangePercent: bodyFat.bodyFatRangePercent,
-          symmetry: bodySymmetry(latest),
-          // Where to start a new scan: the connector never takes photos, the app does.
-          scanLink: ENTRY_LINK_SCAN,
-
-          // Ratios
-          ratios: {
-            shoulderToWaist: latest.shoulderToWaistRatio ?? null,
-            waistToHip: latest.waistToHipRatio ?? null,
-            waistToHeight: latest.waistToHeightRatio ?? null,
-          },
-
-          // AI assessments
-          archetype: latest.archetype || null,
-          assessment: latest.assessment || null,
-          trainingRecommendation: latest.trainingRecommendation || null,
-          areasOfFocus: latest.areasOfFocus || [],
-
-          // Comparison to previous
-          comparisonToPrevious: previous ? {
-            previousAnalyzedAt: previous.analyzedAt?.toDate?.()?.toISOString?.() || null,
-            changes: {
-              weightKg: computeDelta(latest.weightKg, previous.weightKg),
-              waistCm: computeDelta(latest.waistCm, previous.waistCm),
-              hipsCm: computeDelta(latest.hipsCm, previous.hipsCm),
-              shouldersCm: computeDelta(latest.shouldersCm, previous.shouldersCm),
-            },
-          } : null,
-        };
-
-        const result = scrubDocument(analysis as Record<string, unknown>);
+        const analysis = bodyAnalysisFromCore(bridged.result as Record<string, unknown>, await mintSignedEntryLink("scan", claims));
+        const result = scrubDocument(analysis);
 
         logToolCall({
           requestId,
@@ -161,9 +245,7 @@ export function registerGetBodyAnalysis(server: McpServer): void {
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withBodyCard({ content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }, result);
       } catch (error) {
         logToolCall({
           requestId,
@@ -179,13 +261,4 @@ export function registerGetBodyAnalysis(server: McpServer): void {
       }
     },
   );
-}
-
-function computeDelta(current: number | null | undefined, previous: number | null | undefined): { value: number; direction: string } | null {
-  if (current == null || previous == null) return null;
-  const delta = current - previous;
-  return {
-    value: Math.round(delta * 10) / 10,
-    direction: delta > 0 ? "up" : delta < 0 ? "down" : "stable",
-  };
 }

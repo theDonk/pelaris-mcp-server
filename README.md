@@ -17,15 +17,17 @@ Settings → Connectors → Add Custom → enter the MCP Server URL above → Ad
 ### Any MCP Client
 Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dynamic Client Registration.
 
-## Tools (29)
+## Tools (30)
 
-### Read Tools (12)
+### Read Tools (13)
 | Tool | Description |
 |------|-------------|
 | `get_training_overview` | View your training context, active programs, and recent sessions |
 | `get_active_program` | View current program with phase, weekly structure, and session details |
 | `get_session_details` | View a specific session's exercises, sets, targets, and feedback |
 | `resolve_exercise_ids` | Resolve exercise names to canonical exercise IDs before planning or logging |
+| `scan_body_photos` | Body scan from photos added to the chat (adults only); photos are analysed and not stored, the scan is saved to the athlete's Pelaris history |
+| `run_calculator` | Run one of 20 sports science calculators, with sources; free to run, saved to benchmarks on Ocean and Horizon |
 | `get_benchmarks` | View benchmark values, progress history, and trends |
 | `get_body_analysis` | View body composition data and measurement trends |
 | `search_training_resources` | Search curated training articles and resources |
@@ -45,7 +47,7 @@ Connect to `https://api.pelaris.io/mcp` — supports OAuth 2.0 with PKCE and Dyn
 | `log_completed_session` | Log a full completed session with exercises, sets, and feedback |
 | `swap_exercise` | Get alternative exercise suggestions |
 | `modify_training_session` | Adjust session volume, intensity, or schedule |
-| `update_session` | Update the details of an existing planned session |
+| `update_session` | Update the details of an existing planned session, mark it done, or skip it |
 | `delete_session` | Delete a single planned session |
 | `delete_sessions` | Delete multiple planned sessions |
 | `record_injury` | Record an injury with body part, severity, and notes |
@@ -96,6 +98,7 @@ Strength · Running · Swimming · Cycling · Triathlon · CrossFit · General F
 - `npm run build`, then `npm test`. Every test file is listed in `scripts/run_tests.mjs`, and Firestore points at a dead loopback port unless an emulator is set, so a test never reaches a real project. CI runs both before each deploy.
 - Local runs use `scripts/run_local_gateway.sh`. It refuses to start unless Firestore, the OAuth function and the core bridge are all on loopback, the port is not an emulator port, and the secrets are the local test values.
 - End to end, locally: with the Pelaris local stack up (emulators, functions and web, sends off), `node tools/connector_e2e/run_connector_e2e.mjs --reseed --start-gateway --transcript <file>` starts this gateway under wayfinder's egress guard and drives it with a real MCP client as seeded people (newcomer, program holder, unstarted, started and two-program athletes), then checks the replies, the emulator's data and the gateway log. Local only: it refuses anything that is not loopback and mints test tokens with the runner's published dummy secret. The header of the script lists the people and the flags.
+- Cards (interactive views under a tool result, MCP Apps standard): how they work, how to add one, and what is verified per host, in [docs/CARDS.md](docs/CARDS.md). `PELARIS_CARDS=off` turns them off.
 - The contracts shared with the Pelaris backend live in `test_fixtures/` (redirect policy, token ownership, return predicates). Each is pinned by its SHA-256 on both sides.
 
 ## Built by

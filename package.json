@@ -14,6 +14,7 @@
     "express": "^4.21.0",
     "firebase-admin": "^13.0.0",
     "google-auth-library": "^10.6.2",
+    "sharp": "^0.35.5",
     "zod": "^3.24.0"
   },
   "devDependencies": {

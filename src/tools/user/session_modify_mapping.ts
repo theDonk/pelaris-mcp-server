@@ -25,7 +25,7 @@ export interface UpdateSessionParams {
   title?: string;
   sessionFocus?: string;
   durationMinutes?: number;
-  status?: "planned" | "completed";
+  status?: "planned" | "completed" | "skipped";
   scheduledDate?: string;
   rpe?: number;
   feedbackTags?: string[];
@@ -61,6 +61,31 @@ export function listProvidedUpdateFields(params: UpdateSessionParams): string[] 
  *  legacy W2 behaviour. */
 export function isCompletionRequest(params: UpdateSessionParams): boolean {
   return params.status === "completed";
+}
+
+/** True when the call asks to skip the session. That routes to core
+ *  skip_session (the app's own skip: the session stays in the plan and the
+ *  diary, marked skipped), never a bare metadata status flip. */
+export function isSkipRequest(params: UpdateSessionParams): boolean {
+  return params.status === "skipped";
+}
+
+/** Stored as the skip's reason when the athlete gave none. */
+export const SKIP_REASON_NOT_GIVEN = "No reason given";
+
+/** Fields a skip may carry: the session, the status, and the athlete's reason. */
+const SKIP_ALLOWED_FIELDS: ReadonlySet<string> = new Set(["status", "feedbackNote"]);
+
+/** The fields a skip call sent that a skip cannot apply (empty when the call is clean). */
+export function fieldsNotAllowedWithSkip(params: UpdateSessionParams): string[] {
+  return listProvidedUpdateFields(params).filter((name) => !SKIP_ALLOWED_FIELDS.has(name));
+}
+
+/** Build the core skip_session input: the athlete's own words as the reason
+ *  (feedbackNote), or a plain marker when they gave none. */
+export function buildUpdateSessionSkipInput(params: UpdateSessionParams): Record<string, unknown> {
+  const reason = typeof params.feedbackNote === "string" ? params.feedbackNote.trim() : "";
+  return { sessionId: params.sessionId, reason: reason.length > 0 ? reason : SKIP_REASON_NOT_GIVEN };
 }
 
 /** Build the core modify_session type='metadata' input for a non-completion
@@ -126,7 +151,10 @@ export function buildUpdateSessionCompletionInput(
 
 /** The modify_training_session tool params after zod validation. */
 export interface ModifyTrainingSessionParams {
-  sessionId: string;
+  /** Needed for every single-session change; not used by rescheduleSessions. */
+  sessionId?: string;
+  /** Move several planned sessions in one call (core type 'reschedule_many'). */
+  rescheduleSessions?: Array<{ sessionId: string; newDate: string }>;
   reduceVolume?: number;
   increaseIntensity?: number;
   swapExercise?: { from: string; to: string; toExerciseId?: string };
@@ -150,6 +178,21 @@ export function buildModifyTrainingOperations(
   params: ModifyTrainingSessionParams,
 ): ModifySessionOperation[] {
   const operations: ModifySessionOperation[] = [];
+  if (params.rescheduleSessions && params.rescheduleSessions.length > 0) {
+    // One core call moves them all, so a week either moves together or the
+    // result says which sessions stayed and why.
+    operations.push({
+      action: "rescheduling sessions",
+      input: {
+        type: "reschedule_many",
+        moves: params.rescheduleSessions.map((move) => ({
+          sessionId: move.sessionId,
+          newDate: move.newDate,
+        })),
+      },
+    });
+  }
+  if (params.sessionId == null) return operations;
   if (params.reduceVolume != null || params.increaseIntensity != null) {
     const input: Record<string, unknown> = { type: "scale", sessionId: params.sessionId };
     if (params.reduceVolume != null) input.volumeMultiplier = params.reduceVolume;

@@ -19,7 +19,7 @@ import {
   isManualEntry,
   planStateOf,
 } from "../../connector/return_hook.js";
-import { ENTRY_LINK_TRAIN } from "./entry_links.js";
+import { ENTRY_LINK_TRAIN, mintSignedEntryLink, type HandoffClaimsLike } from "./entry_links.js";
 
 type Raw = Record<string, unknown>;
 
@@ -86,12 +86,12 @@ export function materializedThroughDateOf(queue: Raw): string | null {
  * Plain-language note for a paused adaptation state. When `materializedThroughDate` is non-null the note
  * names when the written sessions run out. Never mentions offers, pricing or discount codes.
  */
-export function adaptationNoteFor(materializedThroughDate: string | null): string {
+export function adaptationNoteFor(materializedThroughDate: string | null, trainLink: string = ENTRY_LINK_TRAIN): string {
   const through =
     materializedThroughDate != null
       ? ` after your scheduled sessions through ${materializedThroughDate}`
       : "";
-  return `Weekly adaptation is paused${through}. Open Pelaris to pick it back up: ${ENTRY_LINK_TRAIN}`;
+  return `Weekly adaptation is paused${through}. Open Pelaris to pick it back up: ${trainLink}`;
 }
 
 /**
@@ -109,6 +109,30 @@ export function adaptationFieldsFor(queue: Raw, truthBuildState?: string | null)
       ? { adaptationNote: adaptationNoteFor(materializedThroughDate), link: ENTRY_LINK_TRAIN }
       : {}),
   };
+}
+
+/**
+ * Swaps the plain train link in paused programs' adaptation fields (the note and `link`) for one signed
+ * hand-off link, minted once per reply and only when a program is paused. When minting falls back to
+ * the plain link, the programs are returned as they were.
+ */
+export async function withSignedAdaptationLink<T extends Raw>(
+  programs: T[],
+  claims: HandoffClaimsLike | null | undefined,
+  mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+): Promise<T[]> {
+  if (!programs.some((p) => p.adaptationState === "paused")) return programs;
+  const trainLink = await mint("train", claims);
+  if (trainLink === ENTRY_LINK_TRAIN) return programs;
+  return programs.map((p) =>
+    p.adaptationState === "paused"
+      ? {
+          ...p,
+          adaptationNote: adaptationNoteFor((p.materializedThroughDate as string | null | undefined) ?? null, trainLink),
+          link: trainLink,
+        }
+      : p,
+  );
 }
 
 /**

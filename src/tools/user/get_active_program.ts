@@ -18,9 +18,16 @@ import { scrubDocument } from "../../scrubber.js";
 import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor } from "../shared/program-utils.js";
+import { NO_RUNNING_PROGRAM_MESSAGE, adaptationFieldsFor, withSignedAdaptationLink } from "../shared/program-utils.js";
+import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
+import { attachCard, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
+import { WEEK_CARD, WEEK_CARD_OPEN_ROUTE, buildWeekCardData } from "../../cards/week_card.js";
 import {
   TRUTH_UNAVAILABLE_MESSAGE,
+  WEEK_MEANING_NOTE,
+  nextWeekFields,
+  type TruthWeekSession,
   programTruthFields,
   readTrainingTruth,
   type TruthProgram,
@@ -28,6 +35,25 @@ import {
 } from "../shared/training_truth.js";
 
 type Raw = Record<string, unknown>;
+
+/**
+ * Adds the Week card to a successful reply. The text stays exactly as it was; the card's
+ * data rides in the result's _meta. The one-tap link is minted only when a card is
+ * drawn, and any failure leaves the plain text reply.
+ */
+export async function withWeekCard(
+  reply: CardReply,
+  result: Record<string, unknown>,
+  claims: HandoffClaimsLike | null | undefined,
+  mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+  host: HostProfile = currentHostProfile(),
+): Promise<CardReply> {
+  return attachCard(reply, WEEK_CARD, {
+    build: () => buildWeekCardData(result, null),
+    link: { field: "openUrl", route: WEEK_CARD_OPEN_ROUTE, claims, mint },
+    host,
+  });
+}
 
 /** The reads this tool makes, injectable for tests. */
 export interface ActiveProgramDeps {
@@ -50,6 +76,21 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
     if (typeof s.id === "string") sessionFlags.set(s.id, s);
   }
   const isProgram = truth.kind === "program";
+  const withFlags = (s: TruthWeekSession) => {
+    const flags = s.sessionId != null ? sessionFlags.get(s.sessionId) : undefined;
+    return {
+      sessionId: s.sessionId,
+      focus: s.focus,
+      slotType: s.slotType,
+      isCompleted: s.isCompleted,
+      isSkipped: s.isSkipped === true,
+      scheduledDate: s.scheduledDate,
+      // Only when the server sent a stored length (mostly absent); never estimated here.
+      ...(typeof s.durationMinutes === "number" && Number.isFinite(s.durationMinutes) ? { durationMinutes: s.durationMinutes } : {}),
+      hasCoachNote: !!flags?.coach_note,
+      adaptationApplied: (flags?.adaptation_applied as boolean | undefined) ?? false,
+    };
+  };
   return {
     programId: truth.queueId,
     title: truth.title,
@@ -61,18 +102,8 @@ export function shapeActiveProgram(truth: TruthProgram, queue: Raw | undefined):
     totalWeeks: isProgram ? (truth.declaredWeeks ?? truth.builtThroughWeek) : 0,
     currentWeek: truth.currentWeek,
     currentPhase: truth.phase ? { phase: truth.phase.phase, focus: truth.phase.focus } : null,
-    currentWeekSessions: truth.currentWeekSessions.map((s) => {
-      const flags = s.sessionId != null ? sessionFlags.get(s.sessionId) : undefined;
-      return {
-        sessionId: s.sessionId,
-        focus: s.focus,
-        slotType: s.slotType,
-        isCompleted: s.isCompleted,
-        scheduledDate: s.scheduledDate,
-        hasCoachNote: !!flags?.coach_note,
-        adaptationApplied: (flags?.adaptation_applied as boolean | undefined) ?? false,
-      };
-    }),
+    currentWeekSessions: truth.currentWeekSessions.map(withFlags),
+    ...nextWeekFields(truth, withFlags),
     weeklyOverviews: queue?.weekly_overviews ?? null,
     generationStatus: truth.generationStatus,
     ...programTruthFields(truth),
@@ -85,9 +116,13 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
     "get_active_program",
     {
       title: "Get Active Program",
-      description: "View your current training programs with progress, phase, weekly structure, and session details.",
+      description:
+        "View your current training programs with progress, phase, weekly structure, and session details. " +
+        "Weeks are Monday to Sunday in your own timezone, \"Week N\" is the number the Pelaris app shows, and next week is the following Monday to Sunday. " +
+        "A session carries durationMinutes only when Pelaris has a stored length for it; it is never estimated.",
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Active Program" },
+      ...(cardToolMeta(WEEK_CARD) ? { _meta: cardToolMeta(WEEK_CARD) } : {}),
     },
     async () => {
       const requestId = generateRequestId();
@@ -118,9 +153,13 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
         }
 
         const queueById = new Map(queueDocs.map((doc) => [doc.id, doc.data()]));
-        const programs = truth.programs.map((p) => shapeActiveProgram(p, queueById.get(p.queueId)));
+        const programs = await withSignedAdaptationLink(
+          truth.programs.map((p) => shapeActiveProgram(p, queueById.get(p.queueId))),
+          claims,
+        );
 
         const result = scrubDocument({
+          weekNote: WEEK_MEANING_NOTE,
           programs,
           primaryProgramId: truth.primaryQueueId,
           asOf: truth.asOf,
@@ -135,9 +174,11 @@ export function registerGetActiveProgram(server: McpServer, deps: ActiveProgramD
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withWeekCard(
+          { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] },
+          result,
+          claims,
+        );
       } catch (error) {
         logToolCall({
           requestId,

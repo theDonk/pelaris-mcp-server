@@ -17,6 +17,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AssistantClass } from "./token_access.js";
 
 export interface ConnectorFacts {
+  uid?: string;
   profileId: string;
   clientClass: AssistantClass | "unknown";
 }

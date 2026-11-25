@@ -17,6 +17,8 @@ import {
   programTruthFields,
   roleNote,
   weekLine,
+  nextWeekFields,
+  WEEK_MEANING_NOTE,
   type TrainingTruth,
   type TruthProgram,
 } from "../../shared/training_truth.js";
@@ -230,6 +232,67 @@ test("get_active_program through the wire: tool name and input schema unchanged,
   assert.equal(byId.queue_hybrid.currentWeek, 9);
   assert.equal(byId.manual_workouts.kind, "manual_log");
   assert.match(byId.manual_workouts.roleNote as string, /not a plan/);
+});
+
+const NEXT_WEEK = {
+  nextWeekNumber: 10,
+  nextWeekSessions: [{ sessionId: "s3", focus: "Long Run", slotType: "run", scheduledDate: "2026-10-27", isCompleted: false }],
+};
+
+test("shapeActiveProgram passes the next-week fields through when the server sends them", () => {
+  const out = shapeActiveProgram(hybrid(NEXT_WEEK), { sessions: [{ id: "s3", coach_note: { message: "x" } }] });
+  assert.equal(out.nextWeekNumber, 10);
+  const next = out.nextWeekSessions as Array<Record<string, unknown>>;
+  assert.equal(next.length, 1);
+  assert.equal(next[0].sessionId, "s3");
+  assert.equal(next[0].scheduledDate, "2026-10-27");
+  assert.equal(next[0].hasCoachNote, true);
+});
+
+test("shapeActiveProgram passes a stored session length through and never adds one", () => {
+  const out = shapeActiveProgram(
+    hybrid({
+      currentWeekSessions: [
+        { sessionId: "s1", focus: "Tempo Run", slotType: "run", scheduledDate: "2026-10-19", isCompleted: false, durationMinutes: 50 },
+        { sessionId: "s2", focus: "Swim", slotType: "swim", scheduledDate: "2026-10-23", isCompleted: false },
+      ],
+      nextWeekSessions: [{ sessionId: "s3", focus: "Long Run", slotType: "run", scheduledDate: "2026-10-27", isCompleted: false, durationMinutes: 75 }],
+    }),
+    undefined,
+  );
+  const sessions = out.currentWeekSessions as Array<Record<string, unknown>>;
+  assert.equal(sessions[0].durationMinutes, 50);
+  assert.ok(!("durationMinutes" in sessions[1]), "absent stays absent");
+  assert.equal((out.nextWeekSessions as Array<Record<string, unknown>>)[0].durationMinutes, 75);
+});
+
+test("shapeActiveProgram omits the next-week fields when the server does not send them", () => {
+  const out = shapeActiveProgram(hybrid(), undefined);
+  assert.ok(!("nextWeekNumber" in out));
+  assert.ok(!("nextWeekSessions" in out));
+  assert.equal(out.currentWeek, 9);
+});
+
+test("nextWeekFields (used by get_training_overview) passes through when present, omits when absent, keeps a null number", () => {
+  assert.deepEqual(nextWeekFields(hybrid()), {});
+  assert.deepEqual(nextWeekFields(hybrid(NEXT_WEEK)), NEXT_WEEK);
+  assert.deepEqual(nextWeekFields(hybrid({ nextWeekNumber: null, nextWeekSessions: [] })), { nextWeekNumber: null, nextWeekSessions: [] });
+});
+
+test("the week note says Monday to Sunday, own timezone, app week number, and never to use a stored week number", () => {
+  assert.match(WEEK_MEANING_NOTE, /Monday to Sunday/);
+  assert.match(WEEK_MEANING_NOTE, /own timezone/);
+  assert.match(WEEK_MEANING_NOTE, /number the Pelaris app shows/);
+  assert.match(WEEK_MEANING_NOTE, /stored week number/);
+  assert.ok(!WEEK_MEANING_NOTE.includes("—"));
+});
+
+test("get_active_program carries the week note and describes Monday to Sunday weeks", async () => {
+  const { reply, listed } = await activeReply(truthOf({ programs: [hybrid(NEXT_WEEK)] }), [{ id: "queue_hybrid", data: () => ({ sessions: [] }) }]);
+  const body = JSON.parse(reply.text) as { weekNote: string; programs: Array<Record<string, unknown>> };
+  assert.match(body.weekNote, /Monday to Sunday/);
+  assert.equal(body.programs[0].nextWeekNumber, 10);
+  assert.match(String((listed as { description?: string }).description), /Monday to Sunday/);
 });
 
 test("get_active_program with the app's backend unreachable says so; it never guesses a week", async () => {

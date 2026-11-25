@@ -14,6 +14,29 @@ import { getRequestAuth } from "../../request-context.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge } from "../shared/bridge_client.js";
 import { sessionSourcesFromLinkedEntries } from "../shared/session_sources.js";
+import { mintSignedEntryLink, type HandoffClaimsLike } from "../shared/entry_links.js";
+import { attachCard, cardToolMeta, type CardReply } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
+import { SESSION_CARD, SESSION_CARD_START_ROUTE, buildSessionCardData } from "../../cards/session_card.js";
+
+/**
+ * Adds the Session card to a successful reply. The text stays exactly as it was; the
+ * card's data rides in the result's _meta. The one-tap link is minted only when a card
+ * is drawn, and any failure leaves the plain text reply.
+ */
+export async function withSessionCard(
+  reply: CardReply,
+  session: Record<string, unknown>,
+  claims: HandoffClaimsLike | null | undefined,
+  mint: typeof mintSignedEntryLink = mintSignedEntryLink,
+  host: HostProfile = currentHostProfile(),
+): Promise<CardReply> {
+  return attachCard(reply, SESSION_CARD, {
+    build: () => buildSessionCardData(session, null),
+    link: { field: "startUrl", route: SESSION_CARD_START_ROUTE, claims, mint },
+    host,
+  });
+}
 
 export function mapDiarySessionSet(s: Record<string, unknown>): Record<string, unknown> {
   if (s.type === "strength") {
@@ -66,11 +89,12 @@ export function registerGetSessionDetails(server: McpServer): void {
     "get_session_details",
     {
       title: "Get Session Details",
-      description: "View the full details of a workout session — exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap). When an activity recorded two or more laps, importedActuals.laps carries them exactly as the device or app recorded them (SI units; lapsSource says how they were recorded; lapsCapped marks a long list cut to its first laps). Describe laps as recorded. sources lists where the data came from, main source first, each with its provider and the recording device when known (deviceName, for example \"Garmin Forerunner 965\"; null when the source names none), so you can say which app or device recorded the session. It is empty when nothing synced.",
+      description: "View the full details of a workout session: exercises, sets, reps, weights, completion status, feedback, and per-lap/split breakdowns for synced activities (pace, heart rate, cadence, power, or swim strokes for each lap). When an activity recorded two or more laps, importedActuals.laps carries them exactly as the device or app recorded them (SI units; lapsSource says how they were recorded; lapsCapped marks a long list cut to its first laps). Describe laps as recorded. sources lists where the data came from, main source first, each with its provider and the recording device when known (deviceName, for example \"Garmin Forerunner 965\"; null when the source names none), so you can say which app or device recorded the session. It is empty when nothing synced.",
       inputSchema: {
         sessionId: z.string().describe("The diary session document ID (e.g., session_strength_20260115_143022)"),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, title: "Get Session Details" },
+      ...(cardToolMeta(SESSION_CARD) ? { _meta: cardToolMeta(SESSION_CARD) } : {}),
     },
     async ({ sessionId }) => {
       const requestId = generateRequestId();
@@ -110,9 +134,11 @@ export function registerGetSessionDetails(server: McpServer): void {
                 latencyMs: Date.now() - start,
                 success: true,
               });
-              return {
-                content: [{ type: "text" as const, text: JSON.stringify(resolved, null, 2) }],
-              };
+              return withSessionCard(
+                { content: [{ type: "text" as const, text: JSON.stringify(resolved, null, 2) }] },
+                resolved,
+                claims,
+              );
             }
           } catch (bridgeErr) {
             console.warn(
@@ -257,9 +283,11 @@ export function registerGetSessionDetails(server: McpServer): void {
           success: true,
         });
 
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return withSessionCard(
+          { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] },
+          result,
+          claims,
+        );
       } catch (error) {
         logToolCall({
           requestId,

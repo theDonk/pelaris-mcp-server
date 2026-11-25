@@ -30,19 +30,22 @@ import {
   unwrapBridgeResult,
 } from "../shared/core_adapter.js";
 import { buildModifyTrainingOperations } from "./session_modify_mapping.js";
+import { cardCallableToolMeta, cardsOn } from "../../cards/card_shell.js";
+import { currentHostProfile, type HostProfile } from "../../cards/host.js";
 
 export function registerModifyTrainingSession(server: McpServer): void {
   server.registerTool(
     "modify_training_session",
     {
       title: "Modify Training Session",
-      description: "Adjust a planned session — reduce volume, change intensity, swap exercises, or reschedule to a different date.",
+      description: "Adjust a planned session: reduce volume, change intensity, swap exercises, or reschedule to a different date. To move several sessions at once (for example after the athlete changes their training days), pass rescheduleSessions and they all move in one call.",
       inputSchema: {
         sessionId: z
           .string()
           .min(1)
           .max(200)
-          .describe("The session ID (from get_training_overview or get_session_details)"),
+          .optional()
+          .describe("The session ID (from get_training_overview or get_session_details). Required for every change except rescheduleSessions."),
         reduceVolume: z
           .number()
           .min(0.1)
@@ -68,10 +71,46 @@ export function registerModifyTrainingSession(server: McpServer): void {
           .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
           .optional()
           .describe("New scheduled date in YYYY-MM-DD format"),
+        rescheduleSessions: z
+          .array(
+            z.object({
+              sessionId: z.string().min(1).max(200).describe("A planned session to move"),
+              newDate: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
+                .describe("Its new date in YYYY-MM-DD format"),
+            }),
+          )
+          .min(1)
+          .max(60)
+          .optional()
+          .describe("Move several planned sessions in one call, across any built weeks. The result lists which moved, which stayed and why, and which need the athlete to choose a day. Sessions the athlete moved by hand stay where they put them."),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Modify Training Session" },
+      // Not idempotent: reduceVolume and increaseIntensity scale the stored values, so a repeat compounds.
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: false, title: "Modify Training Session" },
+      // Not callable from a card: the Week card's Confirm calls card_reschedule_session,
+      // which can only move a session.
     },
-    async (params) => {
+    async (params) => runModifyTrainingSession(params, "modify_training_session"),
+  );
+}
+
+type ModifyParams = {
+  sessionId?: string;
+  reduceVolume?: number;
+  increaseIntensity?: number;
+  swapExercise?: { from: string; to: string; toExerciseId?: string };
+  rescheduleDate?: string;
+  rescheduleSessions?: Array<{ sessionId: string; newDate: string }>;
+};
+
+type ToolReply = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+
+/**
+ * The one modify path both tools share: auth and scope, the write rate limit, the
+ * claims-derived profile (never a profile id from input), the core bridge, scrubbing.
+ */
+async function runModifyTrainingSession(params: ModifyParams, tool: string): Promise<ToolReply> {
       const requestId = generateRequestId();
       const start = Date.now();
 
@@ -94,8 +133,18 @@ export function registerModifyTrainingSession(server: McpServer): void {
           };
         }
 
+        const singleChangeAsked = params.reduceVolume != null || params.increaseIntensity != null ||
+          params.swapExercise != null || params.rescheduleDate != null;
+        if (singleChangeAsked && params.sessionId == null) {
+          return {
+            content: [{ type: "text" as const, text: "Error: sessionId is required for reduceVolume, increaseIntensity, swapExercise and rescheduleDate" }],
+            isError: true,
+          };
+        }
+
         const operations = buildModifyTrainingOperations({
           sessionId: params.sessionId,
+          rescheduleSessions: params.rescheduleSessions,
           reduceVolume: params.reduceVolume,
           increaseIntensity: params.increaseIntensity,
           swapExercise: params.swapExercise,
@@ -103,7 +152,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
         });
         if (operations.length === 0) {
           return {
-            content: [{ type: "text" as const, text: "Error: At least one modification is required (reduceVolume, increaseIntensity, swapExercise, or rescheduleDate)" }],
+            content: [{ type: "text" as const, text: "Error: At least one modification is required (reduceVolume, increaseIntensity, swapExercise, rescheduleDate, or rescheduleSessions)" }],
             isError: true,
           };
         }
@@ -114,6 +163,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
         const modifications: string[] = [];
         const updatedFields = new Set<string>();
         let title: unknown;
+        let batch: Record<string, unknown> | undefined;
 
         for (const operation of operations) {
           const bridged = await callCoreBridge("modify_session", profileId, operation.input);
@@ -127,7 +177,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
             }
             logToolCall({
               requestId,
-              tool: "modify_training_session",
+              tool,
               userPseudonym: claims.sub,
               latencyMs: Date.now() - start,
               success: false,
@@ -141,6 +191,14 @@ export function registerModifyTrainingSession(server: McpServer): void {
             updatedFields.add(field);
           }
           if (result.title != null) title = result.title;
+          if (result.type === "reschedule_many") {
+            batch = {
+              moved: result.moved ?? [],
+              skipped: result.skipped ?? [],
+              needsAthlete: result.needsAthlete ?? [],
+              failed: result.failed ?? [],
+            };
+          }
         }
 
         const output = scrubDocument({
@@ -148,12 +206,13 @@ export function registerModifyTrainingSession(server: McpServer): void {
           title,
           modifications,
           updatedFields: [...updatedFields],
+          ...(batch ?? {}),
           message: `Session modified successfully: ${modifications.join("; ")}`,
         });
 
         logToolCall({
           requestId,
-          tool: "modify_training_session",
+          tool,
           userPseudonym: claims.sub,
           latencyMs: Date.now() - start,
           success: true,
@@ -165,7 +224,7 @@ export function registerModifyTrainingSession(server: McpServer): void {
       } catch (error) {
         logToolCall({
           requestId,
-          tool: "modify_training_session",
+          tool,
           latencyMs: Date.now() - start,
           success: false,
           error: (error as Error).message,
@@ -175,6 +234,49 @@ export function registerModifyTrainingSession(server: McpServer): void {
           isError: true,
         };
       }
+}
+
+/** Card session ids: Pelaris ids are letters, digits, `_`, `-` and `.` (Firestore ids have no `/`). */
+export const CARD_SESSION_ID = /^[A-Za-z0-9_.-]{1,200}$/;
+
+/** A real calendar day as YYYY-MM-DD. */
+export function isCalendarDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+/** The only input the card's move tool takes. Strict: any other key is refused. */
+export const CARD_RESCHEDULE_INPUT = z
+  .object({
+    sessionId: z.string().regex(CARD_SESSION_ID, "Not a session id").describe("The planned session to move"),
+    newDate: z.string().refine(isCalendarDay, "Must be a real date in YYYY-MM-DD format").describe("Its new date, YYYY-MM-DD"),
+  })
+  .strict();
+
+export const CARD_RESCHEDULE_TOOL = "card_reschedule_session";
+
+/**
+ * `card_reschedule_session`: the Week card's Confirm. App-only (`visibility: ["app"]`):
+ * the card may call it, and a host MUST NOT offer it to the model. It only moves one
+ * planned session to a new day, through the same path as modify_training_session's
+ * `rescheduleSessions`, and answers with the same `moved` / `skipped` / `needsAthlete` /
+ * `failed` / `message` shape. Registered only for a host that draws cards (a host that
+ * does not would not know to hide it from the model).
+ */
+export function registerCardRescheduleSession(server: McpServer, host: HostProfile = currentHostProfile()): void {
+  if (!cardsOn(host)) return;
+  server.registerTool(
+    CARD_RESCHEDULE_TOOL,
+    {
+      title: "Move a session (week card)",
+      description: "Used by the Pelaris week card when the athlete confirms a move: moves one planned session to a new day.",
+      inputSchema: CARD_RESCHEDULE_INPUT,
+      // A repeat of the same move finds the session already on that day and leaves it.
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true, title: "Move a session (week card)" },
+      _meta: cardCallableToolMeta(process.env, host),
     },
+    async (params) =>
+      runModifyTrainingSession({ rescheduleSessions: [{ sessionId: params.sessionId, newDate: params.newDate }] }, CARD_RESCHEDULE_TOOL),
   );
 }

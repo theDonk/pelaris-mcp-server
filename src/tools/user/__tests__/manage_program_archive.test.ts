@@ -32,7 +32,7 @@ await new Promise<void>((resolve) => bridgeStub.listen(0, "127.0.0.1", resolve))
 process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:1";
 process.env.CF_BASE_URL = `http://127.0.0.1:${(bridgeStub.address() as AddressInfo).port}`;
 
-const { ARCHIVE_SENTENCES, MANAGE_PROGRAM_DESCRIPTION, archiveTryAgain, mapArchiveResult, registerManageProgram, thrownBridgeCodeOf } =
+const { ARCHIVE_SENTENCES, MANAGE_PROGRAM_DESCRIPTION, archiveLinkRouteOf, archiveTryAgain, mapArchiveResult, registerManageProgram, thrownBridgeCodeOf } =
   await import("../manage_program.js");
 const { checkWriteRateLimit } = await import("../../../middleware/rate-limiter.js");
 const { TEST_CLAIMS, captureLogs, hasDash, openToolSession } = await import("./mcp_harness.js");
@@ -149,6 +149,16 @@ for (const [outcome, link] of OUTCOMES) {
     assert.deepEqual(Object.keys(parsed).sort(), expectedKeys);
   });
 }
+
+test("a minted signed link replaces the plain one, only on outcomes that carry a link", () => {
+  assert.equal(archiveLinkRouteOf(ok("removed")), "program");
+  assert.equal(archiveLinkRouteOf(ok("open_in_app")), "train");
+  assert.equal(archiveLinkRouteOf(ok("refund_pending")), null);
+  assert.equal(archiveLinkRouteOf(refused("not_found")), null);
+  const signed = `${LINK_TRAIN}?h=${"a".repeat(43)}`;
+  assert.equal((JSON.parse(mapArchiveResult(ok("open_in_app"), signed).text) as { link: string }).link, signed);
+  assert.equal("link" in (JSON.parse(mapArchiveResult(ok("already_replaced"), signed).text) as object), false);
+});
 
 test("open_in_app names Pause, Stop and Remove in Profile and carries the /start/train link (a started program)", async () => {
   const { value } = await archive({ programId: TYPED_ID }, bridgeReturning(ok("open_in_app")));

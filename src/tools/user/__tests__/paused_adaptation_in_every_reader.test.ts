@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adaptationFieldsFor, adaptationNoteFor } from "../../shared/program-utils.js";
+import { adaptationFieldsFor, adaptationNoteFor, withSignedAdaptationLink } from "../../shared/program-utils.js";
 import { ENTRY_LINK_TRAIN } from "../../shared/entry_links.js";
 import type { TrainingTruth, TruthProgram } from "../../shared/training_truth.js";
 import { registerGetActiveProgram } from "../get_active_program.js";
@@ -57,6 +57,31 @@ function assertActiveNoExtras(p: Record<string, unknown>, label: string) {
 
 test("adaptationNoteFor puts the plain link in the sentence", () => {
   assert.equal(adaptationNoteFor(null), `Weekly adaptation is paused. Open Pelaris to pick it back up: ${ENTRY_LINK_TRAIN}`);
+});
+
+test("withSignedAdaptationLink: one mint per reply, only paused programs get the signed link", async () => {
+  const signed = `${ENTRY_LINK_TRAIN}?h=${"a".repeat(43)}`;
+  let mints = 0;
+  const mint = async () => {
+    mints += 1;
+    return signed;
+  };
+  const paused = { programId: "a", ...adaptationFieldsFor(PAUSED_QUEUE) };
+  const active = { programId: "b", ...adaptationFieldsFor(ACTIVE_QUEUE) };
+  const out = await withSignedAdaptationLink([paused, active], READ_CLAIMS, mint);
+  assert.equal(mints, 1);
+  const first = out[0] as Record<string, unknown>;
+  assert.equal(first.link, signed);
+  assert.ok(String(first.adaptationNote).includes(signed));
+  assertActiveNoExtras(out[1], "active stays as it was");
+
+  mints = 0;
+  const none = await withSignedAdaptationLink([active], READ_CLAIMS, mint);
+  assert.equal(mints, 0, "nothing paused: no token written");
+  assert.deepEqual(none, [active]);
+
+  const fallback = await withSignedAdaptationLink([paused], READ_CLAIMS, async () => ENTRY_LINK_TRAIN);
+  assert.deepEqual(fallback, [paused]);
 });
 
 test("adaptationFieldsFor (shared by get_training_overview): paused carries the note; active carries nothing extra", () => {

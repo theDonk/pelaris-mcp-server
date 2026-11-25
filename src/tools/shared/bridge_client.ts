@@ -89,10 +89,14 @@ export interface BridgeResult {
  * parsed envelope. Throws on transport failure so the caller can decide how to
  * degrade (the session tools fall back to their original not-found behaviour).
  */
+/** How long one bridge call may wait for the server, unless the caller asks for longer. */
+export const BRIDGE_TIMEOUT_MS = 120_000;
+
 export async function callCoreBridge(
   tool: string,
   profileId: string,
   input: Record<string, unknown>,
+  options?: { timeoutMs?: number },
 ): Promise<BridgeResult> {
   const targetUrl = `${CF_BASE_URL}/coreToolsBridge`;
   const payload = { tool, profileId, input };
@@ -114,7 +118,7 @@ export async function callCoreBridge(
     url: targetUrl,
     method: "POST",
     data: payload,
-    timeout: 120_000,
+    timeout: options?.timeoutMs ?? BRIDGE_TIMEOUT_MS,
   });
   return response.data as BridgeResult;
 }

@@ -38,6 +38,8 @@ import { registerGetOnboardingStatus } from "./tools/user/get_onboarding_status.
 // longer imported here. See the "User coaching tools" comment further
 // down, right above its former registration call site.
 import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js";
+import { registerRunCalculator } from "./tools/user/run_calculator.js";
+import { registerScanBodyPhotos } from "./tools/user/scan_body_photos.js";
 
 // User write tools (OAuth-scoped)
 // generate_weekly_plan (src/tools/user/generate_weekly_plan.ts) is RETIRED
@@ -46,7 +48,8 @@ import { registerResolveExerciseIds } from "./tools/user/resolve_exercise_ids.js
 // above its former registration call site.
 import { registerGenerateProgram } from "./tools/user/generate_program.js";
 import { registerCompleteIntake } from "./tools/user/complete_intake.js";
-import { registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
+import { registerCardRescheduleSession, registerModifyTrainingSession } from "./tools/user/modify_training_session.js";
+import { registerCardSkipSession } from "./tools/user/card_skip_session.js";
 import { registerLogWorkout } from "./tools/user/log_workout.js";
 import { registerSwapExercise } from "./tools/user/swap_exercise.js";
 import { registerUpdateUserProfile } from "./tools/user/update_user_profile.js";
@@ -69,6 +72,7 @@ import { registerGetWeeklyDebrief } from "./tools/user/get_weekly_debrief.js";
 // Resources
 import { registerCoachPersonalityResource } from "./resources/coach_personality.js";
 import { registerMethodologiesResource } from "./resources/methodologies.js";
+import { registerCards } from "./cards/registry.js";
 
 // Prompts
 import { registerWeeklyPlanReviewPrompt } from "./prompts/weekly_plan_review.js";
@@ -191,7 +195,7 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
   // runs inside the try below (B2a fix pass, CR-10).
   const connector = req.isAdminAuth ? undefined : req.connectorAccess;
   const connectorFacts = connector ?
-    { profileId: connector.profileId, clientClass: connector.assistantClass ?? "unknown" as const } :
+    { uid: connector.uid, profileId: connector.profileId, clientClass: connector.assistantClass ?? "unknown" as const } :
     null;
 
   // AsyncLocalStorage for concurrency-safe per-request auth context
@@ -230,6 +234,7 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
         "When a tool gives a link for the person (to train, open their program or start a scan), " +
         "share it with them in your reply. " +
         "When it reports preferred_units, use them and do not ask for units again. " +
+        "For any training maths question, use run_calculator so Pelaris does the numbers. " +
         "Offer this once; if the person declines, carry on with what they asked.",
     });
 
@@ -259,6 +264,10 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     // Exercise-id preflight: read tool that teaches the write vocabulary
     // (resolve names -> canonical exerciseId -> pass to write tools).
     registerResolveExerciseIds(server);
+    // Sports science calculators: free to run, saved on plans that include saving.
+    registerRunCalculator(server);
+    // Body scan from photos added to the chat. Stands alone: this one line registers it.
+    registerScanBodyPhotos(server);
 
     // ─── User write tools (OAuth-scoped) ────────────────
     // generate_program is a reply-only tool since connector rev 2.1: it builds nothing here and answers with the link that opens
@@ -273,6 +282,10 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     registerCompleteIntake(server);
     registerGenerateProgram(server);
     registerModifyTrainingSession(server);
+    // The Week card's move (app-only; registered only for a host that draws cards).
+    registerCardRescheduleSession(server);
+    // The Week card's skip (app-only; registered only for a host that draws cards).
+    registerCardSkipSession(server);
     registerLogWorkout(server);
     registerSwapExercise(server);
     registerUpdateUserProfile(server);
@@ -297,6 +310,8 @@ app.post("/mcp", timedStep("auth", verifyBearerToken), timedStep("rate_limit", r
     // ─── Resources ──────────────────────────────────────────────
     registerCoachPersonalityResource(server);
     registerMethodologiesResource(server);
+    // Cards (MCP Apps ui:// resources). Off when PELARIS_CARDS=off; see docs/CARDS.md.
+    registerCards(server);
 
     // ─── Prompts ────────────────────────────────────────────────
     registerWeeklyPlanReviewPrompt(server);

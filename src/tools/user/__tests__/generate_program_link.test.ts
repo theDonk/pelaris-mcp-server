@@ -11,6 +11,7 @@ import {
   GENERATE_PROGRAM_DESCRIPTION,
   GENERATE_PROGRAM_ERRORS,
   buildGenerateProgramReply,
+  generateProgramRouteOf,
   generateProgramStateOf,
   registerGenerateProgram,
   type GenerateProgramDeps,
@@ -58,6 +59,14 @@ test("has_program: the train link, and the assistant is told there is nothing to
   const reply = buildGenerateProgramReply("has_program");
   assert.deepEqual(reply, { state: "has_program", link: LINK_TRAIN, message: HAS_PROGRAM_TEXT });
   assert.ok(reply.message.includes("nothing to build"));
+});
+
+test("each state opens its route, and a minted signed link replaces the plain one", () => {
+  assert.equal(generateProgramRouteOf("has_program"), "train");
+  assert.equal(generateProgramRouteOf("ready_to_build"), "program");
+  assert.equal(generateProgramRouteOf("needs_intake"), "program");
+  const signed = `${LINK_TRAIN}?h=${"a".repeat(43)}`;
+  assert.deepEqual(buildGenerateProgramReply("has_program", signed), { state: "has_program", link: signed, message: HAS_PROGRAM_TEXT });
 });
 
 test("no reply has an em dash, and none promises a program built in the chat", () => {

@@ -26,6 +26,7 @@ const ALLOWED_COLLECTIONS = new Set([
   "methodologies",
   "mcp_tokens",
   "mcp_feedback",
+  "handoff_tokens",
 ]);
 
 export function assertAllowedCollection(collection: string): void {

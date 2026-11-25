@@ -31,7 +31,7 @@ import { checkWriteRateLimit } from "../../middleware/rate-limiter.js";
 import { scrubDocument } from "../../scrubber.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
 import { callCoreBridge, type BridgeResult } from "../shared/bridge_client.js";
-import { ENTRY_LINK_PROGRAM, ENTRY_LINK_TRAIN } from "../shared/entry_links.js";
+import { mintSignedEntryLink, plainEntryLink, type HandoffRoute } from "../shared/entry_links.js";
 
 export const MANAGE_PROGRAM_DESCRIPTION =
   "Set a training program aside the way the Pelaris app does. A program the athlete has not started yet " +
@@ -63,10 +63,19 @@ const OUTCOMES = ["removed", "refund_pending", "open_in_app", "already_replaced"
 type ArchiveOutcome = (typeof OUTCOMES)[number];
 
 /** Which outcomes carry a link: after a remove, build a fresh program; otherwise open the program in the app. */
-const LINK_OF_OUTCOME: Readonly<Partial<Record<ArchiveOutcome, string>>> = {
-  removed: ENTRY_LINK_PROGRAM,
-  open_in_app: ENTRY_LINK_TRAIN,
+const ROUTE_OF_OUTCOME: Readonly<Partial<Record<ArchiveOutcome, HandoffRoute>>> = {
+  removed: "program",
+  open_in_app: "train",
 };
+
+/** The route a success envelope's link opens, or null when the outcome carries no link. */
+export function archiveLinkRouteOf(envelope: unknown): HandoffRoute | null {
+  if (!isRecord(envelope) || envelope["ok"] !== true) return null;
+  const result = envelope["result"];
+  const outcome = isRecord(result) ? result["outcome"] : undefined;
+  if (typeof outcome !== "string") return null;
+  return ROUTE_OF_OUTCOME[outcome as ArchiveOutcome] ?? null;
+}
 
 /** The athlete's own program states, as the core names them, in plain words for the assistant. */
 const STATE_WORDS: Readonly<Record<string, string>> = {
@@ -133,7 +142,7 @@ function programChoicesOf(detail: unknown): Array<{ programId: string; title: st
  * core's own sentence word for word; every refusal is a fixed sentence; an unknown code or a
  * malformed envelope is the single "try again" sentence. The typed id is never echoed.
  */
-export function mapArchiveResult(envelope: unknown): MappedArchive {
+export function mapArchiveResult(envelope: unknown, signedLink?: string): MappedArchive {
   if (!isRecord(envelope)) return archiveTryAgain("malformed_reply");
 
   if (envelope["ok"] === true) {
@@ -144,7 +153,9 @@ export function mapArchiveResult(envelope: unknown): MappedArchive {
       return archiveTryAgain("malformed_result");
     }
     if (typeof message !== "string" || message.trim().length === 0) return archiveTryAgain("malformed_result");
-    const link = LINK_OF_OUTCOME[outcome as ArchiveOutcome];
+    const route = ROUTE_OF_OUTCOME[outcome as ArchiveOutcome];
+    // The handler's minted signed link when it has one; otherwise the plain entry link.
+    const link = route ? (signedLink ?? plainEntryLink(route)) : undefined;
     const body = scrubDocument({
       status: outcome,
       message,
@@ -260,7 +271,8 @@ export function registerManageProgram(server: McpServer, deps: ManageProgramDeps
           return reply(mapped);
         }
 
-        const mapped = mapArchiveResult(envelope);
+        const linkRoute = archiveLinkRouteOf(envelope);
+        const mapped = mapArchiveResult(envelope, linkRoute ? await mintSignedEntryLink(linkRoute, claims) : undefined);
         log(mapped.success, mapped.code);
         return reply(mapped);
       } catch (error) {

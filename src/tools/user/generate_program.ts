@@ -27,7 +27,7 @@ import { hasScope } from "../../auth.js";
 import { getRequestAuth } from "../../request-context.js";
 import { db } from "../../firestore-client.js";
 import { logToolCall, generateRequestId } from "../../logger.js";
-import { ENTRY_LINK_PROGRAM, ENTRY_LINK_TRAIN } from "../shared/entry_links.js";
+import { mintSignedEntryLink, plainEntryLink, type HandoffRoute } from "../shared/entry_links.js";
 import { onboardingFactsOf, onboardingNextStep, type OnboardingNextStep } from "./get_onboarding_status.js";
 
 /** Where the person stands: they hold a program, can build one now, or need the intake first. */
@@ -83,11 +83,22 @@ export function generateProgramStateOf(
   return STATE_OF_NEXT_STEP[onboardingNextStep(facts)];
 }
 
-/** The reply for a state: the link that opens Pelaris at the right place and the fixed words. */
-export function buildGenerateProgramReply(state: GenerateProgramState): GenerateProgramReply {
+/** The Pelaris route a state opens: their program on Today, or building one. */
+export function generateProgramRouteOf(state: GenerateProgramState): HandoffRoute {
+  return state === "has_program" ? "train" : "program";
+}
+
+/**
+ * The reply for a state: the link that opens Pelaris at the right place and the fixed words.
+ * `link` is the signed hand-off link the handler minted; without it, the plain entry link.
+ */
+export function buildGenerateProgramReply(
+  state: GenerateProgramState,
+  link: string = plainEntryLink(generateProgramRouteOf(state)),
+): GenerateProgramReply {
   return {
     state,
-    link: state === "has_program" ? ENTRY_LINK_TRAIN : ENTRY_LINK_PROGRAM,
+    link,
     message: GENERATE_PROGRAM_MESSAGES[state],
   };
 }
@@ -151,7 +162,8 @@ export function registerGenerateProgram(server: McpServer, deps: GenerateProgram
           log(false, "profile_not_found");
           return errorResult(GENERATE_PROGRAM_ERRORS.profileMissing);
         }
-        const reply = buildGenerateProgramReply(generateProgramStateOf(onboardingFactsOf(profile)));
+        const state = generateProgramStateOf(onboardingFactsOf(profile));
+        const reply = buildGenerateProgramReply(state, await mintSignedEntryLink(generateProgramRouteOf(state), claims));
         log(true, undefined, { reply_state: reply.state });
         return { content: [{ type: "text" as const, text: JSON.stringify(reply, null, 2) }] };
       } catch (error) {
