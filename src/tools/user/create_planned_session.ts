@@ -160,9 +160,9 @@ export function registerCreatePlannedSession(server: McpServer): void {
     {
       title: "Create Planned Session",
       description: "Schedule a future workout session with target exercises. The session will appear in your " +
-        "training calendar ready to track. Express grouped work (supersets, circuits) and phases " +
-        "(warm-up / main / cool-down) with blocks[]. When the person asks to add a session on a day that already " +
-        "has one, add it alongside with explicitNewSessionReason; to change an existing session use modify_training_session.",
+        "training calendar ready to track. Grouped work (supersets, circuits) and phases " +
+        "(warm-up / main / cool-down) go in blocks[]. A session on a day that already has one is added " +
+        "alongside it with explicitNewSessionReason. This tool creates new sessions; it does not change existing ones.",
       inputSchema: {
         date: z
           .string()

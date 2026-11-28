@@ -124,7 +124,7 @@ export function registerSwapExercise(server: McpServer): void {
       title: "Swap Exercise",
       description: "Find alternative exercises with rationale, or swap an exercise in a planned session. Returns 3 " +
         "suggestions based on movement pattern; set autoApply=true to apply the top suggestion, or pass " +
-        "replacementName to choose the replacement yourself.",
+        "replacementName to name a specific replacement.",
       inputSchema: {
         sessionId: z
           .string()

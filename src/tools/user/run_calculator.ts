@@ -55,14 +55,12 @@ export const CALCULATOR_LINK_ROUTE: HandoffRoute = "calculators";
 export const RUN_CALCULATOR_DESCRIPTION =
   "Run one of Pelaris's 20 sports science calculators (1RM and RIR, race predictor, VO2max, " +
   "heart rate zones, sweat rate and fuelling, deload readiness, body fat and more), each " +
-  "with its published source. Pelaris does the maths, so use this for any training numbers " +
-  "question instead of working the arithmetic out yourself. It is free to run for every " +
-  "athlete. Pass the athlete's real values in inputs; any input left out uses the " +
-  "calculator's built-in starting value, and the result's inputs show exactly what was used, " +
-  "so check them and run again with the right values if needed. Give the athlete the full " +
-  "result every time. On Pelaris Ocean and Pelaris Horizon the result is also saved to the " +
-  "athlete's Pelaris benchmarks. When saved is false, the result carries a message and a " +
-  "link: mention saving once, in those words, with no pressure.";
+  "with its published source. Use it for training numbers questions: Pelaris does the maths. " +
+  "It is free to run for every athlete. Inputs take the athlete's real values; any input " +
+  "left out uses the calculator's built-in starting value, and the result's inputs show " +
+  "exactly what was used. On Pelaris Ocean and Pelaris Horizon the result is also saved to " +
+  "the athlete's Pelaris benchmarks. When saved is false, the result also carries a short " +
+  "message and a link about saving.";
 
 export const runCalculatorIdField = z
   .enum(CALCULATOR_IDS)

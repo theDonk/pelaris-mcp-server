@@ -37,9 +37,9 @@ export const MANAGE_PROGRAM_DESCRIPTION =
   "Set a training program aside the way the Pelaris app does. A program the athlete has not started yet " +
   "is removed, as long as it is still free to remove: nothing is deleted. For anything else, such as a " +
   "program they have started, the athlete chooses Pause, Stop or Remove in the Pelaris app under Profile, " +
-  "and this tool says so and gives the link. If they have more than one program and you do not pass a " +
-  "programId, this tool lists them: ask which one and call again with its programId. If a reply asks you " +
-  "to try again, call again with the same programId.";
+  "and this tool says so and gives the link. When the athlete has more than one program and no programId " +
+  "is passed, it returns the list of programs with their programIds. A reply that says to try again can be " +
+  "repeated with the same programId.";
 
 /** The fixed sentences this file adds to the core's own. Never an id, a title or a raw error. */
 export const ARCHIVE_SENTENCES = {
