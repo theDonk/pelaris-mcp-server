@@ -69,7 +69,7 @@ export function registerCompleteIntake(server: McpServer): void {
     "complete_intake",
     {
       title: "Complete Intake",
-      description: "Complete and save the athlete's intake so Pelaris can build their program. If a required safety field (e.g. pregnancy) is missing, the response indicates what still needs to be answered. After this, call generate_program for the link that starts their program in Pelaris.",
+      description: "Complete and save the athlete's intake so Pelaris can build their program. If a required safety field (e.g. pregnancy) is missing, the response indicates what still needs to be answered. The program itself is then started in Pelaris.",
       inputSchema: {
         answers: z.record(z.unknown()).describe(
           "Structured intake answers gathered from the athlete (e.g. is_pregnant, injuries, goal, experience). Safety fields (is_pregnant, injuries, demographics) are taken from here verbatim.",

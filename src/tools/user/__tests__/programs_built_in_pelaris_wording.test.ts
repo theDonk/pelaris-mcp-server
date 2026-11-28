@@ -68,7 +68,7 @@ test("complete_intake points to the link, not to a generated program", () => {
     },
   } as never);
   assert.ok(description.includes("Pelaris can build their program"));
-  assert.ok(description.includes("call generate_program for the link that starts their program in Pelaris"));
+  assert.ok(description.includes("started in Pelaris"));
   assert.equal(description.includes("can be generated"), false);
 });
 

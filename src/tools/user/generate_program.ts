@@ -43,9 +43,8 @@ export const GENERATE_PROGRAM_DESCRIPTION =
   "Start or continue the athlete's training program in Pelaris. Programs are built in the Pelaris app, " +
   "where the athlete can see them come together and shape them, so this tool does not build one in this " +
   "chat. It returns the link that opens Pelaris at the right place: building their program, or their " +
-  "program if they already have one. If the athlete has not done their intake yet, you can ask the " +
-  "intake questions here and save the answers with complete_intake first. Planning a single session or " +
-  "a week here with create_planned_session is still fine.";
+  "program if they already have one. If the athlete's intake is not done yet, the reply says so, and " +
+  "the intake questions can be answered in Pelaris or saved from this chat.";
 
 /** The fixed words for each state, addressed to the assistant. Positive, no ids, nothing about the person. */
 export const GENERATE_PROGRAM_MESSAGES: Readonly<Record<GenerateProgramState, string>> = {

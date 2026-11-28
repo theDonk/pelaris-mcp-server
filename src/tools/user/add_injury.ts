@@ -42,9 +42,8 @@ const INJURY_ID = /^inj_[0-9a-f]{10}$/;
 
 export const RECORD_INJURY_DESCRIPTION =
   "Log an injury or pain point so your training plan adapts automatically. Returns a coaching note and an injuryId. " +
-  "To change one later, call again with action 'update' and its injuryId (for example a worse severity); when it has healed, " +
-  "call with action 'resolve' and the injuryId: the entry is kept and stops shaping training. " +
-  "Get injury ids from this tool's response or from get_training_context's activeInjuries.";
+  "Action 'update' with an injuryId changes an entry (for example a worse severity), and action 'resolve' marks it healed: " +
+  "the entry is kept and stops shaping training.";
 
 export function registerAddInjury(server: McpServer): void {
   server.registerTool(

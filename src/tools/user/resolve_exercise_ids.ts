@@ -25,8 +25,7 @@ import { bridgeFailureResponse, unwrapBridgeResult } from "../shared/core_adapte
 
 export const RESOLVE_EXERCISE_IDS_DESCRIPTION =
   "Resolve exercise names to canonical exercise IDs so logged work attaches to the right " +
-  "movement's history and PR detection. A null match means no catalog entry exists. Use the " +
-  "plain movement name and omit the ID.";
+  "movement's history and PR detection. A null match means no catalog entry exists for that name.";
 
 /** Exported for unit tests: the queries[] input field (1-20 movement names). */
 export const resolveExerciseIdsQueriesField = z

@@ -81,23 +81,27 @@ export const SCAN_BODY_PHOTOS_DESCRIPTION =
   "Run a Pelaris body scan from photos the athlete has added to this chat: a front photo, " +
   "and a side photo when they have one, standing, head to feet in the frame, in good light. " +
   "Pelaris estimates their measurements and body shape and saves the scan to their Pelaris " +
-  "history, where they can see their figure and their change over time. Use this when the " +
+  "history, where they can see their figure and their change over time. Use it when the " +
   "athlete shares body photos and asks for a scan, a body check-in or their measurements. " +
   "Photo scans are for adults (18 and over). The photos are analysed and not stored. A scan " +
-  "uses the athlete's Pelaris scan allowance, the same one the app uses. If the athlete has " +
-  "not turned on body scans in Pelaris yet, or the photos cannot be read here, the result " +
-  "carries a message and a link: give the athlete both, in those words, and do not estimate " +
-  "measurements yourself.";
+  "uses the athlete's Pelaris scan allowance, the same one the app uses. If body scans are not " +
+  "turned on in Pelaris yet, or the photos cannot be read, the result carries a message and a " +
+  "link instead of measurements.";
 
-/** One file as the host passes it. All four properties are declared, as the Apps SDK asks. */
-export const fileRefSchema = z
-  .object({
-    download_url: z.string().describe("A short-lived link to the file, supplied by the host."),
-    file_id: z.string().describe("The host's id for the file."),
-    mime_type: z.string().optional().describe("The file's media type, when the host gives one."),
-    file_name: z.string().optional().describe("The file's name, when the host gives one."),
-  })
-  .describe("A photo the athlete added to the chat.");
+/**
+ * One file as the host passes it. All four properties are declared, as the Apps SDK asks.
+ * A function, not a shared constant: each photo parameter needs its own copy, or the JSON
+ * schema turns the second one into a bare $ref with no type.
+ */
+export const fileRefSchema = () =>
+  z
+    .object({
+      download_url: z.string().describe("A short-lived link to the file, supplied by the host."),
+      file_id: z.string().describe("The host's id for the file."),
+      mime_type: z.string().optional().describe("The file's media type, when the host gives one."),
+      file_name: z.string().optional().describe("The file's name, when the host gives one."),
+    })
+    .describe("A photo the athlete added to the chat.");
 
 export type ScanOutcomeStatus =
   | "scanned"
@@ -285,8 +289,8 @@ export function registerScanBodyPhotos(server: McpServer, deps: ScanBodyPhotosDe
       title: "Body Scan From Photos",
       description: SCAN_BODY_PHOTOS_DESCRIPTION,
       inputSchema: {
-        front_photo: fileRefSchema.optional().describe("The athlete's front photo, standing, head to feet."),
-        side_photo: fileRefSchema.optional().describe("The athlete's side photo, when they added one."),
+        front_photo: fileRefSchema().optional().describe("The athlete's front photo, standing, head to feet."),
+        side_photo: fileRefSchema().optional().describe("The athlete's side photo, when they added one."),
       },
       annotations: {
         // Saves a scan to the athlete's history and uses their scan allowance.
